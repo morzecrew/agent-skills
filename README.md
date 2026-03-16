@@ -76,7 +76,11 @@ Writes consistent Python docstrings using reST roles for cross-references. Optim
 ## Installation
 
 ```bash
+# Install all skills
 npx skills add morzecrew/agent-skills
+
+# Install a specific skill
+npx skills add morzecrew/agent-skills@keep-a-changelog
 ```
 
 ## Usage
