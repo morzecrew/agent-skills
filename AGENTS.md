@@ -34,10 +34,10 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
   - Skill instructions are clear and self-contained
   - `npx skills add morzecrew/agent-skills@<skill-name>` works for new skills
 
-## Pull Request Guidelines
+## Commit and Pull Request Guidelines
 
-- **Title format:** `<gitmoji> <type>[scope]: <description>` (see gitmoji-conventional-pull-requests skill)
-- **Commit format:** `<gitmoji> <type>[scope]: <description>` (see gitmoji-conventional-commits skill)
+- **Title format:** `<gitmoji> <type>[scope]: <description>` (see gitmoji-conventional skill)
+- **Commit format:** `<gitmoji> <type>[scope]: <description>` (see gitmoji-conventional skill)
 - Run `markdownlint` if configured before submitting.
 
 ## Adding a New Skill
@@ -46,4 +46,3 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 2. Include YAML frontmatter with `name` and `description`.
 3. Document when the skill applies ("Use when") and what it covers ("Categories covered").
 4. Add the skill to README.md under "Available Skills".
-5. Update this AGENTS.md "Current skills" list if desired.
