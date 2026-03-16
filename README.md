@@ -4,6 +4,28 @@ A collection of skills for AI coding agents. Skills are packaged instructions an
 
 Skills follow the [Agent Skills](https://agentskills.io/) format.
 
+## Installation
+
+```bash
+# Install all skills
+npx skills add morzecrew/agent-skills
+
+# Install a specific skill
+npx skills add morzecrew/agent-skills@keep-a-changelog
+```
+
+## Usage
+
+Skills are automatically available once installed. The agent will use them when relevant tasks are detected.
+
+## Skill Structure
+
+Each skill contains:
+
+- `SKILL.md` - Instructions for the agent
+- `scripts/` - Helper scripts for automation (optional)
+- `references/` - Supporting documentation (optional)
+
 ## Available Skills
 
 ### keep-a-changelog
@@ -72,24 +94,3 @@ Writes consistent Python docstrings using reST roles for cross-references. Optim
 - Code documentation (High) - consistent, scannable docstrings
 - API discoverability (Medium-High) - IDE tooltips and Sphinx output
 - Cross-references (Medium) - reST roles for types and callables
-
-## Installation
-
-```bash
-# Install all skills
-npx skills add morzecrew/agent-skills
-
-# Install a specific skill
-npx skills add morzecrew/agent-skills@keep-a-changelog
-```
-
-## Usage
-
-Skills are automatically available once installed. The agent will use them when relevant tasks are detected.
-
-## Skill Structure
-
-Each skill contains:
-- `SKILL.md` - Instructions for the agent
-- `scripts/` - Helper scripts for automation (optional)
-- `references/` - Supporting documentation (optional)

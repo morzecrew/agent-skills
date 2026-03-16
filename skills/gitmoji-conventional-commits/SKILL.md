@@ -154,7 +154,6 @@ The assistant MUST:
 |--------|--------|------|
 | ⏪ | Revert commit | revert |
 
-
 ### Breaking Changes
 
 | Gitmoji | Meaning | Type |

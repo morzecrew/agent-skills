@@ -39,6 +39,7 @@ class PostgresClient:
     blocks reuse the same connection and use savepoints.
     """
 ```
+
 ---
 
 ## 2.1. :class:`typing.Protocol`
