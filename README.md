@@ -81,3 +81,20 @@ Writes consistent Python docstrings using reST roles for cross-references. Optim
 - Code documentation (High) - consistent, scannable docstrings
 - API discoverability (Medium-High) - IDE tooltips and Sphinx output
 - Cross-references (Medium) - reST roles for types and callables
+
+### python-google-docstrings
+
+Writes consistent Python docstrings in Google style with typed sections (`Args:`, `Returns:`, `Raises:`, `Yields:`, `Attributes:`). Optimizes for IDE tooltips, Napoleon/Sphinx compatibility, and high-signal documentation that explains behavior rather than restating types. Covers type aliases, classes, methods, attributes, TypedDict keys, `@overload`, and `typing.Protocol`.
+
+**Use when:**
+
+- User asks to write or update docstrings
+- Writing or editing Python code that should be documented
+- User mentions docstrings, Google style, Napoleon, or API documentation
+- Documenting classes, methods, or public APIs
+
+**Categories covered:**
+
+- Code documentation (High) - consistent, scannable docstrings
+- API discoverability (Medium-High) - IDE tooltips and Sphinx output
+- Typed sections (Medium) - `name (type): description` entries for params and attributes
