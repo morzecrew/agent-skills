@@ -98,3 +98,20 @@ Writes consistent Python docstrings in Google style with typed sections (`Args:`
 - Code documentation (High) - consistent, scannable docstrings
 - API discoverability (Medium-High) - IDE tooltips and Sphinx output
 - Typed sections (Medium) - `name (type): description` entries for params and attributes
+
+### altitude-docs
+
+Writes, polishes, and reviews documentation pages to a consistent standard using the altitude model (a deliberate high-level to low-level descent), Diátaxis-based page contracts, a shared consistency layer, and a ship rubric. Repo-agnostic: it discovers the project's docs root, archetype layout, source of truth, and build tooling before applying.
+
+**Use when:**
+
+- Writing a new documentation page
+- Polishing or reviewing a page for consistency, depth, or flow
+- Aligning an archetype directory (e.g. all tutorials) to one standard
+- Deciding which archetype and directory new content belongs in
+
+**Categories covered:**
+
+- Documentation quality (High) - balanced, single-author feel across pages
+- Information architecture (Medium-High) - Diátaxis fit and altitude bands
+- Editorial consistency (Medium) - voice, handoffs, and component discipline
