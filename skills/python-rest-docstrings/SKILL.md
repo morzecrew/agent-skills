@@ -209,6 +209,16 @@ Same-class: ``:meth:`initialize`` is fine. Cross-module: use fully-qualified nam
 
 ---
 
+## Description length (be concise)
+
+The description explains intent and non-obvious behavior — it is not a place for prose. This budget applies to the **summary and body**, not to `:param:`/`:returns:`/`:raises:` entries (size those to the actual API surface).
+
+- **Default to the one-line summary.** For simple or self-explanatory APIs, the summary is the whole docstring; do not add a body.
+- **Add a body only when it earns its place** — non-obvious behavior, side effects, invariants, edge cases, or "why". Keep it to ~1–3 sentences.
+- **Scale with complexity, not by default.** Reserve longer explanations for genuinely complex or tricky code (concurrency, transactions, subtle contracts). Even then, prefer the shortest correct explanation.
+
+---
+
 ## Formatting (hard requirements)
 
 - **Sentence-cased**, end with a period. One blank line between definition and docstring.
