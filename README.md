@@ -115,3 +115,20 @@ Writes, polishes, and reviews documentation pages to a consistent standard using
 - Documentation quality (High) - balanced, single-author feel across pages
 - Information architecture (Medium-High) - Diátaxis fit and altitude bands
 - Editorial consistency (Medium) - voice, handoffs, and component discipline
+
+### never-nesting
+
+Keeps code flat and readable by limiting indentation depth, inverting conditions into guard clauses with early returns, and extracting nested blocks into well-named, single-responsibility functions. Treats three levels of indentation as a soft ceiling.
+
+**Use when:**
+
+- Writing or refactoring code with deep nesting or pyramid-shaped if/else
+- The happy path is buried under wrapping error/edge-case conditions
+- User mentions nesting, indentation, guard clauses, early returns, or extracting functions
+- Reviewing code for readability or complexity problems
+
+**Categories covered:**
+
+- Code readability (High) - flat, scannable control flow
+- Maintainability (Medium-High) - small single-responsibility functions
+- Code review (Medium) - detecting and flagging excessive nesting
