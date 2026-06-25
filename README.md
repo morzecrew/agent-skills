@@ -132,3 +132,70 @@ Keeps code flat and readable by limiting indentation depth, inverting conditions
 - Code readability (High) - flat, scannable control flow
 - Maintainability (Medium-High) - small single-responsibility functions
 - Code review (Medium) - detecting and flagging excessive nesting
+
+### naming-things
+
+Names variables, functions, classes, and modules well by avoiding known anti-patterns: single letters, abbreviations, types baked into names, missing units, `Base`/`Abstract` class names, and `Utils`/`Helper` grab-bags. Treats naming difficulty as a signal of structural problems.
+
+**Use when:**
+
+- Naming or renaming variables, functions, classes, types, or modules
+- Reviewing a diff where a name reads unclear, abbreviated, or generic
+- User mentions naming, identifiers, variable names, or that a name feels off
+
+**Categories covered:**
+
+- Code readability (High) - self-explanatory identifiers
+- Maintainability (Medium-High) - names that survive type and structure changes
+- Code review (Medium) - flagging naming anti-patterns
+
+### self-documenting-code
+
+Makes code explain itself instead of relying on comments: name sub-expressions, extract complex conditions into predicate functions, lean on the type system, and reserve comments for the "why" the code cannot express.
+
+**Use when:**
+
+- Writing or reviewing comments in a diff
+- A comment is needed to explain *what* a line or condition does
+- Refactoring dense, hard-to-read logic
+- User mentions comments, self-documenting code, or readability
+
+**Categories covered:**
+
+- Code readability (High) - intent expressed in code, not prose
+- Maintainability (Medium-High) - no drifting "what" comments
+- Documentation discipline (Medium) - comments for why, docs for APIs
+
+### composition-over-inheritance
+
+Prefers composition and interfaces over class inheritance to reduce coupling and survive change: model has-a relationships, abstract through interfaces/contracts rather than parent classes, and reserve inheritance for the narrow cases where it fits.
+
+**Use when:**
+
+- Designing or refactoring class relationships and hierarchies
+- Reviewing OOP code where subclasses inherit methods that don't apply
+- Deciding between extending a class and composing one
+- User mentions inheritance, subclassing, base classes, or composition
+
+**Categories covered:**
+
+- Maintainability (High) - loosely coupled designs that absorb change
+- Software design (Medium-High) - has-a modeling and interface abstraction
+- Code review (Medium) - spotting inheritance smells
+
+### measure-before-optimizing
+
+Optimizes code only after a real, measured performance problem: distinguishes macro (design-level) from micro (fine-tuned) performance, reaches for data-structure and algorithm wins before micro-tweaks, profiles to find real hotspots, and avoids trading readability for unmeasured speed.
+
+**Use when:**
+
+- Optimizing code or asked to "make this faster"
+- Reviewing a change justified as "X is faster than Y"
+- Choosing between constructs primarily on performance grounds
+- User mentions performance, optimization, speed, or efficiency
+
+**Categories covered:**
+
+- Performance discipline (High) - measure-driven optimization
+- Maintainability (Medium-High) - protecting readability and adaptability
+- Code review (Medium) - challenging premature micro-optimization
