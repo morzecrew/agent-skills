@@ -199,3 +199,20 @@ Optimizes code only after a real, measured performance problem: distinguishes ma
 - Performance discipline (High) - measure-driven optimization
 - Maintainability (Medium-High) - protecting readability and adaptability
 - Code review (Medium) - challenging premature micro-optimization
+
+### rfc-writer
+
+Authors and maintains numbered RFC design documents in a project's `rfcs/` (or `rfc/`) directory, tracked by an `INDEX.md` with a next-free-number rule, status column, and dense one-line summaries. Ships templates for both the RFC skeleton and the index. Whether the directory is committed or gitignored stays the user's choice.
+
+**Use when:**
+
+- User asks to write an RFC, design doc, design proposal, or architecture proposal
+- User wants to record or lock a design decision before implementing it
+- User asks to update an RFC's status after work ships (or is rejected)
+- User asks to set up, index, or clean up an `rfcs/` directory
+
+**Categories covered:**
+
+- Design documentation (High) - durable, evidence-grounded design proposals
+- Decision records (Medium-High) - locked decision tables that prevent re-litigation
+- Project organization (Medium) - numbered files, index hygiene, status tracking
