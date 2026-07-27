@@ -216,3 +216,20 @@ Authors and maintains numbered RFC design documents in a project's `rfcs/` (or `
 - Design documentation (High) - durable, evidence-grounded design proposals
 - Decision records (Medium-High) - locked decision tables that prevent re-litigation
 - Project organization (Medium) - numbered files, index hygiene, status tracking
+
+### reading-isnt-proof
+
+Refuses to close a test gap in a multi-implementation contract on the strength of a code read. When one contract has two or more implementations and the agent is about to say "nothing tests X", it writes the shared conformance battery and runs it — even when it believes there is no defect. Ships the battery file shape, the "assert the discriminating detail" rule (error kind, not `raises`), and the positive-control requirement.
+
+**Use when:**
+
+- Auditing a port, interface, or spec with several adapters or backends
+- Verifying a mock, fake, or oracle against a real implementation
+- About to report a test gap as "gap, but no defect"
+- User mentions conformance, parity, differential testing, or cross-backend behavior
+
+**Categories covered:**
+
+- Test discipline (High) - executable comparison over code reading
+- Contract conformance (High) - one battery, every implementation, discriminating assertions
+- Honest reporting (Medium-High) - green results reported as green, no manufactured findings
