@@ -233,3 +233,20 @@ Refuses to close a test gap in a multi-implementation contract on the strength o
 - Test discipline (High) - executable comparison over code reading
 - Contract conformance (High) - one battery, every implementation, discriminating assertions
 - Honest reporting (Medium-High) - green results reported as green, no manufactured findings
+
+### self-audit
+
+Adversarially audits the agent's own just-finished work — a branch after RFC or feature execution, a fix series, a document set — before merge or handoff. Walks the places where author blind spots concentrate: extras added beyond the spec, wrapper-vs-underlying-state interactions, empty and boundary cases, discipline drift, failure paths, duplication, stale prose claims, the audit's own fixes, and verification honesty (verified-red tests, sabotage spot-checks, patch coverage). Language-agnostic and applicable to non-code deliverables.
+
+**Use when:**
+
+- User says "do self-audit", "audit your work", or "check your own changes"
+- A branch (RFC execution, feature, fix series) is complete and about to merge
+- A multi-commit body of the agent's own work needs a defect hunt before handoff
+- Double-checking work produced earlier in the session or in prior sessions
+
+**Categories covered:**
+
+- Defect discovery (High) - systematic hunt through author blind spots
+- Verification honesty (High) - proven-red tests, sabotage checks, patch coverage
+- Honest reporting (Medium-High) - findings ranked, residue stated, rules distilled
