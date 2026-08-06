@@ -384,3 +384,20 @@ Decides when an abstraction earns a raw/bypass/override hatch and how to design 
 - API design (High) - the two-question test, scoped fragments, lower-layer honesty
 - Safety defaults (High) - declared opt-outs, fail-closed when unset
 - Abstraction health (Medium) - hatch usage as a feature-gap signal
+
+### determinism-by-design
+
+Treats every source of nondeterminism — time, randomness, IDs, iteration order, concurrency schedule, environment — as an injected dependency behind a seam: real sources in production, controlled ones wherever reproducibility matters. Covers seed derivation (one master seed, per-component streams), the seed as the failure artifact, the whole-system constraint (one library with its own RNG breaks whole-run replay), hermetic tests with no sleeps ever, and the honesty boundary: the seam is the horizon, and what lies below it needs conformance against the real thing.
+
+**Use when:**
+
+- Writing code that touches clocks, timeouts, random values, UUIDs, or jitter
+- A test is flaky, timing-dependent, or passes only in isolation
+- Building simulation, record/replay, or deterministic-testing infrastructure
+- Reviewing direct clock/RNG calls in code that has a seam
+
+**Categories covered:**
+
+- Testability design (High) - injected time, randomness, schedule, and environment
+- Reproducibility (High) - single-seed replay, forced interleavings, hermetic tests
+- Scope honesty (Medium-High) - the seam horizon and replay-break regressions
