@@ -29,8 +29,9 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 
 ## Testing Instructions
 
-- No automated tests. Manually verify:
-  - Markdown renders correctly
+- **Structural validation (deterministic, no LLM):** `python3 scripts/validate_skills.py` — frontmatter shape, name/folder sync, description limits, required sections, Related-skills and references/ integrity, README sync. Runs in pre-commit and GitHub Actions (`.github/workflows/validate.yml`); no secrets involved.
+- **Behavioral evals (local only, never CI):** `python3 evals/run.py` — runs eval prompts through the locally authenticated `claude` CLI and checks output assertions. Local-only by design so no LLM API keys ever enter the repository or CI. See `evals/README.md`.
+- Manually verify:
   - Skill instructions are clear and self-contained
   - `npx skills add morzecrew/agent-skills@<skill-name>` works for new skills
 
@@ -46,3 +47,4 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 2. Include YAML frontmatter with `name` and `description`.
 3. Document when the skill applies ("Use when") and what it covers ("Categories covered").
 4. Add the skill to README.md under "Available Skills".
+5. Run `python3 scripts/validate_skills.py` — it enforces 1-4.

@@ -1,0 +1,28 @@
+name: validate
+
+# Structural validation only — deterministic, no LLM, no secrets.
+# Behavioral skill evals are local-only by design (evals/README.md):
+# they use the developer's authenticated Claude Code CLI, so no API
+# keys ever live in this repository or its CI.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v20
+        with:
+          globs: |
+            README.md
+            skills/**/*.md
+          config: .markdownlint.yml
+
+      - name: Structural skill validation
+        run: python3 scripts/validate_skills.py

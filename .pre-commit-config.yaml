@@ -4,3 +4,11 @@ repos:
   hooks:
   - id: markdownlint
     exclude: ^\.(agent|agents|claude)/
+- repo: local
+  hooks:
+  - id: validate-skills
+    name: validate-skills
+    entry: python3 scripts/validate_skills.py
+    language: system
+    pass_filenames: false
+    files: ^(skills/|README\.md|scripts/validate_skills\.py)
