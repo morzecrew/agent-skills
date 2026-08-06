@@ -401,3 +401,20 @@ Treats every source of nondeterminism — time, randomness, IDs, iteration order
 - Testability design (High) - injected time, randomness, schedule, and environment
 - Reproducibility (High) - single-seed replay, forced interleavings, hermetic tests
 - Scope honesty (Medium-High) - the seam horizon and replay-break regressions
+
+### distill-the-rule
+
+Converts surprising findings into durable one-line rules: after a debugging session, audit, or incident, strip the specifics down to the transferable mechanism and file it where future work will meet it. Three properties qualify a finding (surprise, cost, recurrence shape); the transfer test sets the altitude (would it have prevented the same finding elsewhere?); an escalation ladder promotes proven rules from memory to convention to enforcement. Rules are claims: re-verified on contact, deduped, and deleted when disproven.
+
+**Use when:**
+
+- A session ends with a hard-won discovery or genuine surprise
+- A defect's shape will clearly recur beyond this instance
+- Closing an incident or postmortem with lessons worth keeping
+- The user says "remember this" or the same mistake class appears twice
+
+**Categories covered:**
+
+- Knowledge distillation (High) - transferable rules from specific findings
+- Learning compounding (High) - the escalation ladder from note to enforcement
+- Collection hygiene (Medium) - dedup, re-verification, deleting disproven rules
