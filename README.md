@@ -316,3 +316,20 @@ Closes the gap between "built the mechanism" and "the mechanism is mandatory". E
 - Enforcement design (High) - the ladder from convention to impossible-to-skip
 - Drift prevention (High) - enrollment gates, non-empty derivations, verified waivers
 - Audit closure (Medium-High) - the "what keeps it true?" sweep
+
+### reproduce-then-fix
+
+Bug-fixing as one loop: reproduce red, minimize, explain the mechanism, fix the cause, watch the same red turn green, keep the repro as a regression test. A fix never seen failing is a guess; a fix without an explained causal chain is a coincidence. Covers verified-red certification, the symptom test (does the change remove the mechanism or the observable?), no-unexplained-green, flakes as bugs with probabilistic repros, and honest "unreproduced" downgrades.
+
+**Use when:**
+
+- Fixing any bug, from a failing test to a production incident
+- A fix is proposed without a failing reproduction
+- A test is flaky and someone wants to retry, skip, or delete it
+- The error is gone but nobody can say why
+
+**Categories covered:**
+
+- Debugging discipline (High) - reproduction, minimization, mechanism before patch
+- Regression proofing (High) - verified-red tests kept from minimized repros
+- Honest reporting (Medium-High) - mitigation vs fix, unreproduced vs fixed
