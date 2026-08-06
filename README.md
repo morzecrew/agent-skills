@@ -333,3 +333,20 @@ Bug-fixing as one loop: reproduce red, minimize, explain the mechanism, fix the 
 - Debugging discipline (High) - reproduction, minimization, mechanism before patch
 - Regression proofing (High) - verified-red tests kept from minimized repros
 - Honest reporting (Medium-High) - mitigation vs fix, unreproduced vs fixed
+
+### failure-path-review
+
+A systematic sweep of the unhappy paths in async and background systems, where defects concentrate because failure code only runs during incidents: poison ceilings that actually advance, retry loops that misconfiguration must escape, crash-redelivery with side-effect/ack ordering decided, drain-not-abandon shutdown, supervised loops with crash-loop ceilings, bounds on everything that grows, and failure observability that distinguishes idle from stuck from discarding.
+
+**Use when:**
+
+- Writing or reviewing consumers, workers, background loops, or job runners
+- Adding retry, backoff, or dead-letter behavior
+- Implementing or reviewing shutdown, restart, or deploy handling
+- After an incident with stuck, lost, duplicated, or infinitely-retried work
+
+**Categories covered:**
+
+- Async reliability (High) - poison, redelivery, reclaim, partial-batch honesty
+- Lifecycle discipline (High) - drain over cancel, supervision, fault isolation
+- Failure observability (Medium-High) - metrics on every drop, no payload leaks
