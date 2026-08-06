@@ -1,102 +1,143 @@
 ---
 name: composition-over-inheritance
-description: Prefer composition and interfaces over class inheritance to reduce coupling and survive change - model has-a relationships, abstract through interfaces/contracts rather than parent classes, and reserve inheritance for the narrow cases where it fits. Use when designing or refactoring class hierarchies, reviewing OOP code, deciding between extending a class and composing one, or when the user mentions inheritance, subclassing, base classes, or composition.
+description: Prefer composition and interfaces over class inheritance - apply the GoF principle and Effective Java's composition-plus-forwarding to avoid fragile base classes, run the Liskov behavioral is-a test, and recognize the narrow cases (framework hooks, sealed hierarchies, exceptions) where inheritance is right. Use when designing or refactoring class hierarchies, reviewing OOP code, deciding between extending and wrapping a class, or whenever inheritance, subclassing, extends, base/abstract classes, mixins, is-a vs has-a, overriding, or composition come up.
 ---
 
 # Composition Over Inheritance
 
-Inheritance looks like free code reuse, but it quietly couples a child to the full
-structure of its parent. That coupling is fine until requirements change — and then
-it becomes the most expensive kind of refactor. The default that ages better is
-**composition** (model *has-a* relationships) plus **interfaces** for abstraction,
-reaching for inheritance only in the narrow cases where it genuinely fits.
+"Favor object composition over class inheritance" is the second principle of
+object-oriented design in the GoF's *Design Patterns* (1994). Their reasoning was
+not stylistic: inheritance is **white-box reuse** — the parent's internals are
+visible to and depended on by the child, so "inheritance breaks encapsulation."
+Composition is **black-box reuse** through well-defined interfaces, and it can be
+reconfigured at runtime, while an `extends` clause is fixed at compile time. The
+default that survives change is *has-a* plus interfaces; inheritance is the
+deliberate exception.
 
 ## Use this skill when
 
 - Designing a new class relationship and tempted to `extends`/subclass.
-- Refactoring a hierarchy that has grown rigid or has deep parent chains.
-- Reviewing OOP code where subclasses inherit methods that don't apply to them.
-- The user mentions inheritance, subclassing, base classes, mixins, or composition.
+- Refactoring a deep or rigid hierarchy, or a base class nobody dares touch.
+- Reviewing code where subclasses inherit methods that don't apply to them, or override methods to disable them.
+- Deciding whether "X is-a Y" justifies subclassing.
 
 ## Do not use this skill when
 
-- A framework or library *requires* subclassing a specific base class to integrate.
-- The language idiom for the case is inheritance (e.g. defining an interface/ABC to be implemented).
+- A framework mandates subclassing its documented extension point.
+- You're implementing an interface/protocol/ABC — that's the abstraction half only, not implementation inheritance.
+- You're modeling a closed set of variants as a sealed hierarchy (see the table below — that's inheritance done right).
 
-## Why inheritance breaks down
+## Why inheritance is fragile: the self-use trap
 
-When a child inherits from a parent, the parent's whole structure is thrust onto
-the child — including methods that make no sense for it. Consider an `Image` with
-`resize`/`flip` that also has `load`/`save`. A subclass that only needs `resize`
-and `flip` is now forced to carry `load`/`save` too.
+Effective Java Item 18's canonical demonstration — a set that counts insertions:
 
-The fix forces structural surgery: you extract an intermediate parent (e.g.
-`FileImage`) to hold `load`/`save`. But that **breaks every existing consumer** that
-expected those methods on `Image`, so you must edit all of them — an expensive,
-rippling refactor. This is inheritance's core weakness: **it breaks down exactly
-when you need to change the code.**
-
-## Composition: model has-a
-
-Instead of inheriting behavior, hold the pieces you need as members and delegate to
-them. You use only the types you want, so there are no irrelevant inherited methods
-and far less surface area between objects — which means less friction as changes
-arrive.
-
-```python
-class Car:
-    def __init__(self, engine: Engine, wheels: Wheels):
-        self._engine = engine
-        self._wheels = wheels
-
-    def start(self):
-        self._engine.start()      # delegate
+```java
+// WRONG: inherit to reuse HashSet's implementation
+class InstrumentedHashSet<E> extends HashSet<E> {
+    private int addCount = 0;
+    @Override public boolean add(E e) { addCount++; return super.add(e); }
+    @Override public boolean addAll(Collection<? extends E> c) {
+        addCount += c.size(); return super.addAll(c);
+    }
+}
+// s.addAll(List.of("a", "b", "c"))  -->  addCount == 6, not 3.
+// HashSet.addAll happens to call add() internally, so each element counts twice.
 ```
 
-You can swap `engine` for an `ElectricEngine` without touching `Car`'s own logic.
+The bug is not in either class alone — it's in the coupling. Whether `addAll`
+*self-uses* `add` is an implementation detail, undocumented and free to change in
+any release. A subclass that works today breaks when the parent evolves, without a
+line of the subclass changing: the **fragile base class problem**. (The parent can
+also grow a new method later that collides with one the subclass already defined.)
 
-## Abstraction through interfaces
+```java
+// RIGHT: composition + forwarding — wrap any Set, depend only on its contract
+class InstrumentedSet<E> implements Set<E> {
+    private final Set<E> inner;
+    private int addCount = 0;
+    InstrumentedSet(Set<E> inner) { this.inner = inner; }
+    public boolean add(E e) { addCount++; return inner.add(e); }
+    public boolean addAll(Collection<? extends E> c) {
+        addCount += c.size(); return inner.addAll(c);
+    }
+    // remaining Set methods forward to inner
+}
+```
 
-Inheritance actually bundles two separate capabilities: **code reuse** *and*
-**abstraction** (a parent's methods form a contract; a consumer thinks it has a
-`Parent` but is handed a subclass). You can get the abstraction without the coupling
-by defining an **interface** for the contract and composing implementations behind
-it. The consumer depends on the interface, not on a concrete parent.
+The wrapper works with `HashSet`, `TreeSet`, or anything else, regardless of how
+the wrapped class calls itself. This is the Decorator pattern; extract the pure
+forwarding into a reusable `ForwardingSet` and instrumentation costs a few lines.
 
-This pairs naturally with passing implementations in from outside rather than
-hard-coding them (see `dependency-injection` if present, or just constructor
-parameters).
+## Inheritance is for polymorphism, not code reuse
 
-## Composition's costs (be honest)
+Inheritance bundles two separate capabilities: **subtype polymorphism** (a caller
+holding `Parent` can be handed your class) and **implementation reuse** (you get
+the parent's method bodies). Subclass in order to be substitutable at a call site.
+If all you want is the methods, compose — extending just to grab code signs the
+substitutability contract by accident, and every caller of the parent becomes a
+caller of you.
 
-Composition isn't free:
+## The is-a test, done right (Liskov)
 
-- **Boilerplate** — you initialize and hold the internal types explicitly.
-- **Wrapper methods** — to expose an inner object's behavior you often write small
-  methods that just forward the call.
+Behavioral subtyping (Liskov 1987; Liskov & Wing 1994) is substitutability of
+**behavior**, not vocabulary: every property provable about parent objects must
+hold for child objects. Concretely, a subclass must not strengthen preconditions,
+weaken postconditions, or break the parent's invariants.
 
-These are real but usually cheaper than the coupling inheritance imposes, because
-they stay local instead of rippling across consumers.
+The classic trap: a square is-a rectangle *in English*, but a `Square` subclass
+breaks `Rectangle`'s implicit guarantee that width and height vary independently —
+`setWidth(4)` on a square silently changes the height, and code written against
+`Rectangle` misbehaves. The real test is: **can every caller of `Parent` receive
+`Child` without noticing?** Overriding a method to throw
+`UnsupportedOperationException` or to no-op is a confessed "no."
 
-## When inheritance is still fine
+## Abstraction without coupling: interfaces
 
-- You're inside an **existing system with highly repetitive code** where you need to
-  change exactly one thing and a subclass is the smallest, most local edit.
-- A **framework** mandates subclassing a base class as its extension point.
-- You're defining a genuine, stable **is-a** contract with no foreseeable need to
-  recombine behaviors.
+You can keep the polymorphism and drop the implementation coupling by defining the
+contract as an interface and composing implementations behind it, passed in via
+constructor. Every mainstream language has the mechanism:
 
-The point is not "inheritance is forbidden" — it's that composition should be the
-default and inheritance the deliberate exception.
+| Language | Contract mechanism | Forwarding helper |
+|---|---|---|
+| Java / C# / TypeScript | `interface` | — |
+| Python | `Protocol` (structural) or ABC | — |
+| Go | implicit interfaces | struct embedding |
+| Rust | traits | — (or `Deref` sparingly) |
+| Kotlin | `interface` | class delegation `by` |
+| Swift | protocols | protocol extensions |
+
+## Honest costs of composition
+
+- **Forwarding boilerplate** — wrapper methods that just delegate (Kotlin `by` and Go embedding erase most of it).
+- **The SELF problem** — wrappers don't suit callback frameworks: the inner object registers `this` (itself) for callbacks, so calls bypass the wrapper.
+- **One more object and one more hop** — negligible in almost all code; see `measure-before-optimizing` before caring.
+
+These costs are real but *local*. Inheritance's coupling cost ripples: changing a
+base class means auditing every subclass and every consumer.
+
+## When inheritance is the right tool
+
+| Case | Why it works |
+|---|---|
+| Framework extension points / template methods | The parent is designed and documented for extension; overriding hooks *is* the API |
+| Sealed hierarchies / ADTs (sealed classes, Rust/Swift enums) | Closed variant set with exhaustive matching; one author controls all subclasses, so no fragile-base risk |
+| Exception hierarchies | Catch-by-supertype is the language mechanism itself |
+| Genuine behavioral is-a onto a stable parent | Passes the Liskov test *and* the parent documents its self-use for extenders |
+
+Effective Java Item 19 gives the governing rule: **design and document for
+inheritance, or else prohibit it** (`final`/sealed). A class that isn't explicitly
+built to be extended is unsafe to extend across a package boundary.
 
 ## Quick checklist
 
-- Does the subclass inherit methods that don't apply to it? Prefer composition.
-- Would future requirements force an intermediate parent class? That ripple is the warning sign.
-- Do you need the abstraction but not the reuse? Use an interface + composition.
-- Is inheritance mandated by a framework or a stable is-a contract? Then it's justified.
+- Inheriting to reuse code rather than to be substituted? Compose and forward.
+- Would the subclass break if the parent changed how it calls its own methods? Fragile base — compose.
+- Does the is-a hold for *behavior* (no strengthened preconditions, no disabled methods), not just vocabulary?
+- Do you need the contract without the code? Interface + constructor-injected implementation.
+- Is it a framework hook, sealed variant set, or exception type? Inheritance is fine — say so and move on.
 
 ## Related skills
 
-- `naming-things` — `Base`/`Abstract` parent names often signal an inheritance smell.
-- `self-documenting-code` — clear interfaces document a contract better than a parent class.
+- `naming-things` — `Base`/`Abstract`/`Common` parent names often signal reuse-driven inheritance.
+- `self-documenting-code` — an interface documents a contract better than a parent class's method bodies.
+- `measure-before-optimizing` — delegation's indirection cost is a non-problem until measured otherwise.

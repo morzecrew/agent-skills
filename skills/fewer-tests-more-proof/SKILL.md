@@ -1,6 +1,6 @@
 ---
 name: fewer-tests-more-proof
-description: Consolidate and optimize a test suite so it proves more with fewer, stronger tests — shared conformance batteries over per-implementation copies, differential testing against a reference implementation, deterministic control instead of flake-retry volume, deletion of ritual and subsumed tests, all under an honesty floor that promise coverage never drops. Use when the user asks to consolidate, optimize, dedupe, or clean up tests, reduce suite size or runtime, improve coverage efficiency, or make conformance/parity testing cheaper.
+description: Consolidate and optimize a test suite so it proves more with fewer, stronger tests — shared conformance batteries over per-implementation copies, differential and property-based testing over hand-enumerated examples, deterministic control instead of flake-retry volume, sabotage-proven deletion of ritual and subsumed tests, all under an honesty floor that promise coverage never drops. Use when the user asks to consolidate, optimize, dedupe, or clean up tests, shrink suite size or runtime, fix a slow or flaky suite without losing coverage, improve coverage efficiency, or make conformance/parity testing cheaper.
 ---
 
 # Fewer Tests, More Proof
@@ -21,13 +21,14 @@ The unit of value in a test suite is a **promise proven**, not a test counted. A
 
 ## Inventory: map tests to promises
 
-Before moving anything, build the map. For each test, name the promise it proves — the sentence that would have to become false for it to fail ("reusing a key with a different payload is refused as a conflict", "shutdown drains pending work"). A test whose promise you cannot name is the first finding. The map exposes the five consolidation targets:
+Before moving anything, build the map. For each test, name the promise it proves — the sentence that would have to become false for it to fail ("reusing a key with a different payload is refused as a conflict", "shutdown drains pending work"). A test whose promise you cannot name is the first finding. The map exposes the six consolidation targets:
 
 1. **The same promise tested per-implementation** in N parallel files — the battery target.
 2. **The same setup rebuilt** across many files — the shared-harness target.
 3. **A promise tested weakly in one place and strongly in another** — the subsumption target.
-4. **Tests that cannot fail for a nameable reason** — assertion-free runs, "did not raise", tautological mocks. Ritual, not proof.
-5. **Probabilistic concurrency tests** — sleeps, retries, run-it-100-times loops — the determinism target.
+4. **A family of hand-picked examples all pinning one general promise** at different points — the property target.
+5. **Tests that cannot fail for a nameable reason** — assertion-free runs, "did not raise", tautological mocks. Ritual, not proof.
+6. **Probabilistic concurrency tests** — sleeps, retries, run-it-100-times loops — the determinism target.
 
 ## The consolidation moves
 
@@ -43,6 +44,12 @@ Where a reference implementation exists (a mock or fake mirroring a real backend
 
 Legitimate mechanism differences (the reference refuses where the real engine's optimization permits, yet both protect the invariant) go in an explicit, versioned **divergence catalog** — each entry explaining why the difference is verdict-equivalent or naming the known fidelity limit. Never silently filter a divergence: an uncatalogued filter is a hole shaped exactly like a bug.
 
+### Properties over examples
+
+A property over generated inputs subsumes the example family it generalizes: one QuickCheck/Hypothesis property — `decode(encode(x)) == x`, "the output is sorted and a permutation of the input" — replaces the dozen hand-picked examples that each pinned one point of the same promise, and the generator reaches the points nobody hand-picked. Keep one or two pinned examples as regression anchors — they double as the property's positive control — and let shrinking do the failure naming: a minimal counterexample beats any example test's message.
+
+When no expected output is computable at all — the *oracle problem* — assert **metamorphic relations** between runs instead: permuting the input must not change the result set, adding a matching document must never shrink it, running twice must equal running once. Differential testing (above) solves the oracle problem with a reference implementation; metamorphic relations solve it when nothing exists to be the reference.
+
 ### Determinism over repetition
 
 A concurrency test that races real time needs volume to mean anything, and still lies. Forcing the interleaving — checkpoint/schedule control, simulated time, seeded randomness — turns a probabilistic family of N flaky tests into one exact, reproducible test per schedule of interest. Determinism is the single largest runtime-and-flake win available in most suites.
@@ -54,6 +61,8 @@ Count usages before extracting. Setup rebuilt in a handful of files becomes a lo
 ### Delete subsumed and ritual tests — with proof
 
 A weaker test is subsumed only when a surviving test provably carries its promise: **sabotage the behavior and watch the survivor fail** — the same break that would have failed the deleted test. Green-after-deletion alone proves nothing (the suite is also green when the survivor is blind). Ritual tests that cannot fail for a nameable reason are strengthened into real assertions or deleted outright; a green tick that carries no information costs runtime and, worse, confidence.
+
+Sabotage is mutation testing by hand, and tools like PIT and Stryker automate the sweep — every surviving mutant is a behavior change no test noticed, and mutation score (killed over non-equivalent mutants) is the metric coverage percentage pretends to be: ritual tests raise coverage and kill nothing. One caveat carries over from hand sabotage: a survivor is not automatically a missing test — it may be an *equivalent mutant*, changing no behavior at all, and deciding that is undecidable in general. So every survivor gets a named why, never a shrug.
 
 ## The honesty floor
 

@@ -1,6 +1,6 @@
 ---
 name: less-code-same-behavior
-description: Deep divergence and DRY audit that shrinks a codebase without changing behavior — find copy-paste, same-concern-drift, scattered responsibilities, type-lying configs, and bloated public surfaces, then consolidate while respecting the project's declared layers and import contracts. Use when the user asks to deduplicate, DRY up, consolidate, converge divergent code, do a divergence analysis, reduce code size, or wants "less code with the same functionality".
+description: Deep divergence and DRY audit that shrinks a codebase without changing behavior — find copy-paste, same-concern-drift, scattered responsibilities, type-lying configs, wrong abstractions, and bloated public surfaces, then consolidate (or unwind) while respecting the project's declared layers and import contracts. Use when the user asks to deduplicate, DRY up, consolidate, converge divergent code, do a divergence analysis, shrink or simplify a codebase, reduce code size, or wants "less code with the same functionality".
 ---
 
 # Less Code, Same Behavior
@@ -54,7 +54,7 @@ Two names for one concept across packages, or one name for two concepts. Sometim
 
 ## Verify every claim before acting
 
-- **Prove a copy is a copy.** Only merge code that changes for the same reason. Coincidental similarity — two blocks that look alike today but serve different owners with different futures — must stay separate; merging it manufactures coupling, the exact cost DRY exists to avoid.
+- **Prove a copy is a copy.** Only merge code that changes for the same reason. Coincidental similarity — two blocks that look alike today but serve different owners with different futures — must stay separate; merging it manufactures coupling, the exact cost DRY exists to avoid. This is Sandi Metz's rule — "duplication is far cheaper than the wrong abstraction" — restated by Kent C. Dodds as AHA, *Avoid Hasty Abstractions*: merge on a proven shared reason-to-change, never on visual similarity.
 - **Prove dead is dead.** Check every access pattern before deleting: `from`-imports, attribute access (`module.symbol(...)` — a grep for `from..import` alone misreads these as dead), re-export chains, reflection and string-based references, config/serialized references. A "dead shim" that is actually a load-bearing facade is a classic false positive.
 - **Count before you conclude.** Importer counts, call-site counts, external-vs-internal usage splits. Numbers decide between shim-and-move, break-and-migrate, and leave-alone.
 
@@ -75,6 +75,7 @@ Consolidate internals; keep public surfaces stable.
 ## Calibration — when to say no
 
 - **NO ACTION is a first-class verdict.** Record it with the reason: "correctly placed", "load-bearing facade", "justified by the runtime model", "false positive of the analysis tool". A third of honest audit findings die on inspection; that is the audit working.
+- **Unwind wrong abstractions already in place.** An extraction serving two masters — flag parameters, mode conditionals, callers each exercising a different slice — is Metz's wrong abstraction, and her exit is the fastest way forward: inline it back into its callers, delete what each doesn't use, and let the honest shape re-emerge, or not. *More* code, same behavior, is sometimes this audit's correct verdict.
 - **Don't churn for purity.** Idiomatic bare structures, deliberate re-exports, and small asymmetries that harm nothing stay. The metric is behavior-per-line, not style conformance.
 - **Stop at diminishing returns, and say so.** When remaining targets are high-churn/low-density, the honest recommendation is "stop unless X specifically hurts" — an audit that can't end recommends its own busywork.
 
@@ -82,6 +83,7 @@ Consolidate internals; keep public surfaces stable.
 
 Every consolidation step must prove behavior preservation before it counts:
 
+- **Fowler-sized steps.** Refactoring's definition is a sequence of small behavior-preserving transformations, each too small to go wrong, run under green tests — so consolidate as a chain of gated steps, never a big-bang rewrite; a consolidation that can't be bisected can't be trusted. The moment a step wants a behavior change, that's the other hat: stop, split it into its own change.
 - Full typecheck, lint, and the **architecture-contract check** (all import/layer rules green).
 - The full relevant test suite, with counts recorded before and after — same tests, same results. A pure consolidation changes no test outcomes; if a test had to change, either the surface wasn't preserved (add the shim) or the change wasn't pure (split it out).
 - Where a public surface gained a shim, add equivalence tests (old spelling ≡ new shape) — usually the only new tests a consolidation needs.

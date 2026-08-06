@@ -1,269 +1,216 @@
 ---
 name: python-rest-docstrings
-description: Write consistent Python docstrings using reST roles for cross-references. Use when writing or updating docstrings, documenting Python code, or when the user mentions docstrings, reST, Sphinx, or API documentation.
+description: Write reST Python docstrings — Sphinx info field lists (:param/:returns/:raises) and cross-reference roles (:class:/:meth:/:func:) that render natively in Sphinx and IDE tooltips. Use whenever writing, editing, or reviewing Python docstrings or API documentation, documenting functions, classes, modules, or constants, or when the user mentions docstrings, reST, reStructuredText, Sphinx roles, or asks to "document this code".
 ---
 
-# Python Docstring Writer (reST)
+# Python Docstrings — reST Style
 
-Write **consistent, high-signal docstrings** using **reST roles** for cross-linking. Optimize for: fast scanning in IDE/tooltips, friendly references, minimal redundancy with type hints, and explaining **why/behavior** rather than restating types.
+A docstring earns its place by saying what type hints cannot: meaning, constraints,
+side effects, and failure conditions. reST style expresses those in Sphinx's native
+language — info field lists (`:param:`, `:returns:`, `:raises:`) and cross-reference
+roles — so write for two readers at once: a human scanning a tooltip and Sphinx
+rendering API docs with real links.
 
-**Conventions:** Type aliases/constants → immediate string literal. Classes/functions → PEP 257 docstring. Attributes/TypedDict keys → trailing docstring. Cross-references → reST roles (e.g. ``:class:`Foo``, ``:meth:`Bar.baz``), not plain text. For ``@overload`` and :class:`typing.Protocol`, follow the dedicated sections below.
+## Use this skill when
 
----
+- Writing or editing Python docstrings in a project that uses reST field lists (`:param x:`)
+- Documenting new Python functions, classes, methods, modules, or constants
+- Reviewing or fixing docstrings for Sphinx rendering and cross-linking
+- Standardizing drifting or mixed docstring conventions toward one consistent style
 
-## 1. Type aliases / constants
+## Do not use this skill when
 
-Docstring immediately after the assignment. One line when possible. Use double backticks for literals (e.g. ``"dict"``, ``None``). Prefer meaning and effects over restating the type.
+- The project writes Google-style sections (`Args:`) — use python-google-docstrings instead
+- The project uses NumPy style (section names underlined with dashes)
+- Writing READMEs, guides, or comments — docstrings state API contracts, not narratives
 
-```python
-RowFactory = Literal["tuple", "dict"]
-"""Row format for fetch methods: ``"tuple"`` for sequences, ``"dict"`` for column-keyed dicts."""
-
-IsolationLevel = Literal["repeatable read", "serializable"]
-"""Supported transaction isolation levels."""
-```
-
----
-
-## 2. Classes
-
-First line: short noun phrase. Then: lifecycle, concurrency/transaction semantics, invariants. Don’t list every attribute. Use roles for references. Add exactly one blank line between the docstring and the class definition below the docstring.
-
-```python
-@attrs.define(slots=True)
-class PostgresClient:
-    """Async Postgres client with connection pooling and context-bound transactions.
-
-    Must be :meth:`initialize`d with a DSN before use. Uses context variables to
-    share a single connection per logical request, so nested :meth:`transaction`
-    blocks reuse the same connection and use savepoints.
-    """
-```
-
----
-
-## 2.1. :class:`typing.Protocol`
-
-For :class:`typing.Protocol` interfaces:
-
-- Document the **contract and semantics** (what implementers must guarantee), not implementation details.
-- Prefer documenting **when** methods are called, expected side effects, idempotency, ordering, and concurrency guarantees.
-- Do **not** document ``:raises`` for protocols unless an exception is a required part of the contract (usually unknown for interfaces).
-- Use reST roles for referenced types and callables.
-- Don't forget to add ellipsis below the docstring for protocol methods, otherwise the method will be treated as broken.
-- For protocol methods with overloads, see section 3.1 ``@overload``.
-
-```python
-from typing import Protocol, AsyncContextManager
-
-class AppRuntimePort(Protocol):
-    """Application runtime contract for transactional execution.
-
-    Implementations provide a transaction boundary for usecases. Nested
-    transactions may be supported via savepoints; callers should not assume a
-    specific strategy unless explicitly documented by the implementation.
-    """
-
-    def transaction(self) -> AsyncContextManager[None]:
-        """Return an async context manager that scopes a transaction.
-
-        The returned context manager starts a transaction on entry and commits or
-        rolls back on exit according to implementation policy.
-        """
-        ...
-```
-
----
-
-## 3. Methods and functions
-
-Brief summary + behavioral details. Use **reST field lists** for params/returns/raises when needed. Explain what it does, what it returns, and edge cases. Document errors only when meaningful (e.g. ``:raises SomeError: When ...``). Add exactly one blank line between the docstring and the function definition below the docstring.
+## Canonical shape
 
 ```python
 async def fetch_one(self, query: str, *args: Any) -> Mapping[str, Any] | None:
-    """Execute a query and return a single row.
+    """Execute a query and return the first matching row.
 
-    Returns ``None`` when no rows match.
-
-    :param query: SQL query text.
-    :param args: Query parameters.
-    :returns: A row mapping or ``None``.
+    :param query: SQL query text with numbered placeholders.
+    :param args: Positional parameters bound to the placeholders.
+    :returns: The first row as a mapping, or ``None`` when no rows match.
+    :raises QueryError: If the query is malformed or the connection is closed.
     """
 ```
 
----
+- Field order: `:param:` → `:returns:` → `:raises:`; keep the field list as one
+  block after the summary (and optional body), separated by a blank line.
+- Name varargs without stars in the field (`:param args:`); the signature already
+  shows the stars.
+- With annotations present, omit `:type:` and `:rtype:` — duplicating annotations
+  invites drift, and Sphinx autodoc can merge annotations into the output.
 
-## 3.1. ``@overload``
+## Summary line
 
-For overloaded callables, docstrings should primarily reflect the **semantic
-differences between overload variants**, not just duplicate a shared description.
+- One line directly after `"""`, ending with a period; blank line before anything
+  else. State what the caller gets — never "This function ...".
+- PEP 257 prescribes imperative mood for functions and methods: a command such as
+  "Return the first row.", not the description "Returns the first row.".
 
-Many IDEs display the docstring of the **selected overload signature**. If an
-overload stub lacks a docstring, callers may see no documentation at all.
-Therefore, each ``@overload`` should have a docstring.
+## Field lists
 
-**Rules:**
+| Field | Use for |
+|---|---|
+| `:param name:` | Parameter description (aliases: `parameter`, `arg`, `argument`) |
+| `:param type name:` | Inline type — works only when the type is a single word |
+| `:type name:` | Parameter type, when needed and not annotated |
+| `:returns:` | Meaning of the return value (alias: `return`) |
+| `:rtype:` | Return type, when needed and not annotated |
+| `:raises ExcName:` | Trigger condition (aliases: `raise`, `except`, `exception`) |
+| `:ivar name:` / `:cvar name:` | Instance/class variables — prefer trailing docstrings instead |
 
-- Each ``@overload`` stub must have a docstring.
-- Prefer documenting the **behavior specific to that signature** (e.g.
-  return shape, mutation vs new instance, sentinel handling, narrowing).
-- Avoid repeating the entire shared description unless necessary.
-- If overload semantics cannot be meaningfully distinguished, duplicate the
-  shared docstring verbatim as a fallback.
-- The implementation may contain a general docstring, but overload docstrings
-  are the primary source of truth for per-signature guarantees.
-  - Don't forget to add ellipsis below the docstring for overloads, otherwise the method will be treated as broken.
+Standardize on `:param:`, `:returns:`, and `:raises:` — the aliases render the same,
+but one spelling keeps grep and review trivial. Sphinx cross-references the exception
+name in `:raises ExcName:` automatically, like an implicit `:exc:` role. Include only
+fields that add information; a restating field is noise.
+
+## Cross-references and literals
+
+Use roles instead of plain names — they become real links in rendered docs:
+`:mod:` (modules), `:class:` (classes), `:meth:` (methods), `:func:` (functions),
+`:attr:` (attributes and properties), `:exc:` (exceptions), `:data:` (module-level
+data), `:obj:` (anything else). Prefix a target with `~` to render only its last
+component:
+
+```text
+:meth:`initialize`          -> link "initialize" (resolved within the class)
+:class:`pkg.mod.Foo`        -> link "pkg.mod.Foo" (cross-module: fully qualify)
+:meth:`~queue.Queue.get`    -> link rendered as just "get"
+```
+
+Unqualified targets resolve against the current class, then the current module —
+so short names work locally; fully qualify cross-module targets. Use double
+backticks for literal values — ``None``, ``'tuple'``, SQL fragments, flags,
+environment variables — so they render as code, not prose.
+
+## :raises: discipline
+
+- Document only exceptions relevant to the caller's interface, each with its
+  trigger condition — a bare exception name tells the caller nothing actionable.
+- Never document exceptions raised because the caller violated the documented
+  contract: that would paradoxically make behavior under violation of the API
+  part of the API.
+- On protocols and other interfaces, add `:raises:` only when raising is a
+  required part of the contract, not a detail of one implementation.
+
+## Generators
+
+Sphinx's Python domain has no `:yields:` field — an unrecognized field renders as
+a plain generic label with no special handling. Describe the iterator in
+`:returns:` instead; cover one yielded item and any ordering guarantee.
 
 ```python
-from typing import overload, Literal, Self
+async def stream_rows(self, query: str) -> AsyncIterator[Mapping[str, Any]]:
+    """Stream query results one row at a time.
 
+    :returns: An async iterator over matching rows, in result order.
+    """
+```
+
+## Classes, attributes, properties
+
+- Class summary is a noun phrase; the body covers lifecycle, invariants, and
+  concurrency — what a caller cannot recover from the signature.
+- Document attributes with trailing docstrings under their assignments — autodoc
+  reads them, and they stay next to the field in source and IDEs. `:ivar:` fields
+  in the class docstring are the alternative; pick one form and stay consistent.
+- Document a property on its getter, worded like an attribute:
+  `"""The Bigtable path."""`, never `"""Return the Bigtable path."""`.
+- Keep private-field docstrings short, and only when the field is subtle.
+
+```python
+class PostgresClient:
+    """Async Postgres client with pooling and context-bound transactions.
+
+    Must be initialized with a DSN via :meth:`initialize` before use. Nested
+    :meth:`transaction` blocks reuse one connection via savepoints.
+    """
+
+    min_size: int = 2
+    """Minimum number of pooled connections."""
+
+    _ctx_depth: ContextVar[int] = ...
+    """Transaction nesting depth used to manage savepoints."""
+```
+
+## Type aliases, constants, TypedDict
+
+- Constants and aliases take a trailing one-line docstring right after the
+  assignment, explaining meaning and effect — the type is already on the line above.
+- TypedDict: the class docstring says what the dict configures; document keys with
+  trailing docstrings. For `total=False` keys, always state what absence means.
+
+```python
+RowFactory = Literal["tuple", "dict"]
+"""Row format for fetch methods: ``"tuple"`` for sequences, ``"dict"`` for dicts."""
+
+class TransactionOptions(TypedDict, total=False):
+    """Options for :meth:`PostgresClient.transaction`."""
+
+    read_only: bool
+    """Run the transaction read-only. Defaults to ``False`` when absent."""
+
+    isolation: IsolationLevel
+    """Isolation level; server default when absent."""
+```
+
+## Stubs: @overload and Protocol
+
+- Give every `@overload` stub its own docstring — IDEs show the docstring of the
+  selected overload, so an undocumented stub shows the caller nothing.
+- Document what differs per signature: return shape, mutation vs new instance,
+  sentinel handling. If nothing meaningfully differs, duplicate the shared summary
+  verbatim. Keep a general docstring on the implementation.
+- Protocol methods document the contract — when they are called, idempotency,
+  ordering, side effects — never one implementation's details.
+- End each stub body with `...` after the docstring. A docstring alone is a valid
+  body; the `...` marks the stub as intentional, not unfinished.
+
+```python
 @overload
 def register(self, op: str, *, inplace: Literal[True]) -> None:
-    """Register an operation factory and mutate the registry.
-
-    Does not return a value. Raises :exc:`CoreError` if the operation
-    is already registered.
-    """
+    """Register an operation in place; return nothing."""
     ...
 
 @overload
 def register(self, op: str, *, inplace: Literal[False] = False) -> Self:
-    """Register an operation factory and return a new registry.
-
-    Does not mutate the original instance. Raises :exc:`CoreError`
-    if the operation is already registered.
-    """
+    """Register an operation on a new registry, leaving this one unchanged."""
     ...
 
 def register(self, op: str, *, inplace: bool = False) -> Self | None:
     """Register an operation factory.
 
-    Dispatches to the appropriate overload behavior based on ``inplace``.
+    :raises CoreError: If ``op`` is already registered.
     """
 ```
 
-Fallback (no meaningful semantic difference):
+## Length and formatting
 
-```python
-@overload
-def normalize(value: int) -> int:
-    """Normalize a numeric value without changing its meaning."""
-    ...
-
-@overload
-def normalize(value: str) -> str:
-    """Normalize a numeric value without changing its meaning."""
-    ...
-
-def normalize(value: int | str) -> int | str:
-    """Normalize a value without changing its meaning."""
-    ...
-```
-
----
-
-## 4. Attributes / fields
-
-Trailing docstring when public or needing clarification. Omit or keep very short for private fields (only if subtle or critical).
-
-```python
-min_size: int = 2
-"""Minimum number of connections in the pool."""
-
-_ctx_depth: ContextVar[int] = ...
-"""Transaction nesting depth used to manage savepoints."""
-```
-
----
-
-## 5. TypedDict keys
-
-Class docstring: what the dict represents and where it’s used. Key docstrings: behavior, defaults, interpretation. If a key is optional (e.g. `total=False`), note what happens when absent.
-
-```python
-class TransactionOptions(TypedDict, total=False):
-    """Options for :meth:`PostgresClient.transaction`."""
-
-    read_only: bool
-    """If true, transaction is read-only."""
-
-    isolation: IsolationLevel
-    """Transaction isolation level (e.g. ``"repeatable read"``, ``"serializable"``)."""
-```
-
----
-
-## reST roles (use for cross-references)
-
-| Role | Use for |
-|------|--------|
-| ``:class:`MyClass`` | Classes |
-| ``:meth:`MyClass.method`` | Methods |
-| ``:func:`my_function`` | Functions |
-| ``:attr:`MyClass.attr`` | Attributes/properties |
-| ``:mod:`package.module`` | Modules |
-| ``:data:`CONSTANT`` | Module-level data/constants |
-| ``:exc:`SomeError`` | Exceptions |
-
-Same-class: ``:meth:`initialize`` is fine. Cross-module: use fully-qualified names, e.g. ``:class:`pkg.mod.Foo``.
-
----
-
-## Description length (be concise)
-
-The description explains intent and non-obvious behavior — it is not a place for prose. This budget applies to the **summary and body**, not to `:param:`/`:returns:`/`:raises:` entries (size those to the actual API surface).
-
-- **Default to the one-line summary.** For simple or self-explanatory APIs, the summary is the whole docstring; do not add a body.
-- **Add a body only when it earns its place** — non-obvious behavior, side effects, invariants, edge cases, or "why". Keep it to ~1–3 sentences.
-- **Scale with complexity, not by default.** Reserve longer explanations for genuinely complex or tricky code (concurrency, transactions, subtle contracts). Even then, prefer the shortest correct explanation.
-
----
-
-## Formatting (hard requirements)
-
-- **Sentence-cased**, end with a period. One blank line between definition and docstring.
-- **Present tense** (“Returns …”, “Acquires …”).
-- Double backticks for literal values, SQL fragments, flags, env vars.
-- Blank line between summary and body. ~88 chars line length when reasonable.
-- **Do not repeat type hints** in the docstring. Add semantics, invariants, side effects, concurrency, performance caveats.
-
----
+- Default docstring is the summary line alone. Add a body only when it earns its
+  place — non-obvious behavior, side effects, invariants, "why" — in 1–3 sentences.
+  Size `:param:`/`:returns:`/`:raises:` to the real API surface.
+- Never restate the type in prose. Annotations carry the type; the description
+  adds semantics: units, constraints, defaults on absence.
+- Blank line between the summary (or body) and the field list.
+- Wrap near 88 columns; the summary must stay on one physical line.
 
 ## Anti-patterns
 
-**Attribute** — Bad (repeats type): ``"""Timeout as an integer."""``  
-Good: ``"""Timeout in seconds for acquiring a connection from the pool."""``
+| Wrong | Right |
+|---|---|
+| `:param timeout: The timeout, an integer.` | `:param timeout: Seconds to wait for a pool connection.` |
+| `:returns: The result.` | `:returns: True if the row was inserted.` |
+| `"""Returns the pathname."""` | `"""Return the pathname."""` — PEP 257 imperative mood |
+| Plain-text reference `PostgresClient.transaction` | `:meth:` role — plain names never link |
+| `:yields:` field | Describe the iterator in `:returns:` — Sphinx has no yields field |
+| `:raises ValueError:` for arguments the contract already forbids | Omit — contract violations are not interface behavior |
 
-**TypedDict** — Bad (no role): ``"""Options for PostgresClient.transaction."""``  
-Good: ``"""Options for :meth:`PostgresClient.transaction`."""``
+## Related skills
 
----
-
-## Checklist before writing
-
-1. **User-facing?** → Document behavior and edge cases.
-2. **Type hint already clear?** → Docstring adds semantics, not types.
-3. **Correctness-sensitive?** (transactions, concurrency, caching, idempotency) → Must document.
-4. **Can cross-link?** → Use ``:meth:`...`` / ``:class:`...``.
-5. ``@overload``? → Each overload stub must have a docstring; document semantic differences per signature.
-6. :class:`typing.Protocol`? → Document contract/semantics; avoid ``:raises`` unless mandated.
-
----
-
-## Minimal templates
-
-**Type alias / constant:**
-`Thing = ...` → `"""What it represents and how callers should interpret it."""`
-
-**Class:**
-One-line summary, then key behaviors, lifecycle, invariants, and ``:meth:`X.foo`` / ``:class:`Y`` references.
-
-**Function / method:**
-One-line summary, then details; ``:param name: Meaning.`` ``:returns: Meaning.`` ``:raises SomeError: When.``
-
-**Field:**
-`field: Type = default` → `"""Meaning, units, constraints, or why it exists."""`
-
----
-
-Compatible with PEP 257, reST, and IDE tooltips. Keep roles even in Markdown-only contexts; they stay readable and beneficial.
+- python-google-docstrings — the same rules expressed as Google-style sections via Sphinx Napoleon
+- self-documenting-code — better names and structure shrink what docstrings must explain
+- altitude-docs — deciding what belongs in docstrings vs higher-level documentation
