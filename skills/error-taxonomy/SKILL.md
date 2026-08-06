@@ -54,6 +54,8 @@ For any raise site, ask: **would a correct server still hit this purely because 
 
 `internal` is reserved for genuine invariant guards: defensive `default:` arms over already-validated sets, unreachable branches, consistency checks on data the system itself built. If an `internal` fires, the correct response is a bug fix, never a client-side workaround — which is exactly why its message stays hidden and its rate deserves an alarm.
 
+For worked classifications of the contested cases (field-not-on-model vs malformed value, conflict vs precondition, not-found vs authz, whose-constraint-failed), read [references/classification-walkthrough.md](references/classification-walkthrough.md).
+
 ## Codes and messages
 
 - **Codes are stable identifiers; messages are free text.** Give recurring error *situations* a canonical code (`query_feature_unsupported`, `field_not_on_read_model`) and reuse it everywhere the situation occurs — including across every implementation of a shared contract, so the same mistake yields the same code on every backend. Don't mint near-synonym codes; a census of existing codes comes before a new one.

@@ -24,6 +24,8 @@ The review targets any system that processes work it didn't synchronously receiv
 
 ## The review passes
 
+For a running review, [references/review-checklist.md](references/review-checklist.md) carries these passes as check-off questions; the sections below carry the reasoning.
+
 ### 1. Poison: work that can never succeed
 
 A message that fails deserialization, or deterministically crashes its handler, will be redelivered forever unless something counts and caps it.
