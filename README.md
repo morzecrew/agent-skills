@@ -282,3 +282,20 @@ Treats a promise proven — not a test counted — as the unit of value, and con
 - Test suite economics (High) - promise-per-test consolidation, sabotage-proven deletion
 - Reliability (High) - deterministic concurrency control over flake-retry volume
 - Suite durability (Medium-High) - enrollment ratchets so absence fails loudly
+
+### error-taxonomy
+
+Designs and enforces an error contract: a small closed set of error kinds, each with a transport mapping, message exposure, and retryability decided once at design time. Classification at the raise site follows one test — could a correct server hit this purely from what the caller requested, and can the caller fix it? — and every consequence (status, visibility, retry) follows from the kind. Includes the sweep workflow for reclassifying an existing codebase.
+
+**Use when:**
+
+- Designing error handling for a new API, module, or service
+- Deciding what to raise, what status an error maps to, or whether it's retryable
+- Reviewing raise sites and catch blocks in a diff
+- Sweeping "everything is a 500" codebases or message-matching callers
+
+**Categories covered:**
+
+- Error contracts (High) - kinds, codes, transport mapping, exposure, retryability
+- API consistency (High) - same mistake, same kind, every backend
+- Security hygiene (Medium-High) - hidden server faults, scrubbed exposures
