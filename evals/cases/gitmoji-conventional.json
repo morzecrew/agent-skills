@@ -1,0 +1,29 @@
+{
+  "skill": "gitmoji-conventional",
+  "cases": [
+    {
+      "id": "e1",
+      "mode": "explicit",
+      "prompt": "Use the gitmoji-conventional skill. Write the commit message subject line (reply with the subject line only, nothing else) for this change: added a JWT-based login endpoint to the auth service.",
+      "checks": [
+        { "pattern": "^\\u2728 feat(\\([a-z0-9-]+\\))?!?: \\S" }
+      ]
+    },
+    {
+      "id": "e2",
+      "mode": "explicit",
+      "prompt": "Use the gitmoji-conventional skill. Write the commit message subject line (reply with the subject line only, nothing else) for this change: fixed a crash when parsing empty configuration files.",
+      "checks": [
+        { "pattern": "^\\ud83d\\udc1b fix(\\([a-z0-9-]+\\))?: \\S" }
+      ]
+    },
+    {
+      "id": "i1",
+      "mode": "implicit",
+      "prompt": "I added rate limiting to the api gateway. Give me the commit subject line, just the line itself.",
+      "checks": [
+        { "pattern": "^\\u2728 feat(\\([a-z0-9-]+\\))?: \\S" }
+      ]
+    }
+  ]
+}

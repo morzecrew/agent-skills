@@ -1,0 +1,17 @@
+{
+  "skill": "error-taxonomy",
+  "cases": [
+    {
+      "id": "e1",
+      "mode": "explicit",
+      "prompt": "Use the error-taxonomy skill. Classify each raise site below with exactly one error kind from the skill's canonical set. Answer as a numbered list, one kind name per line, no explanations. (1) The caller passed limit=-5 to a paginated list endpoint. (2) The database connection was refused while handling a request. (3) A required environment variable is missing at service startup. (4) A defensive default branch over an already-validated enum was somehow reached. (5) A document update failed because another writer changed the document's version concurrently.",
+      "checks": [
+        { "pattern": "1\\D[^\\n]*validation", "flags": "i" },
+        { "pattern": "2\\D[^\\n]*infrastructure", "flags": "i" },
+        { "pattern": "3\\D[^\\n]*configuration", "flags": "i" },
+        { "pattern": "4\\D[^\\n]*internal", "flags": "i" },
+        { "pattern": "5\\D[^\\n]*conflict", "flags": "i" }
+      ]
+    }
+  ]
+}
