@@ -62,7 +62,7 @@ Count usages before extracting. Setup rebuilt in a handful of files becomes a lo
 
 A weaker test is subsumed only when a surviving test provably carries its promise: **sabotage the behavior and watch the survivor fail** — the same break that would have failed the deleted test. Green-after-deletion alone proves nothing (the suite is also green when the survivor is blind). Ritual tests that cannot fail for a nameable reason are strengthened into real assertions or deleted outright; a green tick that carries no information costs runtime and, worse, confidence.
 
-Sabotage is mutation testing by hand, and tools like PIT and Stryker automate the sweep — every surviving mutant is a behavior change no test noticed, and mutation score (killed over non-equivalent mutants) is the metric coverage percentage pretends to be: ritual tests raise coverage and kill nothing. One caveat carries over from hand sabotage: a survivor is not automatically a missing test — it may be an *equivalent mutant*, changing no behavior at all, and deciding that is undecidable in general. So every survivor gets a named why, never a shrug.
+Sabotage is mutation testing by hand, and tools like PIT and Stryker automate the sweep, reporting killed/detected and surviving mutants — and the mutation score they report is the metric coverage percentage pretends to be: ritual tests raise coverage and kill nothing. One caveat carries over from hand sabotage: a survivor is not automatically a missing test — it may be an *equivalent mutant*, changing no behavior at all, and deciding that is undecidable in general. So every survivor gets a named why, never a shrug.
 
 ## The honesty floor
 
