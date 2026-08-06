@@ -18,6 +18,8 @@ npx skills add morzecrew/agent-skills@keep-a-changelog
 
 Skills are automatically available once installed. The agent will use them when relevant tasks are detected.
 
+Skills cross-reference each other in their "Related skills" sections. Every skill works standalone, but when installing or vendoring a subset, consider including the referenced siblings so those links resolve.
+
 ## Skill Structure
 
 Each skill contains:
