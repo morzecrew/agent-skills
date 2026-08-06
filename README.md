@@ -250,3 +250,37 @@ Adversarially audits the agent's own just-finished work — a branch after RFC o
 - Defect discovery (High) - systematic hunt through author blind spots
 - Verification honesty (High) - proven-red tests, sabotage checks, patch coverage
 - Honest reporting (Medium-High) - findings ranked, residue stated, rules distilled
+
+### less-code-same-behavior
+
+Deep divergence and DRY audit that shrinks a codebase without changing behavior: literal copy-paste, same-concern-different-shapes, scattered responsibilities, type-lying configs, and bloated public surfaces. Consolidations respect the project's declared layers and import contracts (extracted code lives in the lowest legally importable layer; boundary-violating dedup stays duplicated), keep public surfaces stable via shims, verify every duplicate/dead claim before acting, and treat NO ACTION as a first-class verdict.
+
+**Use when:**
+
+- User asks to deduplicate, DRY up, consolidate, or converge divergent code
+- User wants a divergence analysis or "less code with the same functionality"
+- A codebase or subsystem should shrink without behavior change
+- Reviewing structure: scattered modules, bloated facades, accreted config surfaces
+
+**Categories covered:**
+
+- Code consolidation (High) - net-negative diffs with proven-identical behavior
+- Architecture respect (High) - layer and import-contract constraints on placement
+- Audit calibration (Medium-High) - honest NO ACTION verdicts, diminishing-returns stops
+
+### fewer-tests-more-proof
+
+Consolidates and optimizes a test suite so it proves more with fewer, stronger tests: shared conformance batteries over per-implementation copies, differential testing against a reference implementation with an explicit divergence catalog, deterministic interleaving control instead of flake-retry volume, census-driven promotion of shared setup, and sabotage-proven deletion of subsumed or ritual tests — under an honesty floor where promise coverage never drops.
+
+**Use when:**
+
+- User asks to consolidate, optimize, dedupe, or clean up tests
+- Per-implementation test files repeat the same scenarios per backend or variant
+- Suite runtime or maintenance cost is the complaint and coverage must not drop
+- Setting up conformance or parity testing across implementations of one contract
+
+**Categories covered:**
+
+- Test suite economics (High) - one promise, one strong test, every implementation
+- Coverage honesty (High) - monotone promise inventory, sabotage-proven subsumption
+- Suite durability (Medium-High) - enrollment ratchets so consolidation doesn't decay
