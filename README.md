@@ -299,3 +299,20 @@ Designs and enforces an error contract: a small closed set of error kinds, each 
 - Error contracts (High) - kinds, codes, transport mapping, exposure, retryability
 - API consistency (High) - same mistake, same kind, every backend
 - Security hygiene (Medium-High) - hidden server faults, scrubbed exposures
+
+### ratchet-what-you-build
+
+Closes the gap between "built the mechanism" and "the mechanism is mandatory". Every guard, battery, or safe default gets ranked on an enforcement ladder — impossible-to-skip, on-by-default, CI gate, runtime fail-closed, convention — and everything sitting at convention is an open finding. Includes gate-design rules learned the hard way: prove the gate can fail in both directions, an empty derivation satisfies every subset check while proving nothing, and waivers must be re-verified against reality.
+
+**Use when:**
+
+- Finishing any protective mechanism: check, guard, battery, safe mode
+- A shipped check turns out to be opt-in or absent from CI
+- A safe mechanism exists but the unsafe default still ships
+- A postmortem asks "we had a check for this — why didn't it fire?"
+
+**Categories covered:**
+
+- Enforcement design (High) - the ladder from convention to impossible-to-skip
+- Drift prevention (High) - enrollment gates, non-empty derivations, verified waivers
+- Audit closure (Medium-High) - the "what keeps it true?" sweep
