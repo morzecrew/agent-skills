@@ -367,3 +367,20 @@ Evaluates a dependency before adoption, in strict order: the principled-constrai
 - Dependency evaluation (High) - constraint test, cost-per-capability, health, fit
 - Supply-chain discipline (High) - seams, transitive awareness, license checks
 - Decision records (Medium-High) - recorded verdicts that end re-litigation
+
+### escape-hatch-policy
+
+Decides when an abstraction earns a raw/bypass/override hatch and how to design one that stays safe. The two-question test: grant only where the un-modelable long tail is large AND the cross-cutting invariants bypassed (tenancy, concurrency control, encryption, audit) are few — otherwise extend the structured surface or point at the honest lower layer, where bypass is visible instead of disguised. Granted hatches are named, greppable, fail-closed when unset, scoped to fragments over whole operations, and counted — recurring usage is a feature request against the structured surface.
+
+**Use when:**
+
+- Someone asks for raw access, a passthrough field, or a bypass flag
+- Tempted to add a "just pass anything" parameter to a typed API
+- Reviewing an opt-out, unsafe mode, or "advanced" override in a diff
+- An existing hatch's usage keeps growing and nobody decided that
+
+**Categories covered:**
+
+- API design (High) - the two-question test, scoped fragments, lower-layer honesty
+- Safety defaults (High) - declared opt-outs, fail-closed when unset
+- Abstraction health (Medium) - hatch usage as a feature-gap signal
