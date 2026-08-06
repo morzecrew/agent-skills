@@ -350,3 +350,20 @@ A systematic sweep of the unhappy paths in async and background systems, where d
 - Async reliability (High) - poison, redelivery, reclaim, partial-batch honesty
 - Lifecycle discipline (High) - drain over cancel, supervision, fault isolation
 - Failure observability (Medium-High) - metrics on every drop, no payload leaks
+
+### dependency-diligence
+
+Evaluates a dependency before adoption, in strict order: the principled-constraint test first (one architectural invariant — seeded randomness, async-only I/O, layer purity — can rule out a whole library family in a sentence), capability-per-cost second (used fraction, what stdlib and carried deps already provide, the transitive tree), health and fit last. Every evaluation ends in one of four recorded verdicts: adopt behind a seam, take the idea not the dep, defer with a reopening trigger, or reject with the reason.
+
+**Use when:**
+
+- About to add a package, library, or tool to a project
+- Asked "should we use X" or comparing libraries for a capability
+- Reviewing a PR whose lockfile diff adds dependencies
+- Auditing an existing dependency tree
+
+**Categories covered:**
+
+- Dependency evaluation (High) - constraint test, cost-per-capability, health, fit
+- Supply-chain discipline (High) - seams, transitive awareness, license checks
+- Decision records (Medium-High) - recorded verdicts that end re-litigation
