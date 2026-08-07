@@ -48,7 +48,10 @@ LINK_DEF = re.compile(r"^\[([^\]]+)\]:\s*\S+", re.M)
 BULLET = re.compile(r"^-\s+(.*)$")
 SEMVER_CORE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
-FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*(\S.*)?$")
+# GFM: a fence is indented at most three spaces, and a backtick fence's info
+# string may not itself contain a backtick. Lines that break either rule are
+# ordinary content, and treating them as delimiters skips real structure.
+FENCE = re.compile(r"^ {0,3}(`{3,}(?!.*`)|~{3,})[ \t]*(\S.*)?$")
 VERSION = re.compile(r"^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 

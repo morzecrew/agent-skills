@@ -138,6 +138,24 @@ class ChangelogTest(unittest.TestCase):
                 "````text\n```\n## [9.9.9] - not-a-date\n````\n")
         self.assertEqual(self.check(text), [])
 
+    def test_over_indented_fence_is_content_not_a_delimiter(self):
+        # GFM allows at most three spaces. Treating a deeper line as an opener
+        # would swallow the real structure after it — so the assertion is that
+        # the bad heading is still seen, not merely that the file parses.
+        text = ("# CL\n\n## [Unreleased]\n\n### Added\n\n- x\n\n"
+                "    ```text\n    stuff\n\n## Bogus Heading\n")
+        self.assertTrue(any(p.startswith("S2") for p in self.check(text)))
+
+    def test_backtick_in_info_string_is_not_an_opener(self):
+        text = ("# CL\n\n## [Unreleased]\n\n### Added\n\n- x\n\n"
+                "```js `inline`\n\n## Bogus Heading\n")
+        self.assertTrue(any(p.startswith("S2") for p in self.check(text)))
+
+    def test_legitimately_indented_fence_still_hides_its_example(self):
+        text = ("# CL\n\n## [Unreleased]\n\n### Added\n\n- x:\n\n"
+                "  ```text\n  ## Bogus Heading\n  ```\n")
+        self.assertEqual(self.check(text), [])
+
     def test_yanked_tag_accepted(self):
         self.assertNotIn("S2", " ".join(self.check(GOOD)))
 
