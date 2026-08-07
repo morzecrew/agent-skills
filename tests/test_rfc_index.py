@@ -5,12 +5,14 @@ from __future__ import annotations
 import contextlib
 import io
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
-from support import load_script, run_script
+from support import SKILLS, load_script, run_script
 
 script = load_script("rfc-writer", "rfc_index.py")
+SCRIPT_DIR = SKILLS / "rfc-writer" / "scripts"
 
 INDEX = """# RFCs
 
@@ -147,6 +149,61 @@ class RfcCollectionTest(unittest.TestCase):
         result = run_script("rfc-writer", "rfc_index.py", "new", "Orphan", cwd=self.root)
         self.assertEqual(result.returncode, 1)
         self.assertFalse((self.rfcs / "0003-orphan.md").exists(), "no orphan RFC may survive")
+
+    def test_failed_index_write_removes_the_new_rfc(self):
+        # Regression: pre-resolving lookups covered a missing index, not a
+        # failing write. A full disk or read-only mount left the RFC on disk
+        # with no row and no next-free bump — an orphan nothing points at.
+        index_text = (self.rfcs / "INDEX.md").read_text(encoding="utf-8")
+
+        class FullDisk:
+            def read(self):
+                return index_text
+
+            def seek(self, *args):
+                pass
+
+            def truncate(self, *args):
+                pass
+
+            def write(self, *args):
+                raise OSError("No space left on device")
+
+        @contextlib.contextmanager
+        def failing_lock(_path):
+            yield FullDisk()
+
+        original = script.locked_index
+        script.locked_index = failing_lock
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                script.cmd_new(self.rfcs, "Doomed", SCRIPT_DIR)
+        finally:
+            script.locked_index = original
+
+        self.assertFalse((self.rfcs / "0003-doomed.md").exists(), "no orphan RFC may survive")
+        self.assertEqual((self.rfcs / "INDEX.md").read_text(encoding="utf-8"), index_text)
+
+    @unittest.skipIf(script.fcntl is None, "no fcntl on this platform")
+    def test_index_lock_excludes_a_concurrent_writer(self):
+        # Allocation and rewrite must be one critical section: two runs that
+        # read the index concurrently both rewrite it, and the second write
+        # drops the first's row — losing what numbering is derived from.
+        index = self.rfcs / "INDEX.md"
+        entered = threading.Event()
+
+        def contender():
+            with script.locked_index(index):
+                entered.set()
+
+        with script.locked_index(index):
+            thread = threading.Thread(target=contender, daemon=True)
+            thread.start()
+            self.assertFalse(
+                entered.wait(0.5), "a second writer entered while the index was locked"
+            )
+        self.assertTrue(entered.wait(5), "the lock must be released on exit")
+        thread.join(timeout=5)
 
     def test_number_already_taken_is_refused_whatever_the_slug(self):
         # Regression: the guard compared filenames, so a different title at the

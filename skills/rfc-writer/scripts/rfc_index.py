@@ -25,9 +25,15 @@ the one-liner says, and when a status changes stay in SKILL.md.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import re
 import sys
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # Windows: the lock degrades to none, the rollback stays.
+    fcntl = None
 
 STATUS_EMOJI = {"📝": "Draft", "🚧": "In progress", "✅": "Complete", "❌": "Rejected"}
 
@@ -207,44 +213,79 @@ def index_insert_position(lines: list[str], index_path: Path) -> int:
     return header + 1
 
 
+@contextlib.contextmanager
+def locked_index(index_path: Path):
+    """Hold the index exclusively across the whole read-modify-write.
+
+    Allocation and rewrite have to be one critical section. Two runs that pick
+    different numbers still both rewrite the index, and without the lock the
+    second write drops the first's row — losing the very record numbering is
+    derived from. Reads elsewhere take no lock, so they cannot deadlock here.
+    """
+    with index_path.open("r+", encoding="utf-8") as handle:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield handle
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = None) -> int:
-    number = next_number(rfc_dir) if number is None else number
-    if not 1 <= number <= 9999:
-        fail(f"--number must be between 1 and 9999 (got {number}) — RFC ids are four digits")
-    existing = rfc_files(rfc_dir)
-    if number in existing:
-        # The identifier is the number, not the filename: a different slug at the
-        # same number still produces two RFCs sharing one id.
-        fail(f"RFC {number:04d} already exists as {existing[number].name}")
-    path = rfc_dir / f"{number:04d}-{slugify(title)}.md"
-    if path.exists():
-        fail(f"{path.name} already exists")
-
-    # Resolve everything that can fail *before* writing, so a missing index or
-    # table cannot leave an orphan RFC file for the user to clean up by hand.
+    requested = number
     index_path = find_index(rfc_dir)
-    index_text = index_path.read_text(encoding="utf-8")
-    insert_at = index_insert_position(index_text.splitlines(), index_path)
+    with locked_index(index_path) as handle:
+        # Allocate inside the lock: another run may have taken this number
+        # between our reading the directory and our writing the row.
+        number = next_number(rfc_dir) if requested is None else requested
+        if not 1 <= number <= 9999:
+            fail(f"--number must be between 1 and 9999 (got {number}) — RFC ids are four digits")
+        existing = rfc_files(rfc_dir)
+        if number in existing:
+            # The identifier is the number, not the filename: a different slug at
+            # the same number still produces two RFCs sharing one id.
+            fail(f"RFC {number:04d} already exists as {existing[number].name}")
+        path = rfc_dir / f"{number:04d}-{slugify(title)}.md"
+        if path.exists():
+            fail(f"{path.name} already exists")
 
-    body = template_body(script_dir).replace("RFC NNNN — <Title>", f"RFC {number:04d} — {title}")
-    try:
-        # Exclusive create: two runs racing for the same number cannot both win,
-        # which the existence check alone cannot guarantee.
-        with path.open("x", encoding="utf-8") as handle:
-            handle.write(body + "\n")
-    except FileExistsError:
-        fail(f"{path.name} was created by another process — re-run to take the next number")
-    row = f"| [{number:04d}]({path.name}) | {title} | 📝 Draft | TODO: one-line summary |"
+        # Resolve everything that can fail *before* writing, so a missing index
+        # or table cannot leave an orphan RFC file to clean up by hand.
+        index_text = handle.read()
+        insert_at = index_insert_position(index_text.splitlines(), index_path)
 
-    lines = index_text.splitlines()
-    lines.insert(insert_at, row)
+        body = template_body(script_dir).replace("RFC NNNN — <Title>", f"RFC {number:04d} — {title}")
+        try:
+            # Exclusive create: two runs racing for the same number cannot both
+            # win, which the existence check alone cannot guarantee.
+            with path.open("x", encoding="utf-8") as rfc_handle:
+                rfc_handle.write(body + "\n")
+        except FileExistsError:
+            fail(f"{path.name} was created by another process — re-run to take the next number")
+        row = f"| [{number:04d}]({path.name}) | {title} | 📝 Draft | TODO: one-line summary |"
 
-    # Only ever raise the claim: `new --number 3` on a collection already at
-    # 0008 must not rewind the index to 0004.
-    claimed = claimed_next(index_text) or 0
-    next_free = max(number + 1, claimed)
-    updated = NEXT_FREE.sub(lambda m: f"{m.group(1)}{next_free:04d}{m.group(3)}", "\n".join(lines))
-    index_path.write_text(updated + "\n", encoding="utf-8")
+        lines = index_text.splitlines()
+        lines.insert(insert_at, row)
+
+        # Only ever raise the claim: `new --number 3` on a collection already at
+        # 0008 must not rewind the index to 0004.
+        claimed = claimed_next(index_text) or 0
+        next_free = max(number + 1, claimed)
+        updated = NEXT_FREE.sub(lambda m: f"{m.group(1)}{next_free:04d}{m.group(3)}", "\n".join(lines))
+        try:
+            handle.seek(0)
+            handle.truncate()
+            handle.write(updated + "\n")
+        except OSError as exc:
+            # Pre-resolving lookups cannot cover a failing write (read-only
+            # mount, full disk). An RFC with no index row is an orphan nothing
+            # will point at, so undo the file we just created.
+            path.unlink(missing_ok=True)
+            fail(
+                f"could not update {index_path.name}: {exc} — removed {path.name} "
+                "so the collection stays consistent"
+            )
 
     print(f"created {path}")
     print(f"updated {index_path} (row added, next free number -> {next_free:04d})")
