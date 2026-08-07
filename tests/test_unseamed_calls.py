@@ -24,9 +24,19 @@ class StripNoiseTest(unittest.TestCase):
         kept = script.strip_noise(source)
         self.assertEqual([number for number, _ in kept], [1, 6])
 
-    def test_comments_are_dropped(self):
-        kept = script.strip_noise(["# time.time()", "// Date.now()", "x = 1"])
-        self.assertEqual([text for _, text in kept], ["x = 1"])
+    def test_comments_are_dropped_per_language(self):
+        self.assertEqual(
+            [t for _, t in script.strip_noise(["# time.time()", "x = 1"], "python")], ["x = 1"]
+        )
+        self.assertEqual(
+            [t for _, t in script.strip_noise(["// Date.now()", "x = 1"], "js")], ["x = 1"]
+        )
+
+    def test_hash_is_a_private_field_in_javascript_not_a_comment(self):
+        # Regression: language-agnostic prefixes hid real calls in JS private
+        # field initializers.
+        self.assertEqual(len(script.strip_noise(["#count = Date.now();"], "js")), 1)
+        self.assertEqual(script.strip_noise(["#count = 1"], "python"), [])
 
     def test_directive_exempts_a_line(self):
         kept = script.strip_noise(["t = time.time()  # allow-unseamed: real clock on purpose"])

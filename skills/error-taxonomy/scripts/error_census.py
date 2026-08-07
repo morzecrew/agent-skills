@@ -42,7 +42,9 @@ RAISE_PATTERNS: dict[str, str] = {
     "js": r"\bthrow\s+new\s+([A-Za-z_][\w.]*)",
     "go": r"\b(errors\.New|fmt\.Errorf)\s*\(",
     "rust": r"\b(Err|panic!|bail!|ensure!)\s*[\(!]",
-    "java": r"\bthrow\s+(?:new\s+)?([A-Za-z_][\w.]*)",
+    # `new` optional for Kotlin, but the target must look like a type and be
+    # constructed — otherwise a bare rethrow (`throw e;`) becomes its own kind.
+    "java": r"\bthrow\s+(?:new\s+)?([A-Z][\w.]*)\s*\(",
 }
 
 SUFFIX_LANGUAGE = {

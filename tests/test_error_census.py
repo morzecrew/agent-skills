@@ -124,6 +124,12 @@ class CensusTest(unittest.TestCase):
         result = script.census(self.root, ["java"], [], [])
         self.assertIn("IllegalStateException", result["counts"]["byKind"])
 
+    def test_bare_rethrow_is_not_a_kind(self):
+        # Regression: making `new` optional for Kotlin also matched `throw e;`,
+        # inventing a kind named after the variable.
+        self.write("app/a.java", "try { f(); } catch (IOException e) { throw e; }\n")
+        self.assertEqual(script.census(self.root, ["java"], [], [])["counts"]["sites"], 0)
+
     def test_raises_mentioned_in_docstrings_are_not_counted(self):
         self.write(
             "src/a.py",

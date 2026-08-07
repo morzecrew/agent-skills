@@ -91,6 +91,15 @@ DEFAULT_ALLOW = [
     "examples/*", "*/examples/*", "benchmarks/*", "*/benchmarks/*",
 ]
 
+# Per language: "#" starts a comment in Python but declares a private field
+# in JS/TS, where treating it as a comment hides real calls.
+COMMENT_PREFIXES_BY_LANGUAGE = {
+    "python": ("#",),
+    "js": ("//", "*", "/*"),
+    "go": ("//", "*", "/*"),
+    "rust": ("//", "*", "/*"),
+    "java": ("//", "*", "/*"),
+}
 COMMENT_PREFIXES = ("#", "//", "*", "/*")
 # Anchored to a comment marker: a bare substring can be planted in a string
 # literal on the same line to hide a real leak.
@@ -100,7 +109,7 @@ TRIPLE_QUOTE = re.compile(r'"""|\'\'\'')
 TRAILING_COMMENT = re.compile(r'\s+(?:#|//)(?![^\'"]*[\'"]\s*$).*$')
 
 
-def strip_noise(lines: list[str]) -> list[tuple[int, str]]:
+def strip_noise(lines: list[str], language: str = "python") -> list[tuple[int, str]]:
     """Drop comments and docstring bodies — prose naming a function is not a call.
 
     Documentation routinely mentions the very APIs this tool hunts ("defaults to
@@ -127,7 +136,8 @@ def strip_noise(lines: list[str]) -> list[tuple[int, str]]:
         # but its prose still must not be scanned.
         if TRIPLE_QUOTE.match(stripped) and quotes >= 2 and quotes % 2 == 0:
             continue
-        if stripped.startswith(COMMENT_PREFIXES) or DIRECTIVE.search(line):
+        prefixes = COMMENT_PREFIXES_BY_LANGUAGE.get(language, COMMENT_PREFIXES)
+        if stripped.startswith(prefixes) or DIRECTIVE.search(line):
             continue
         # A clock name mentioned in a trailing comment is prose, not a call.
         code = TRAILING_COMMENT.sub("", stripped).strip()
@@ -186,7 +196,7 @@ def scan(
         is_seam = any(relative.startswith(prefix) for prefix in seams)
         is_allowed = matches_any(relative, allow)
 
-        for number, stripped in strip_noise(text.splitlines()):
+        for number, stripped in strip_noise(text.splitlines(), language):
             # Every distinct kind on the line, not just the first: one line can
             # read the clock and the environment at once.
             seen_kinds: set[str] = set()

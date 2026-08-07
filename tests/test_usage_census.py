@@ -85,6 +85,10 @@ class CensusTest(unittest.TestCase):
         kinds = self.census("thing")["counts"]["byKind"]
         self.assertNotIn("from-import", kinds, kinds)
 
+    def test_aliased_import_list_member(self):
+        pats = script.build_patterns("helper")
+        self.assertEqual(script.classify("    helper as h,", pats, True), "from-import")
+
     def test_string_reference_counted(self):
         self.write("src/pkg/reg.py", "def handler():\n    return 1\n")
         self.write("config/app.py", 'ENTRYPOINT = "handler"\n')

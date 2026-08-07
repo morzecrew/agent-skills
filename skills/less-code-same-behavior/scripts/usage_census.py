@@ -75,7 +75,7 @@ def build_patterns(symbol: str) -> dict[str, re.Pattern]:
         "from-import": re.compile(rf"^\s*from\s+\S+\s+import\s+.*\b{s}\b"),
         # Only meaningful inside a parenthesized import list; on its own a
         # bare line is a standalone reference, not an import.
-        "import-list-item": re.compile(rf"^\s*{s}\s*,?\s*$"),
+        "import-list-item": re.compile(rf"^\s*{s}(?:\s+as\s+\w+)?\s*,?\s*$"),
         "plain-import": re.compile(rf"^\s*(?:import|require)\s*\(?\s*[\"']?\S*\b{s}\b"),
         "attribute": re.compile(rf"\.{s}\b"),
         "call": re.compile(rf"\b{s}\s*\("),
