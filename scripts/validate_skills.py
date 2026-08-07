@@ -15,15 +15,19 @@ Errors (fail the run):
   E9  a relative link to references/ points at a missing file
   E10 a file in references/ is never mentioned in its SKILL.md
   E11 README.md "Available Skills" is out of sync with skills/ (either direction)
+  E12 a bundled script does not compile (python) or parse (shell, javascript)
+  E13 a skill ships scripts/ that its SKILL.md never mentions
 
 Warnings (reported, do not fail):
   W1  body has no "## Do not use this skill when" section
   W2  SKILL.md exceeds 500 lines
+  W3  a bundled JavaScript file could not be checked (node not installed)
 """
 
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -132,6 +136,41 @@ def check_skill(skill_dir: Path, all_names: set[str]) -> None:
         for ref_file in sorted(refs_dir.glob("*.md")):
             if ref_file.name not in text:
                 err("E10", f"skills/{name}: references/{ref_file.name} never mentioned in SKILL.md")
+
+    scripts_dir = skill_dir / "scripts"
+    if scripts_dir.is_dir():
+        for script in sorted(scripts_dir.iterdir()):
+            if script.name.startswith(".") or script.is_dir():
+                continue
+            if script.suffix == ".py":
+                try:
+                    # Raw bytes: compile() honors a PEP 263 coding cookie, while a
+                    # forced UTF-8 decode would reject a valid non-UTF-8 script.
+                    compile(script.read_bytes(), str(script), "exec")
+                except (SyntaxError, ValueError) as exc:
+                    # ValueError covers source containing NUL, which is a
+                    # malformed script — an ordinary finding, not a traceback.
+                    err("E12", f"skills/{name}/scripts/{script.name} does not compile: {exc}")
+            elif script.suffix in {".js", ".mjs", ".cjs"}:
+                try:
+                    proc = subprocess.run(
+                        ["node", "--check", str(script)], capture_output=True, text=True
+                    )
+                except FileNotFoundError:
+                    # No node here: say so rather than passing silently, since a
+                    # stderr substring test would also swallow real parse errors.
+                    warn("W3", f"skills/{name}/scripts/{script.name}: node not installed, not checked")
+                else:
+                    if proc.returncode != 0:
+                        err("E12", f"skills/{name}/scripts/{script.name} does not parse: {proc.stderr.strip()[:160]}")
+            elif script.suffix in {".sh", ".bash"}:
+                proc = subprocess.run(
+                    ["bash", "-n", str(script)], capture_output=True, text=True
+                )
+                if proc.returncode != 0:
+                    err("E12", f"skills/{name}/scripts/{script.name} has a syntax error: {proc.stderr.strip()[:160]}")
+            if script.name not in text:
+                err("E13", f"skills/{name}: scripts/{script.name} never mentioned in SKILL.md")
 
 
 def check_readme(all_names: set[str]) -> None:
