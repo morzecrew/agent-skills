@@ -152,17 +152,20 @@ class ChangelogTest(unittest.TestCase):
         self.assertTrue(any(p.startswith("S2") for p in self.check(text)))
 
     def test_legitimately_indented_fence_still_hides_its_example(self):
+        # The hidden heading sits at column 0: indented inside the fence it would
+        # not match `^##` either way, and the test could not fail.
         text = ("# CL\n\n## [Unreleased]\n\n### Added\n\n- x:\n\n"
-                "  ```text\n  ## Bogus Heading\n  ```\n")
+                "  ```text\n## Bogus Heading\n  ```\n")
         self.assertEqual(self.check(text), [])
 
     def test_yanked_tag_accepted(self):
         self.assertNotIn("S2", " ".join(self.check(GOOD)))
 
     def test_code_fences_are_not_parsed_as_headings(self):
+        # Column 0 inside the fence, so removing fence handling makes this fail.
         with_fence = GOOD.replace(
             "- A new thing.",
-            "- A new thing.\n\n  ```text\n  ## [not-a-heading] - nope\n  ```",
+            "- A new thing.\n\n  ```text\n## [not-a-heading] - nope\n  ```",
         )
         self.assertEqual([p for p in self.check(with_fence) if p.startswith("S2")], [])
 
