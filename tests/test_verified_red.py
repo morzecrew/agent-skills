@@ -109,6 +109,18 @@ class VerifiedRedTest(unittest.TestCase):
         mismatched = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], 4, False)
         self.assertFalse(mismatched["redFailedAsRequired"])
 
+    def test_shell_command_lines_are_honored(self):
+        # --test-cmd is a shell command line by contract — operators chain and
+        # redirect in it. Running it as a split argv instead would feed "&&" to
+        # python3 as a filename, so both halves would fail for the wrong reason.
+        self.apply_fix()
+        (self.root / "t.py").write_text(DISCRIMINATING_TEST)
+        result = script.certify(
+            self.root, "HEAD", "python3 t.py && echo chained", [Path("t.py")], None, False
+        )
+        self.assertTrue(result["certified"], result)
+        self.assertIn("chained", result["greenTail"])
+
     def test_missing_test_file_is_rejected(self):
         result = run_script(
             "reproduce-then-fix", "verified_red.py",

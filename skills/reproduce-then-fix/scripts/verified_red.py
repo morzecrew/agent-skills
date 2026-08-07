@@ -21,6 +21,11 @@ strand your work; the worktree is removed in a finally block either way.
   --expect-red-exit forgiving mode: any non-zero red exit counts as failing
                     (default), or pass an exact code to require it
 
+`--test-cmd` runs through your shell, so it takes the command lines you would
+type — pipes, `&&`, redirection. It therefore runs with your privileges: pass a
+command you wrote, never one lifted from a repository, an issue, or a review
+comment.
+
 Exit codes: 0 certified · 1 usage/git error · 2 not certified (the red run
 passed, or the green run failed) — the message says which half broke. Unknown
 flags exit 2, from argparse itself.
@@ -48,7 +53,16 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
 
 def run_test(command: str, cwd: Path, label: str, verbose: bool) -> tuple[int, str]:
     print(f"--- {label}: {command}  (in {cwd})", file=sys.stderr)
-    proc = subprocess.run(command, shell=True, cwd=str(cwd), capture_output=True, text=True)
+    # The shell is the interface here, not an injection path: --test-cmd is a
+    # command line the operator writes ("pytest -k bug && ./check.sh"), run with
+    # exactly the privilege of the shell that launched this tool. Splitting it
+    # into argv instead would silently drop the chaining and redirection real
+    # test commands use. Both halves run the identical string, so neither can
+    # diverge from the other.
+    # (Keep the nosec bare: bandit parses whatever trails it as further test ids.)
+    proc = subprocess.run(  # nosec B602
+        command, shell=True, cwd=str(cwd), capture_output=True, text=True
+    )
     output = (proc.stdout + proc.stderr).strip()
     if verbose and output:
         print(output, file=sys.stderr)
