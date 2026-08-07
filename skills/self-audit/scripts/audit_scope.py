@@ -307,6 +307,10 @@ def main() -> int:
         )
         if proc.returncode != 0:
             sys.exit(f"error: {root} is not a git repository")
+    minimum = getattr(args, "minimum", None)
+    if minimum is not None and not (0.0 <= minimum <= 100.0):
+        # nan compares false against everything, so it would clear any gate.
+        sys.exit(f"error: --min must be a percentage between 0 and 100 (got {minimum})")
     base = args.base or detect_base(root)
 
     if args.cmd == "scope":

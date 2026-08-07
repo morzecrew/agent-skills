@@ -481,6 +481,10 @@ def main() -> int:
     elif args.cmd == "collect":
         print(json.dumps(collect_all(owner, repo, args.pr, args.unresolved_only), indent=2))
     elif args.cmd == "wait":
+        if args.interval_seconds < 1:
+            sys.exit("error: --interval-seconds must be at least 1 — a shorter poll hammers the API")
+        if args.settle_seconds < 0 or args.timeout_seconds < 1:
+            sys.exit("error: --settle-seconds must be >= 0 and --timeout-seconds >= 1")
         return cmd_wait(
             owner, repo, args.pr, args.timeout_seconds, args.interval_seconds,
             args.settle_seconds, args.expect_bot,

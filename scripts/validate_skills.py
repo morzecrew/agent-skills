@@ -21,6 +21,7 @@ Errors (fail the run):
 Warnings (reported, do not fail):
   W1  body has no "## Do not use this skill when" section
   W2  SKILL.md exceeds 500 lines
+  W3  a bundled JavaScript file could not be checked (node not installed)
 """
 
 from __future__ import annotations
@@ -151,11 +152,17 @@ def check_skill(skill_dir: Path, all_names: set[str]) -> None:
                     # malformed script — an ordinary finding, not a traceback.
                     err("E12", f"skills/{name}/scripts/{script.name} does not compile: {exc}")
             elif script.suffix in {".js", ".mjs", ".cjs"}:
-                proc = subprocess.run(
-                    ["node", "--check", str(script)], capture_output=True, text=True
-                )
-                if proc.returncode != 0 and "not found" not in proc.stderr.lower():
-                    err("E12", f"skills/{name}/scripts/{script.name} does not parse: {proc.stderr.strip()[:160]}")
+                try:
+                    proc = subprocess.run(
+                        ["node", "--check", str(script)], capture_output=True, text=True
+                    )
+                except FileNotFoundError:
+                    # No node here: say so rather than passing silently, since a
+                    # stderr substring test would also swallow real parse errors.
+                    warn("W3", f"skills/{name}/scripts/{script.name}: node not installed, not checked")
+                else:
+                    if proc.returncode != 0:
+                        err("E12", f"skills/{name}/scripts/{script.name} does not parse: {proc.stderr.strip()[:160]}")
             elif script.suffix in {".sh", ".bash"}:
                 proc = subprocess.run(
                     ["bash", "-n", str(script)], capture_output=True, text=True

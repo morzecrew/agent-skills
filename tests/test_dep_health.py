@@ -124,6 +124,13 @@ class NpmSummaryTest(unittest.TestCase):
     def test_deprecation_is_surfaced(self):
         self.assertTrue(self.summary["deprecated"])
 
+    def test_optional_dependencies_are_counted(self):
+        payload = json_copy(NPM_PAYLOAD)
+        payload["versions"]["1.3.0"]["optionalDependencies"] = {"fsevents": "^2"}
+        summary = script.summarize_npm(payload, NOW)
+        self.assertEqual(summary["directDependencies"], 2)
+        self.assertIn("fsevents", summary["dependencyNames"])
+
     def test_repository_object_is_flattened(self):
         self.assertIn("github.com/acme/example-pkg", self.summary["repository"])
 

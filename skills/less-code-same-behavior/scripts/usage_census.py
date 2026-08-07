@@ -66,11 +66,11 @@ def build_patterns(symbol: str) -> dict[str, re.Pattern]:
     s = re.escape(symbol)
     return {
         "definition": re.compile(
-            rf"^\s*(?:def|class|func|type|const|let|var|interface|struct|enum)\s+{s}\b"
+            rf"^\s*(?:async\s+)?(?:def|class|func|type|const|let|var|interface|struct|enum)\s+{s}\b"
             rf"|^\s*{s}\s*(?::[^=]+)?=(?!=)"
         ),
         "declaration": re.compile(
-            rf"^\s*(?:def|class|func|type|interface|struct|enum)\s+{s}\b"
+            rf"^\s*(?:async\s+)?(?:def|class|func|type|interface|struct|enum|const|let|var)\s+{s}\b"
         ),
         "from-import": re.compile(rf"^\s*from\s+\S+\s+import\s+.*\b{s}\b"),
         # Only meaningful inside a parenthesized import list; on its own a

@@ -125,6 +125,17 @@ class InvalidMessageTest(unittest.TestCase):
         )
         self.assertEqual(errors(message), [])
 
+    def test_final_prose_paragraph_opening_with_also_is_accepted(self):
+        # Regression, second time: restricting the scan to the last paragraph
+        # was not enough while any capitalized word plus a colon counted as a
+        # trailer token. Only real trailers do now.
+        message = (
+            "✨ feat: add thing\n\n"
+            "Also: the poller waits for quiescence rather than completion,\n"
+            "because a check can go green early.\n"
+        )
+        self.assertEqual(errors(message), [])
+
     def test_past_tense_description(self):
         self.assert_flags("✨ feat(api): added OAuth login support", "C6")
 

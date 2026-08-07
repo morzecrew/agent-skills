@@ -132,7 +132,12 @@ def summarize_npm(payload: dict, now: dt.datetime) -> dict:
     dated = sorted(((v, t) for v, t in versions.items() if t), key=lambda pair: pair[1])
     latest_tag = (payload.get("dist-tags") or {}).get("latest")
     latest_manifest = (payload.get("versions") or {}).get(latest_tag) or {}
-    dependencies = latest_manifest.get("dependencies") or {}
+    # optionalDependencies still install by default, so omitting them
+    # understates the supply-chain footprint this evidence is for.
+    dependencies = {
+        **(latest_manifest.get("dependencies") or {}),
+        **(latest_manifest.get("optionalDependencies") or {}),
+    }
     year_ago = now - dt.timedelta(days=365)
     repository = payload.get("repository")
     if isinstance(repository, dict):

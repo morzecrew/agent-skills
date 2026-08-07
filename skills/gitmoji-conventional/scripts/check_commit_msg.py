@@ -53,7 +53,12 @@ MAPPING_ROW = re.compile(r"^\|\s*(\S+)\s*\|\s*`(:[a-z0-9_+-]+:)`\s*\|[^|]*\|\s*(
 SKIP_PREFIXES = ("Merge ", "Revert ", "fixup! ", "squash! ", "amend! ")
 BREAKING_TOKEN = re.compile(r"^(BREAKING[ -]CHANGE):", re.M)
 BREAKING_WRONG_CASE = re.compile(r"^(breaking[ -]change|Breaking[ -]Change):", re.M | re.I)
-FOOTER_TOKEN = re.compile(r"^([A-Z][A-Za-z-]*|BREAKING[ -]CHANGE)(?::| #)")
+# Real git trailers only. "Also:" opening a final prose paragraph is not a
+# trailer, and treating it as one rejected legitimate messages.
+FOOTER_TOKEN = re.compile(
+    r"^(BREAKING[ -]CHANGE|Co-Authored-By|Signed-off-by|Closes|Fixes|Refs|Reviewed-by|Acked-by|Tested-by|Reported-by|Cc|See-also)(?::| #)",
+    re.I,
+)
 
 NON_IMPERATIVE = {
     "added", "adds", "fixed", "fixes", "updated", "updates", "removed", "removes",
@@ -104,7 +109,6 @@ def check_message(message: str, mapping: dict[str, str]) -> list[tuple[str, str]
     # Only the final paragraph holds trailers, so a BREAKING CHANGE line in an
     # explanatory paragraph is prose, not a footer.
     footer_start = last_paragraph_start(lines)
-    body = "\n".join(lines[1:])
     footer_block = "\n".join(lines[footer_start:]) if footer_start is not None else ""
     has_breaking_footer = bool(BREAKING_TOKEN.search(footer_block))
 

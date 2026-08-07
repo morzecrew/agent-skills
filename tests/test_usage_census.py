@@ -51,6 +51,18 @@ class CensusTest(unittest.TestCase):
         kinds = self.census("helper")["counts"]["byKind"]
         self.assertGreaterEqual(kinds.get("attribute", 0), 1)
 
+    def test_async_def_is_a_definition(self):
+        self.write("src/pkg/a.py", "async def fetch():\n    return 1\n")
+        kinds = self.census("fetch")["counts"]["byKind"]
+        self.assertEqual(kinds.get("definition", 0), 1, kinds)
+
+    def test_js_declarations_are_recognized_as_declarations(self):
+        # Regression: const/let/var were absent from the declaration set, so a
+        # real JS declaration could never be an inference source while a plain
+        # assignment elsewhere could.
+        self.write("src/pkg/a.js", "const helper = () => 1;\n")
+        self.assertIn("src/pkg/a.js", self.census("helper")["declarations"])
+
     def test_absent_symbol_reports_nothing(self):
         self.write("src/pkg/a.py", "def other():\n    return 1\n")
         result = self.census("run_coverage")
