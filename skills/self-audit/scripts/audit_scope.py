@@ -13,7 +13,8 @@ Both are read-only git/XML/text reads; neither edits or runs your tests.
 Coverage inputs: Cobertura XML (coverage.py `-x`, gocover-cobertura) and LCOV
 `.info`. JaCoCo's own XML uses a different element shape and is not read — convert
 it with a cobertura reporter first. Paths are matched by longest common suffix, since report paths
-are relative to whatever root the runner used.
+are relative to whatever root the runner used. An XML report that declares
+entities is refused rather than parsed (see ENTITY_DECL).
 
 Exit codes: 0 ok · 1 usage/git error · 2 patch coverage below --min. Unknown flags exit 2, from argparse itself.
 
@@ -33,6 +34,15 @@ from pathlib import Path
 
 DIFF_HEADER = re.compile(r"^\+\+\+ b/(.*)$")
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+# Refusing every DTD would refuse real reports: coverage.py emits a DOCTYPE
+# naming an external DTD, and ElementTree never retrieves those. The hazard is
+# an entity *declaration*, which ElementTree does expand — measured here, a
+# 400-byte report becomes a megabyte, and nesting one level further exhausts
+# memory. No coverage writer emits one, so the honest response is to refuse.
+# Declarations are legal only in the prolog, so that is the region scanned.
+ENTITY_DECL = re.compile(rb"<!ENTITY", re.IGNORECASE)
+ROOT_ELEMENT = re.compile(rb"<[^?!]")
 
 TEST_HINTS = ("test", "spec", "conftest", "fixture")
 DOC_SUFFIXES = {".md", ".rst", ".txt", ".adoc"}
@@ -145,7 +155,18 @@ def cmd_scope(root: Path, base: str, head: str, as_json: bool) -> int:
 
 
 def parse_cobertura(path: Path) -> dict[str, dict[int, int]]:
-    root = ET.parse(path).getroot()
+    data = path.read_bytes()
+    root_start = ROOT_ELEMENT.search(data)
+    prolog = data[: root_start.start()] if root_start else data
+    if ENTITY_DECL.search(prolog):
+        sys.exit(
+            f"error: {path} declares XML entities before its root element. Coverage "
+            "writers do not emit those, and expanding them exhausts memory — refusing "
+            "to parse. Regenerate the report from your test runner."
+        )
+    # Entity declarations are refused above; bare nosec because bandit reads
+    # anything trailing it as further test ids.
+    root = ET.fromstring(data)  # nosec B314
     sources = [s.text.strip() for s in root.findall(".//sources/source") if s.text]
     coverage: dict[str, dict[int, int]] = {}
     for cls in root.findall(".//class"):

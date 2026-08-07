@@ -20,6 +20,26 @@ COBERTURA = """<?xml version="1.0" ?>
 </lines></class></classes></package></packages></coverage>
 """
 
+# coverage.py emits exactly this DOCTYPE, naming a DTD ElementTree never fetches.
+DOCTYPE_COBERTURA = """<?xml version="1.0" ?>
+<!DOCTYPE coverage SYSTEM 'http://cobertura.sourceforge.net/xml/coverage-04.dtd'>
+<coverage><sources><source>.</source></sources><packages><package><classes>
+<class filename="{filename}"><lines>
+{lines}
+</lines></class></classes></package></packages></coverage>
+"""
+
+# Four levels of nesting; unrefused, this 400-byte file parses to a megabyte.
+BILLION_LAUGHS = """<?xml version="1.0" ?>
+<!DOCTYPE coverage [
+ <!ENTITY a "aaaaaaaaaa">
+ <!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">
+ <!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">
+ <!ENTITY d "&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;">
+]>
+<coverage><sources><source>&d;</source></sources><packages/></coverage>
+"""
+
 
 class CategorizeTest(unittest.TestCase):
     def test_paths_are_bucketed(self):
@@ -136,6 +156,32 @@ class GitScopeTest(unittest.TestCase):
         report = self.coverage_file({1: 1}, filename="totally/other.py")
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(script.cmd_patch_coverage(self.root, "main~1", "HEAD", report, 80.0, True), 2)
+
+    def test_entity_declaring_report_is_refused(self):
+        # ElementTree expands declared entities: this report parses to a
+        # megabyte of text, and one more level of nesting exhausts memory.
+        self.add_function()
+        (self.root / "coverage.xml").write_text(BILLION_LAUGHS)
+        result = run_script(
+            "self-audit", "audit_scope.py", "patch-coverage",
+            "--base", "main~1", "--report", "coverage.xml", cwd=self.root,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("declares XML entities", result.stderr)
+
+    def test_external_dtd_doctype_still_parses(self):
+        # The guard must reject declarations, not DTDs: coverage.py's own
+        # reports carry a DOCTYPE, and refusing those would refuse real input.
+        self.add_function()
+        path = self.root / "coverage.xml"
+        lines = "\n".join(f'<line number="{n}" hits="1"/>' for n in (3, 4, 5, 6, 7, 8))
+        path.write_text(DOCTYPE_COBERTURA.format(filename="src/app.py", lines=lines))
+        result = run_script(
+            "self-audit", "audit_scope.py", "patch-coverage",
+            "--base", "main~1", "--report", "coverage.xml", "--json", cwd=self.root,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["patchCoverage"], 100.0)
 
     def test_lcov_and_suffix_path_matching(self):
         self.add_function()
