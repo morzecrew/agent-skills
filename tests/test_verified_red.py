@@ -109,6 +109,39 @@ class VerifiedRedTest(unittest.TestCase):
         mismatched = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], 4, False)
         self.assertFalse(mismatched["redFailedAsRequired"])
 
+    def test_red_run_that_cannot_import_is_not_a_reproduction(self):
+        # Regression: the red worktree is base plus only --test-file, so a
+        # helper that exists solely in the working tree made the red run die on
+        # the import. That non-zero exit looked exactly like a reproduction and
+        # certified a test that never ran — worse than running no check at all.
+        (self.root / "helper.py").write_text("VALUE = 0\n")  # never committed
+        self.apply_fix()
+        (self.root / "t.py").write_text("import helper\n" + DISCRIMINATING_TEST)
+        result = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False)
+        self.assertFalse(result["certified"], result)
+        self.assertTrue(result["redFailedBeforeTesting"])
+        self.assertIn("--test-file", result["verdict"])
+
+    def test_import_failure_can_be_accepted_when_it_is_the_bug(self):
+        (self.root / "helper.py").write_text("VALUE = 0\n")
+        self.apply_fix()
+        (self.root / "t.py").write_text("import helper\n" + DISCRIMINATING_TEST)
+        result = script.certify(
+            self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False, True
+        )
+        self.assertTrue(result["certified"], result)
+
+    def test_carrying_the_helper_across_certifies_normally(self):
+        # The remedy the verdict names must actually work.
+        (self.root / "helper.py").write_text("VALUE = 0\n")
+        self.apply_fix()
+        (self.root / "t.py").write_text("import helper\n" + DISCRIMINATING_TEST)
+        result = script.certify(
+            self.root, "HEAD", "python3 t.py", [Path("t.py"), Path("helper.py")], None, False
+        )
+        self.assertTrue(result["certified"], result)
+        self.assertFalse(result["redFailedBeforeTesting"])
+
     def test_shell_command_lines_are_honored(self):
         # --test-cmd is a shell command line by contract — operators chain and
         # redirect in it. Running it as a split argv instead would feed "&&" to

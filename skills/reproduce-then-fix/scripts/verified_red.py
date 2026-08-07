@@ -20,6 +20,10 @@ strand your work; the worktree is removed in a finally block either way.
                     holding the reproduction)
   --expect-red-exit forgiving mode: any non-zero red exit counts as failing
                     (default), or pass an exact code to require it
+  --allow-red-error accept a red run that died on a missing import or collection
+                    error, which is otherwise refused: the red worktree holds
+                    only base plus --test-file, so a conftest or helper missing
+                    from both fails the run without testing anything
 
 `--test-cmd` runs through your shell, so it takes the command lines you would
 type — pipes, `&&`, redirection. It therefore runs with your privileges: pass a
@@ -35,11 +39,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# The red worktree is base plus only the files named by --test-file. A conftest,
+# fixture, or helper that lives in neither makes the red run die on the missing
+# import rather than on the absent fix — a non-zero exit that looks exactly like
+# a reproduction and certifies a test that never ran. Refused by default, since
+# a false certificate is worse than no check at all.
+INFRASTRUCTURE_RED = re.compile(
+    r"ModuleNotFoundError|ImportError|No module named|ERR_MODULE_NOT_FOUND"
+    r"|Cannot find module|ERROR collecting|errors during collection"
+    r"|file or directory not found|no tests ran|collected 0 items"
+    r"|command not found|SyntaxError",
+    re.IGNORECASE,
+)
 
 
 def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -71,7 +89,7 @@ def run_test(command: str, cwd: Path, label: str, verbose: bool) -> tuple[int, s
 
 def certify(
     root: Path, base: str, test_cmd: str, test_files: list[Path],
-    expect_red_exit: int | None, verbose: bool,
+    expect_red_exit: int | None, verbose: bool, allow_red_error: bool = False,
 ) -> dict:
     safe_files: list[Path] = []
     for relative in test_files:
@@ -112,11 +130,23 @@ def certify(
     result["greenTail"] = green_output[-800:]
 
     red_ok = (red_code != 0) if expect_red_exit is None else (red_code == expect_red_exit)
+    # A red run that never got as far as running the test is not a reproduction,
+    # however non-zero it exited.
+    unrelated = red_ok and not allow_red_error and bool(INFRASTRUCTURE_RED.search(red_output))
     green_ok = green_code == 0
-    result["redFailedAsRequired"] = red_ok
+    result["redFailedAsRequired"] = red_ok and not unrelated
+    result["redFailedBeforeTesting"] = unrelated
     result["greenPassed"] = green_ok
-    result["certified"] = red_ok and green_ok
-    if not red_ok:
+    result["certified"] = red_ok and green_ok and not unrelated
+    if unrelated:
+        result["verdict"] = (
+            "NOT CERTIFIED: the red run failed before it could test anything — the output reads "
+            "as a missing import, module, or test file rather than as the bug. The red worktree "
+            "is the base commit plus only the files named by --test-file, so pass every file the "
+            "test needs (conftest.py, fixtures, helpers) that does not exist at base. Use "
+            "--allow-red-error when the import failure *is* the bug you fixed."
+        )
+    elif not red_ok:
         result["verdict"] = (
             "NOT CERTIFIED: the test passed without the fix — it does not guard the behavior "
             "you fixed. Check that the reproduction actually exercises the changed path, and "
@@ -141,6 +171,11 @@ def main() -> int:
         help="repo-relative test file to carry into the red run (repeatable)",
     )
     parser.add_argument("--expect-red-exit", type=int, default=None)
+    parser.add_argument(
+        "--allow-red-error", action="store_true",
+        help="accept a red run that died on a missing import or collection error "
+             "(only when that failure *is* the bug being fixed)",
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--verbose", action="store_true", help="show both runs' output")
     args = parser.parse_args()
@@ -159,7 +194,8 @@ def main() -> int:
         sys.exit("error: --expect-red-exit 0 would accept a passing red run, which certifies nothing")
 
     result = certify(
-        root, args.base, args.test_cmd, args.test_file, args.expect_red_exit, args.verbose
+        root, args.base, args.test_cmd, args.test_file, args.expect_red_exit,
+        args.verbose, args.allow_red_error,
     )
     if args.json:
         print(json.dumps(result, indent=2))
