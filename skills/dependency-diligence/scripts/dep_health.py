@@ -16,7 +16,8 @@ Registry metadata comes from the public PyPI/npm JSON APIs over stdlib urllib;
 `--repo owner/name` adds commit and release recency via `gh` when it is
 authenticated. Nothing is installed and nothing is executed.
 
-Exit codes: 0 fetched · 1 usage/network error · 3 package not found.
+Exit codes: 0 fetched · 1 usage/network error · 3 package not found. Unknown
+flags exit 2, from argparse itself.
 
 Everything printed is evidence, not a verdict. The four verdicts — adopt behind
 a seam, take the idea not the dep, defer, reject — are yours to record.
@@ -183,6 +184,8 @@ def repo_activity(repo: str, now: dt.datetime) -> dict | None:
     except json.JSONDecodeError:
         return None
     pushed = parse_iso(data.get("pushed_at"))
+    # One page only: the endpoint caps at 100 per page, so this is a floor, and
+    # reporting it as a total would overstate the evidence.
     contributors = run_gh(
         ["gh", "api", f"repos/{repo}/contributors?per_page=100", "--jq", "length"]
     )
@@ -193,7 +196,7 @@ def repo_activity(repo: str, now: dt.datetime) -> dict | None:
         "daysSinceLastPush": days_since(pushed, now),
         "openIssues": data.get("openIssues"),
         "stars": data.get("stars"),
-        "contributors": int(contributors.stdout.strip())
+        "contributorsFirstPage": int(contributors.stdout.strip())
         if contributors is not None and contributors.stdout.strip().isdigit() else None,
     }
 
@@ -217,7 +220,7 @@ def observations(summary: dict, activity: dict | None) -> list[str]:
     if activity:
         if activity.get("archived"):
             notes.append("the repository is archived")
-        if activity.get("contributors") == 1:
+        if activity.get("contributorsFirstPage") == 1:
             notes.append("a single contributor — bus factor of one")
         pushed = activity.get("daysSinceLastPush")
         if pushed is not None and pushed > 365:
@@ -242,7 +245,8 @@ def render(summary: dict, activity: dict | None, notes: list[str]) -> None:
         print(
             f"\nrepository: last push {activity.get('lastPush')} "
             f"({activity.get('daysSinceLastPush')} days ago), "
-            f"{activity.get('contributors')} contributor(s), {activity.get('openIssues')} open issues"
+            f"{activity.get('contributorsFirstPage')}{'+' if activity.get('contributorsFirstPage') == 100 else ''} "
+            f"contributor(s), {activity.get('openIssues')} open issues"
             + (", ARCHIVED" if activity.get("archived") else "")
         )
     elif summary.get("repository"):

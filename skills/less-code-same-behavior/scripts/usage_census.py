@@ -24,7 +24,7 @@ shim-and-move, break-and-migrate, and leave-alone.
 Files come from `git ls-files` when the root is a repository (so ignored files
 stay ignored), else a filesystem walk. Read-only.
 
-Exit codes: 0 references found · 1 usage error · 3 no references at all
+Exit codes: 0 used · 1 usage error · 3 no usage beyond its own definition
 (a deletion candidate — still confirm the patterns this tool cannot see:
 dynamic dispatch, generated code, and other repositories).
 """
@@ -72,7 +72,10 @@ def build_patterns(symbol: str) -> dict[str, re.Pattern]:
         "declaration": re.compile(
             rf"^\s*(?:def|class|func|type|interface|struct|enum)\s+{s}\b"
         ),
-        "from-import": re.compile(rf"^\s*from\s+\S+\s+import\s+.*\b{s}\b|^\s*{s}\s*,?\s*$"),
+        "from-import": re.compile(rf"^\s*from\s+\S+\s+import\s+.*\b{s}\b"),
+        # Only meaningful inside a parenthesized import list; on its own a
+        # bare line is a standalone reference, not an import.
+        "import-list-item": re.compile(rf"^\s*{s}\s*,?\s*$"),
         "plain-import": re.compile(rf"^\s*(?:import|require)\s*\(?\s*[\"']?\S*\b{s}\b"),
         "attribute": re.compile(rf"\.{s}\b"),
         "call": re.compile(rf"\b{s}\s*\("),
@@ -91,7 +94,7 @@ def classify(line: str, patterns: dict[str, re.Pattern], in_import_block: bool) 
             return kind
     if patterns["from-import"].search(line):
         return "from-import"
-    if in_import_block:
+    if in_import_block and patterns["import-list-item"].search(line):
         return "from-import"
     return "bare" if patterns["bare"].search(line) else None
 
@@ -221,7 +224,10 @@ def main() -> int:
         print(json.dumps(result, indent=2))
     else:
         render(result)
-    return 0 if result["counts"]["total"] else 3
+    usage = result["counts"]["internalUsage"] + result["counts"]["externalUsage"]
+    # A symbol that exists only as its own definition is the deletion
+    # candidate this exit code is for.
+    return 0 if usage else 3
 
 
 if __name__ == "__main__":

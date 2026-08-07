@@ -114,6 +114,23 @@ class ScanTest(unittest.TestCase):
         go = self.scan(languages=["go"])
         self.assertEqual(go["counts"]["leaks"], 1)
 
+    def test_bare_js_date_constructor_is_a_clock_read(self):
+        self.write("web/a.js", "const t = Date();\n")
+        self.assertEqual(self.scan(languages=["js"])["counts"]["leaks"], 1)
+
+    def test_root_relative_allow_globs(self):
+        # Run from a package root, "tests/x.py" has no leading segment for a
+        # "*/tests/*" pattern to match.
+        self.write("tests/t.py", "import time\nt = time.time()\n")
+        self.write("scripts/s.py", "import time\nt = time.time()\n")
+        self.assertEqual(self.scan()["counts"]["leaks"], 0)
+
+    def test_every_kind_on_a_line_is_reported(self):
+        self.write("src/a.py", "import time, os\nv = os.getenv('X') or time.time()\n")
+        kinds = self.scan()["counts"]["byKind"]
+        self.assertIn("clock", kinds)
+        self.assertIn("env", kinds)
+
     def test_language_filter_excludes_others(self):
         self.write("web/app.js", "const t = Date.now();\n")
         self.write("src/a.py", "t = time.time()\n")

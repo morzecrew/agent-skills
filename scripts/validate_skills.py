@@ -143,8 +143,12 @@ def check_skill(skill_dir: Path, all_names: set[str]) -> None:
                 continue
             if script.suffix == ".py":
                 try:
-                    compile(script.read_text(encoding="utf-8"), str(script), "exec")
-                except (SyntaxError, UnicodeDecodeError) as exc:
+                    # Raw bytes: compile() honors a PEP 263 coding cookie, while a
+                    # forced UTF-8 decode would reject a valid non-UTF-8 script.
+                    compile(script.read_bytes(), str(script), "exec")
+                except (SyntaxError, ValueError) as exc:
+                    # ValueError covers source containing NUL, which is a
+                    # malformed script — an ordinary finding, not a traceback.
                     err("E12", f"skills/{name}/scripts/{script.name} does not compile: {exc}")
             elif script.suffix in {".js", ".mjs", ".cjs"}:
                 proc = subprocess.run(

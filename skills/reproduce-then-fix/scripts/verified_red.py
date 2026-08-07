@@ -22,7 +22,8 @@ strand your work; the worktree is removed in a finally block either way.
                     (default), or pass an exact code to require it
 
 Exit codes: 0 certified · 1 usage/git error · 2 not certified (the red run
-passed, or the green run failed) — the message says which half broke.
+passed, or the green run failed) — the message says which half broke. Unknown
+flags exit 2, from argparse itself.
 """
 
 from __future__ import annotations

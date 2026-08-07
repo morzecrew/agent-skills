@@ -19,7 +19,8 @@ Read subcommands are safe anywhere; react/reply/resolve write to the PR.
 All output on stdout is JSON; progress goes to stderr.
 
 Exit codes: 0 ok · 1 usage/gh error · 2 wait saw attention-needed conclusions ·
-3 wait timed out with checks still pending.
+3 wait timed out (on checks, on comments settling, or on an expected reviewer).
+Unknown flags exit 2, from argparse itself.
 
 Requires: `gh` installed and authenticated. Repo comes from the cwd, or
 --repo owner/name.
@@ -373,7 +374,9 @@ def cmd_wait(
             waited = int(now - stable_since) if stable_since else 0
             note = f"checks done; comments settling ({waited}/{settle_s}s stable)"
         print(f"waiting: {note}", file=sys.stderr)
-        time.sleep(interval_s)
+        # Sleep no further than the deadline, so a long interval cannot
+        # carry the wait past the bound the caller asked for.
+        time.sleep(max(0.0, min(interval_s, deadline - time.monotonic())))
 
 
 def cmd_react(owner: str, repo: str, surface: str, comment_id: int, reaction: str) -> dict:

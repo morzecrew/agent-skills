@@ -20,7 +20,7 @@ until the leak list is true, *then* add `--strict` to CI (see
 `ratchet-what-you-build`).
 
 Exit codes: 0 scanned (warn mode, or strict with no leaks) · 1 usage error ·
-2 leaks found under --strict.
+2 leaks found under --strict. Unknown flags exit 2, from argparse itself.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ PATTERNS: dict[str, list[tuple[str, str]]] = {
         ("env", r"\bos\.(?:getenv|environ)\b"),
     ],
     "js": [
-        ("clock", r"\bDate\.now\s*\(|\bnew\s+Date\s*\(\s*\)"),
+        ("clock", r"\bDate\.now\s*\(|\b(?:new\s+)?Date\s*\(\s*\)"),
         ("clock", r"\bperformance\.now\s*\("),
         ("sleep", r"\bsetTimeout\s*\("),
         ("random", r"\bMath\.random\s*\("),
@@ -83,8 +83,12 @@ SUFFIX_LANGUAGE = {
 }
 
 DEFAULT_ALLOW = [
-    "*/test/*", "*/tests/*", "test_*", "*_test.*", "*.test.*", "*.spec.*",
-    "*/conftest.py", "*/scripts/*", "*/migrations/*", "*/examples/*", "*/benchmarks/*",
+    # Both rooted and nested forms: run from a package root, "tests/x.py" has no
+    # leading segment for a "*/tests/*" pattern to match.
+    "test/*", "tests/*", "*/test/*", "*/tests/*",
+    "test_*", "*_test.*", "*.test.*", "*.spec.*", "*/conftest.py",
+    "scripts/*", "*/scripts/*", "migrations/*", "*/migrations/*",
+    "examples/*", "*/examples/*", "benchmarks/*", "*/benchmarks/*",
 ]
 
 COMMENT_PREFIXES = ("#", "//", "*", "/*")
@@ -118,6 +122,10 @@ def strip_noise(lines: list[str]) -> list[tuple[int, str]]:
             in_docstring = not in_docstring
         # Skip lines inside a docstring *and* the line that opens one.
         if was_in or (in_docstring and delimits and quotes % 2):
+            continue
+        # A docstring that opens and closes on one line never toggles the state,
+        # but its prose still must not be scanned.
+        if TRIPLE_QUOTE.match(stripped) and quotes >= 2 and quotes % 2 == 0:
             continue
         if stripped.startswith(COMMENT_PREFIXES) or DIRECTIVE.search(line):
             continue
@@ -179,9 +187,13 @@ def scan(
         is_allowed = matches_any(relative, allow)
 
         for number, stripped in strip_noise(text.splitlines()):
+            # Every distinct kind on the line, not just the first: one line can
+            # read the clock and the environment at once.
+            seen_kinds: set[str] = set()
             for kind, pattern in compiled[language]:
-                if not pattern.search(stripped):
+                if kind in seen_kinds or not pattern.search(stripped):
                     continue
+                seen_kinds.add(kind)
                 hit = {
                     "file": relative, "line": number, "kind": kind,
                     "language": language, "text": stripped[:140],
@@ -193,7 +205,6 @@ def scan(
                     allowed_hits += 1
                 else:
                     leaks.append(hit)
-                break
 
     by_kind: dict[str, int] = {}
     for leak in leaks:

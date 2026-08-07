@@ -19,7 +19,8 @@ House rules (`--house-rules`, this repository's local conventions):
   H2  at most 320 characters per entry
   H3  at most 3 sentences per entry
 
-Exit codes: 0 clean · 1 usage/IO error · 2 problems found.
+Exit codes: 0 clean · 1 usage/IO error · 2 problems found. Unknown flags exit 2,
+from argparse itself — check stderr to tell that apart from a failing changelog.
 
 What belongs in the changelog at all, and how an entry is worded, stay in
 SKILL.md — this tool never edits, only reports.
@@ -49,6 +50,7 @@ SEMVER_CORE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
 FENCE = re.compile(r"^\s*(?:```|~~~)")
 VERSION = re.compile(r"^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?$")
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def outside_fences(lines: list[str], start: int, end: int) -> list[int]:
@@ -136,14 +138,29 @@ def validate(path: Path, house_rules: bool) -> list[str]:
                 "'## [Unreleased]' or '## [X.Y.Z] - YYYY-MM-DD'"
             )
 
-    if not any(s["kind"] == "unreleased" for s in sections):
+    unreleased = [s for s in sections if s["kind"] == "unreleased"]
+    if not unreleased:
         problems.append("S1: no '## [Unreleased]' section")
+    elif len(unreleased) > 1:
+        problems.append(
+            f"S1: {len(unreleased)} '## [Unreleased]' sections (lines "
+            f"{', '.join(str(s['line'] + 1) for s in unreleased)}) — the spec has exactly one"
+        )
+    elif sections and sections[0] is not unreleased[0]:
+        problems.append(
+            f"S1 line {unreleased[0]['line'] + 1}: '## [Unreleased]' must be the first section"
+        )
 
     versions = [s for s in sections if s["kind"] == "version"]
     for section in versions:
+        # fromisoformat also accepts compact forms like 20260101, which the
+        # spec's YYYY-MM-DD requirement does not.
+        valid_shape = bool(ISO_DATE.match(section["date"]))
         try:
             dt.date.fromisoformat(section["date"])
         except ValueError:
+            valid_shape = False
+        if not valid_shape:
             problems.append(
                 f"S3 line {section['line'] + 1}: '{section['date']}' is not an ISO 8601 date (YYYY-MM-DD)"
             )
@@ -186,7 +203,9 @@ def validate(path: Path, house_rules: bool) -> list[str]:
         if house_rules:
             problems.extend(check_house_rules(lines, live))
 
-    defined = {name.lower() for name in LINK_DEF.findall(text)}
+    # Link definitions inside a fenced example are illustrations, not real ones.
+    unfenced = "\n".join(lines[number] for number in outside_fences(lines, 0, len(lines)))
+    defined = {name.lower() for name in LINK_DEF.findall(unfenced)}
     if defined:
         wanted = {"unreleased"} | {s["version"].lower() for s in versions}
         for missing in sorted(wanted - defined):

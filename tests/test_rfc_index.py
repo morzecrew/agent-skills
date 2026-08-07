@@ -155,6 +155,20 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("already exists as 0001-alpha.md", result.stderr)
 
+    def test_duplicate_index_rows_are_reported(self):
+        # Regression: index_rows keys by number, so duplicates collapsed and the
+        # one-row-per-RFC contract went unchecked.
+        index = (self.rfcs / "INDEX.md").read_text()
+        (self.rfcs / "INDEX.md").write_text(
+            index.replace(
+                "| [0002](0002-beta.md) | Beta | ✅ Complete | second |",
+                "| [0002](0002-beta.md) | Beta | ✅ Complete | second |\n"
+                "| [0002](0002-beta.md) | Beta again | ✅ Complete | dup |",
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(self.check(), 2)
+
     def test_slugify(self):
         self.assertEqual(script.slugify("Portable Export & Import!"), "portable-export-import")
         with self.assertRaises(SystemExit):

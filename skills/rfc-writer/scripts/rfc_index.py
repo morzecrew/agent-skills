@@ -15,7 +15,8 @@ index is INDEX.md, or README.md where a collection already uses it. Statuses are
 compared by their emoji, since the prose after it carries free-form annotations
 ("✅ Complete — shipped 2026-06-29; only P5 remains").
 
-Exit codes: 0 ok · 1 usage/IO error · 2 check found problems.
+Exit codes: 0 ok · 1 usage/IO error · 2 check found problems. Unknown flags exit
+2, from argparse itself.
 
 Everything this tool does is mechanical. Which number a design deserves, what
 the one-liner says, and when a status changes stay in SKILL.md.
@@ -79,6 +80,19 @@ def status_emoji(text: str) -> str | None:
     return next((e for e in STATUS_EMOJI if token.startswith(e)), token)
 
 
+def duplicate_row_numbers(index_text: str) -> list[int]:
+    """Numbers appearing on more than one index row.
+
+    index_rows() keys by number, so duplicates would silently collapse and the
+    index contract of one row per RFC would go unchecked.
+    """
+    seen: dict[int, int] = {}
+    for match in INDEX_ROW.finditer(index_text):
+        number = int(match.group(1))
+        seen[number] = seen.get(number, 0) + 1
+    return sorted(number for number, count in seen.items() if count > 1)
+
+
 def index_rows(index_text: str) -> dict[int, dict[str, str]]:
     rows: dict[int, dict[str, str]] = {}
     for match in INDEX_ROW.finditer(index_text):
@@ -103,6 +117,9 @@ def cmd_check(rfc_dir: Path) -> int:
     files = rfc_files(rfc_dir)
     rows = index_rows(index_text)
     problems: list[str] = []
+
+    for number in duplicate_row_numbers(index_text):
+        problems.append(f"{index_path.name}: RFC {number:04d} has more than one index row")
 
     for number in sorted(set(files) - set(rows)):
         problems.append(f"{files[number].name}: on disk but has no index row")
@@ -210,7 +227,13 @@ def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = No
     insert_at = index_insert_position(index_text.splitlines(), index_path)
 
     body = template_body(script_dir).replace("RFC NNNN — <Title>", f"RFC {number:04d} — {title}")
-    path.write_text(body + "\n", encoding="utf-8")
+    try:
+        # Exclusive create: two runs racing for the same number cannot both win,
+        # which the existence check alone cannot guarantee.
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(body + "\n")
+    except FileExistsError:
+        fail(f"{path.name} was created by another process — re-run to take the next number")
     row = f"| [{number:04d}]({path.name}) | {title} | 📝 Draft | TODO: one-line summary |"
 
     lines = index_text.splitlines()

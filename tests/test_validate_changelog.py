@@ -102,6 +102,24 @@ class ChangelogTest(unittest.TestCase):
         found = self.check(with_example, house_rules=True)
         self.assertEqual([p for p in found if p.startswith(("S5", "H1"))], [], found)
 
+    def test_unreleased_must_be_first(self):
+        moved = "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- x\n\n## [Unreleased]\n"
+        self.assert_flags(moved, "S1")
+
+    def test_duplicate_unreleased_sections(self):
+        self.assert_flags(GOOD.replace("## [1.1.0] - 2026-02-01", "## [Unreleased]"), "S1")
+
+    def test_compact_iso_date_rejected(self):
+        # date.fromisoformat accepts 20260101; the spec's YYYY-MM-DD does not.
+        self.assert_flags(GOOD.replace("2026-02-01", "20260201"), "S3")
+
+    def test_link_definitions_inside_a_fence_are_illustrations(self):
+        illustrated = GOOD.replace(
+            "- A new thing.",
+            "- Example:\n\n```text\n[9.9.9]: https://example/compare\n```",
+        )
+        self.assertEqual([p for p in self.check(illustrated) if p.startswith("S7")], [])
+
     def test_yanked_tag_accepted(self):
         self.assertNotIn("S2", " ".join(self.check(GOOD)))
 

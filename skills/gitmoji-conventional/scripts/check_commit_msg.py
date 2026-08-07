@@ -101,8 +101,12 @@ def check_message(message: str, mapping: dict[str, str]) -> list[tuple[str, str]
     commit_type = match.group("type")
     bang = bool(match.group("bang"))
     description = match.group("desc")
+    # Only the final paragraph holds trailers, so a BREAKING CHANGE line in an
+    # explanatory paragraph is prose, not a footer.
+    footer_start = last_paragraph_start(lines)
     body = "\n".join(lines[1:])
-    has_breaking_footer = bool(BREAKING_TOKEN.search(body))
+    footer_block = "\n".join(lines[footer_start:]) if footer_start is not None else ""
+    has_breaking_footer = bool(BREAKING_TOKEN.search(footer_block))
 
     # 💥 first: it is deliberately absent from the mapping (its row reads
     # "underlying type + !", not a concrete type), so a membership test would
@@ -123,8 +127,8 @@ def check_message(message: str, mapping: dict[str, str]) -> list[tuple[str, str]
     if has_breaking_footer and not bang:
         problems.append("C4: a BREAKING CHANGE footer needs '!' in the subject too")
 
-    wrong_case = BREAKING_WRONG_CASE.search(body)
-    if wrong_case and not BREAKING_TOKEN.search(body):
+    wrong_case = BREAKING_WRONG_CASE.search(footer_block)
+    if wrong_case and not BREAKING_TOKEN.search(footer_block):
         problems.append(f"C5: '{wrong_case.group(1)}:' must be uppercase — 'BREAKING CHANGE:'")
 
     problems.extend(check_footer_folding(lines))
@@ -238,17 +242,21 @@ def main() -> int:
         )
         return 2 if failures else 0
 
+    strip_editor_comments = False
     if args.file:
         if not args.file.is_file():
             sys.exit(f"error: {args.file} not found")
         message = args.file.read_text(encoding="utf-8")
+        strip_editor_comments = True
     elif args.message is not None:
         message = args.message
     else:
         message = sys.stdin.read()
 
-    # A commit-msg file carries the editor's comment lines; git strips them itself.
-    message = "\n".join(line for line in message.splitlines() if not line.startswith("#"))
+    # Only a commit-msg *file* carries the editor's comment lines. Stripping them
+    # from a literal or stdin message would delete legitimate body lines.
+    if strip_editor_comments:
+        message = "\n".join(line for line in message.splitlines() if not line.startswith("#"))
     findings = check_message(message, mapping)
     errors = [text for level, text in findings if level == "error"]
     for level, text in findings:

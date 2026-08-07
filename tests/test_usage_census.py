@@ -65,6 +65,14 @@ class CensusTest(unittest.TestCase):
         self.assertGreater(result["counts"]["internalUsage"], 0)
         self.assertGreater(result["counts"]["externalUsage"], 0)
 
+    def test_standalone_reference_is_not_an_import(self):
+        # Regression: a bare line holding just the symbol was classified as a
+        # from-import, corrupting the per-pattern census.
+        self.write("src/pkg/a.py", "def thing():\n    return 1\n")
+        self.write("src/pkg/b.py", "value = [\n]\nthing\n")
+        kinds = self.census("thing")["counts"]["byKind"]
+        self.assertNotIn("from-import", kinds, kinds)
+
     def test_string_reference_counted(self):
         self.write("src/pkg/reg.py", "def handler():\n    return 1\n")
         self.write("config/app.py", 'ENTRYPOINT = "handler"\n')
@@ -91,12 +99,22 @@ class CensusTest(unittest.TestCase):
         self.assertEqual(result.returncode, 3)
         self.assertIn("dynamic dispatch", result.stdout)
 
-    def test_exit_code_zero_when_referenced(self):
+    def test_exit_code_zero_when_used(self):
         self.write("src/pkg/a.py", "def present():\n    return 1\n")
+        self.write("src/pkg/b.py", "from .a import present\n\npresent()\n")
         result = run_script(
             "less-code-same-behavior", "usage_census.py", "present", "--root", str(self.root)
         )
         self.assertEqual(result.returncode, 0)
+
+    def test_definition_only_symbol_is_a_deletion_candidate(self):
+        # Regression: exit 3 documents "no usage beyond its own definition", but
+        # the status was based on the total, which counts the definition itself.
+        self.write("src/pkg/a.py", "def present():\n    return 1\n")
+        result = run_script(
+            "less-code-same-behavior", "usage_census.py", "present", "--root", str(self.root)
+        )
+        self.assertEqual(result.returncode, 3)
 
     def test_rejects_non_identifier(self):
         result = run_script(

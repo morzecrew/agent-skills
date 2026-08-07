@@ -119,6 +119,18 @@ class CensusTest(unittest.TestCase):
         result = script.census(self.root, ["js"], [], [])
         self.assertEqual(result["counts"]["byKind"], {"TypeError": 1})
 
+    def test_kotlin_throw_without_new(self):
+        self.write("app/a.kt", 'throw IllegalStateException("bad")\n')
+        result = script.census(self.root, ["java"], [], [])
+        self.assertIn("IllegalStateException", result["counts"]["byKind"])
+
+    def test_raises_mentioned_in_docstrings_are_not_counted(self):
+        self.write(
+            "src/a.py",
+            'def f():\n    """Callers raise exc.internal("boom") on failure."""\n    return 1\n',
+        )
+        self.assertEqual(self.census()["counts"]["sites"], 0)
+
     def test_exit_three_when_nothing_found(self):
         self.write("src/a.py", "x = 1\n")
         result = run_script(

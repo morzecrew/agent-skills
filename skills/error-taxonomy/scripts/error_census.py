@@ -42,7 +42,7 @@ RAISE_PATTERNS: dict[str, str] = {
     "js": r"\bthrow\s+new\s+([A-Za-z_][\w.]*)",
     "go": r"\b(errors\.New|fmt\.Errorf)\s*\(",
     "rust": r"\b(Err|panic!|bail!|ensure!)\s*[\(!]",
-    "java": r"\bthrow\s+new\s+([A-Za-z_][\w.]*)",
+    "java": r"\bthrow\s+(?:new\s+)?([A-Za-z_][\w.]*)",
 }
 
 SUFFIX_LANGUAGE = {
@@ -66,6 +66,38 @@ def normalize_message(message: str) -> str:
     text = NUMBER.sub("<>", text)
     text = WHITESPACE.sub(" ", text).strip().lower()
     return text.rstrip(".:! ")
+
+
+TRIPLE_QUOTE = re.compile(r'"""|\'\'\'')
+
+
+def code_lines(lines: list[str]) -> list[tuple[int, str]]:
+    """Drop comments and docstring bodies before counting raises.
+
+    Prose and examples mention `raise ...` constantly; counting them inflates the
+    census and invents message families that no call site produces.
+    """
+    kept: list[tuple[int, str]] = []
+    in_docstring = False
+    for number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        delimits = bool(TRIPLE_QUOTE.match(stripped)) or bool(
+            TRIPLE_QUOTE.search(stripped[-3:]) if len(stripped) >= 3 else False
+        )
+        quotes = len(TRIPLE_QUOTE.findall(stripped))
+        was_in = in_docstring
+        if delimits and quotes % 2:
+            in_docstring = not in_docstring
+        if was_in or (in_docstring and delimits and quotes % 2):
+            continue
+        # A docstring that opens and closes on one line never toggles the state,
+        # but its prose still must not be scanned.
+        if TRIPLE_QUOTE.match(stripped) and quotes >= 2 and quotes % 2 == 0:
+            continue
+        if stripped.startswith(("#", "//", "*", "/*")):
+            continue
+        kept.append((number, stripped))
+    return kept
 
 
 def tracked_files(root: Path) -> list[Path]:
@@ -109,10 +141,7 @@ def census(
         if any(fnmatch.fnmatch(relative, pattern) or fnmatch.fnmatch(path.name, pattern)
                for pattern in exclude):
             continue
-        for number, line in enumerate(lines, start=1):
-            stripped = line.strip()
-            if stripped.startswith(("#", "//", "*")):
-                continue
+        for number, stripped in code_lines(lines):
             match = raise_res[language].search(stripped)
             if not match:
                 continue

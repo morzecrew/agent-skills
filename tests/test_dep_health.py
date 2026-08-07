@@ -153,7 +153,7 @@ class ObservationsTest(unittest.TestCase):
     def test_repository_signals(self):
         summary = script.summarize_pypi(PYPI_PAYLOAD, NOW)
         notes = script.observations(
-            summary, {"archived": True, "contributors": 1, "daysSinceLastPush": 900}
+            summary, {"archived": True, "contributorsFirstPage": 1, "daysSinceLastPush": 900}
         )
         self.assertTrue(any("archived" in note for note in notes))
         self.assertTrue(any("bus factor" in note for note in notes))

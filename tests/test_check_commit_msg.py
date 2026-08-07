@@ -115,6 +115,16 @@ class InvalidMessageTest(unittest.TestCase):
         )
         self.assertEqual(errors(message), [])
 
+    def test_breaking_phrase_in_an_earlier_paragraph_is_prose(self):
+        # Regression: the token scan covered the whole body, so an explanatory
+        # paragraph failed the hook.
+        message = (
+            "✨ feat: add thing\n\n"
+            "BREAKING CHANGE: was considered and rejected for this change.\n\n"
+            "Co-Authored-By: X <x@y>\n"
+        )
+        self.assertEqual(errors(message), [])
+
     def test_past_tense_description(self):
         self.assert_flags("✨ feat(api): added OAuth login support", "C6")
 
