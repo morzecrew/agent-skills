@@ -117,6 +117,22 @@ class VerifiedRedTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("does not exist", result.stderr)
 
+    def test_absolute_test_file_is_refused(self):
+        result = run_script(
+            "reproduce-then-fix", "verified_red.py",
+            "--test-cmd", "true", "--test-file", "/etc/passwd", cwd=self.root,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("repository-relative", result.stderr)
+
+    def test_parent_traversal_test_file_is_refused(self):
+        result = run_script(
+            "reproduce-then-fix", "verified_red.py",
+            "--test-cmd", "true", "--test-file", "../outside.py", cwd=self.root,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("escapes the repository", result.stderr)
+
     def test_non_repository_is_rejected(self):
         with tempfile.TemporaryDirectory() as plain:
             result = run_script(

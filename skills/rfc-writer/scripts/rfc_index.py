@@ -176,39 +176,50 @@ def template_body(script_dir: Path) -> str:
     return match.group(1)
 
 
+def index_insert_position(lines: list[str], index_path: Path) -> int:
+    """Where a new row goes: after the last row, or after the table separator."""
+    last_row = max((i for i, line in enumerate(lines) if INDEX_ROW.match(line)), default=None)
+    if last_row is not None:
+        return last_row + 1
+    header = next(
+        (i for i, line in enumerate(lines) if set(line.strip()) <= set("|-: ") and "|" in line),
+        None,
+    )
+    if header is None:
+        fail(f"{index_path.name}: no index table to append to — add the table header first")
+    return header + 1
+
+
 def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = None) -> int:
     number = next_number(rfc_dir) if number is None else number
+    if not 1 <= number <= 9999:
+        fail(f"--number must be between 1 and 9999 (got {number}) — RFC ids are four digits")
     path = rfc_dir / f"{number:04d}-{slugify(title)}.md"
     if path.exists():
         fail(f"{path.name} already exists")
 
-    body = template_body(script_dir).replace("RFC NNNN — <Title>", f"RFC {number:04d} — {title}")
-    path.write_text(body + "\n", encoding="utf-8")
-
+    # Resolve everything that can fail *before* writing, so a missing index or
+    # table cannot leave an orphan RFC file for the user to clean up by hand.
     index_path = find_index(rfc_dir)
     index_text = index_path.read_text(encoding="utf-8")
+    insert_at = index_insert_position(index_text.splitlines(), index_path)
+
+    body = template_body(script_dir).replace("RFC NNNN — <Title>", f"RFC {number:04d} — {title}")
+    path.write_text(body + "\n", encoding="utf-8")
     row = f"| [{number:04d}]({path.name}) | {title} | 📝 Draft | TODO: one-line summary |"
 
     lines = index_text.splitlines()
-    last_row = max(
-        (i for i, line in enumerate(lines) if INDEX_ROW.match(line)),
-        default=None,
-    )
-    if last_row is None:
-        header = next(
-            (i for i, line in enumerate(lines) if set(line.strip()) <= set("|-: ") and "|" in line),
-            None,
-        )
-        if header is None:
-            fail(f"{index_path.name}: no index table to append to — add the table header first")
-        last_row = header
-    lines.insert(last_row + 1, row)
+    lines.insert(insert_at, row)
 
-    updated = NEXT_FREE.sub(lambda m: f"{m.group(1)}{number + 1:04d}{m.group(3)}", "\n".join(lines))
+    # Only ever raise the claim: `new --number 3` on a collection already at
+    # 0008 must not rewind the index to 0004.
+    claimed = claimed_next(index_text) or 0
+    next_free = max(number + 1, claimed)
+    updated = NEXT_FREE.sub(lambda m: f"{m.group(1)}{next_free:04d}{m.group(3)}", "\n".join(lines))
     index_path.write_text(updated + "\n", encoding="utf-8")
 
     print(f"created {path}")
-    print(f"updated {index_path} (row added, next free number -> {number + 1:04d})")
+    print(f"updated {index_path} (row added, next free number -> {next_free:04d})")
     print("next: fill the Scope paragraph and the one-line index summary")
     return 0
 

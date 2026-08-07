@@ -117,6 +117,37 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertIn("already exists", result.stderr)
         self.assertEqual((self.rfcs / "0001-alpha.md").read_text(), ALPHA, "must not clobber")
 
+    def test_number_must_be_a_four_digit_id(self):
+        # Regression: 0, negatives and >9999 produced filenames RFC_FILENAME
+        # cannot match, leaving an orphan the checker then reports.
+        for bad in ("0", "-1", "99999"):
+            with self.subTest(number=bad):
+                result = run_script(
+                    "rfc-writer", "rfc_index.py", "new", "X", "--number", bad, cwd=self.root
+                )
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn("four digits", result.stderr)
+        self.assertEqual(sorted(p.name for p in self.rfcs.glob("*.md")),
+                         ["0001-alpha.md", "0002-beta.md", "INDEX.md"])
+
+    def test_explicit_number_never_lowers_the_next_free_claim(self):
+        # Regression: `new --number 3` on a collection at 0008 rewound the claim
+        # to 0004, and cmd_check then reported the index as broken.
+        run_script("rfc-writer", "rfc_index.py", "new", "Low", "--number", "1", cwd=self.root)
+        run_script("rfc-writer", "rfc_index.py", "new", "Reserved", "--number", "5", cwd=self.root)
+        index = (self.rfcs / "INDEX.md").read_text()
+        self.assertIn("next free number is **0006**", index)
+        run_script("rfc-writer", "rfc_index.py", "new", "Lower", "--number", "3", cwd=self.root)
+        self.assertIn("next free number is **0006**", (self.rfcs / "INDEX.md").read_text())
+
+    def test_missing_index_leaves_no_orphan_file(self):
+        # Regression: the RFC was written before the index was resolved, so a
+        # missing table left an orphan on disk.
+        (self.rfcs / "INDEX.md").write_text("# RFCs\n\nThe next free number is **0003**.\n")
+        result = run_script("rfc-writer", "rfc_index.py", "new", "Orphan", cwd=self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse((self.rfcs / "0003-orphan.md").exists(), "no orphan RFC may survive")
+
     def test_slugify(self):
         self.assertEqual(script.slugify("Portable Export & Import!"), "portable-export-import")
         with self.assertRaises(SystemExit):

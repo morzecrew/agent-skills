@@ -58,9 +58,20 @@ def certify(
     root: Path, base: str, test_cmd: str, test_files: list[Path],
     expect_red_exit: int | None, verbose: bool,
 ) -> dict:
+    safe_files: list[Path] = []
     for relative in test_files:
-        if not (root / relative).is_file():
+        # The red run copies these into a throwaway worktree; an absolute path or
+        # one containing ".." would read and write outside both roots, which is
+        # exactly the isolation this tool promises.
+        if relative.is_absolute():
+            sys.exit(f"error: --test-file {relative} must be repository-relative, not absolute")
+        resolved = (root / relative).resolve()
+        if not resolved.is_relative_to(root.resolve()):
+            sys.exit(f"error: --test-file {relative} escapes the repository")
+        if not resolved.is_file():
             sys.exit(f"error: --test-file {relative} does not exist in the working tree")
+        safe_files.append(relative)
+    test_files = safe_files
 
     tmp_parent = tempfile.mkdtemp(prefix="verified-red-")
     worktree = Path(tmp_parent) / "tree"
