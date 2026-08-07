@@ -59,8 +59,7 @@ BREAKING_WRONG_CASE = re.compile(r"^(breaking[ -]change|Breaking[ -]Change):", r
 # (Co-Authored-By, Helped-by, Co-developed-by) are matched by shape, so the set
 # stays open, while a single capitalized prose word ("Also:") is not a trailer.
 FOOTER_TOKEN = re.compile(
-    r"^(?:[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+|BREAKING[ -]CHANGE|Closes|Fixes|Refs|Cc)(?::| #)",
-    re.I,
+    r"^(?:[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+|BREAKING[ -]CHANGE|Closes|Fixes|Refs|Cc)(?::| #)"
 )
 
 NON_IMPERATIVE = {

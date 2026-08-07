@@ -89,6 +89,16 @@ class CensusTest(unittest.TestCase):
         pats = script.build_patterns("helper")
         self.assertEqual(script.classify("    helper as h,", pats, True), "from-import")
 
+    def test_root_declaration_does_not_mark_every_file_internal(self):
+        # Regression: representing the scan root as "" made startswith("") true
+        # for every path, silently zeroing externalUsage.
+        self.write("root.py", "def helper():\n    return 1\n")
+        self.write("pkg/a.py", "helper = 2\n")
+        self.write("other/b.py", "from root import helper\n\nhelper()\n")
+        result = self.census("helper")
+        self.assertNotIn("", result["internalPrefixes"])
+        self.assertGreater(result["counts"]["externalUsage"], 0)
+
     def test_string_reference_counted(self):
         self.write("src/pkg/reg.py", "def handler():\n    return 1\n")
         self.write("config/app.py", 'ENTRYPOINT = "handler"\n')

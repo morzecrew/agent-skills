@@ -107,6 +107,8 @@ DIRECTIVE = re.compile(r"(?:#|//|/\*)[^\n]*\b(?:allow-unseamed|seam-exempt)\b")
 TRIPLE_QUOTE = re.compile(r'"""|\'\'\'')
 # Trailing comments only — a "#" inside a string literal keeps its line.
 TRAILING_COMMENT = re.compile(r'\s+(?:#|//)(?![^\'"]*[\'"]\s*$).*$')
+# Block comments carry directives in every C-family language.
+BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
 
 
 def strip_noise(lines: list[str], language: str = "python") -> list[tuple[int, str]]:
@@ -142,7 +144,10 @@ def strip_noise(lines: list[str], language: str = "python") -> list[tuple[int, s
         # Split first, then look for the directive only in the comment: a string
         # containing a comment marker could otherwise exempt its own line.
         comment = TRAILING_COMMENT.search(stripped)
-        if comment and DIRECTIVE.search(comment.group(0)):
+        block = BLOCK_COMMENT.search(stripped)
+        if (comment and DIRECTIVE.search(comment.group(0))) or (
+            block and DIRECTIVE.search(block.group(0))
+        ):
             continue
         # A clock name mentioned in a trailing comment is prose, not a call.
         code = TRAILING_COMMENT.sub("", stripped).strip()

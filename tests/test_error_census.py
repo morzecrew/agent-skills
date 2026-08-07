@@ -134,6 +134,12 @@ class CensusTest(unittest.TestCase):
         self.write("app/a.java", "try { f(); } catch (IOException e) { throw e; }\n")
         self.assertEqual(script.census(self.root, ["java"], [], [])["counts"]["sites"], 0)
 
+    def test_package_qualified_exception_is_captured(self):
+        # Regression: requiring an uppercase first character skipped
+        # java.io.IOException, whose package segment is lowercase.
+        self.write("app/a.java", 'throw new java.io.IOException("bad");\n')
+        self.assertIn("IOException", script.census(self.root, ["java"], [], [])["counts"]["byKind"])
+
     def test_raises_mentioned_in_docstrings_are_not_counted(self):
         self.write(
             "src/a.py",

@@ -147,14 +147,22 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
         {h["file"] for h in hits if h["kind"] == "definition" and patterns["declaration"].search(h["text"])}
     )
     inference_source = declaration_files or definition_files
-    # A declaration sitting at the scan root has no parent segment; without this
-    # the root yields no prefix and every hit is reported as external.
+    # A declaration at the scan root has no parent segment. An empty-string
+    # prefix would be a prefix of *every* path and silently zero externalUsage,
+    # so root membership is tested separately from the directory prefixes.
     prefixes = list(internal_prefixes) or sorted(
-        {str(Path(f).parts[0]) + "/" if Path(f).parts[:-1] else "" for f in inference_source}
+        {str(Path(f).parts[0]) + "/" for f in inference_source if Path(f).parts[:-1]}
+    )
+    root_is_internal = not internal_prefixes and any(
+        not Path(f).parts[:-1] for f in inference_source
     )
     for hit in hits:
+        at_root = "/" not in hit["file"]
         hit["scope"] = (
-            "internal" if any(hit["file"].startswith(p) for p in prefixes) else "external"
+            "internal"
+            if any(hit["file"].startswith(p) for p in prefixes)
+            or (root_is_internal and at_root)
+            else "external"
         )
 
     by_kind: dict[str, int] = {}
@@ -164,7 +172,7 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
     return {
         "symbol": symbol,
         "root": str(root),
-        "internalPrefixes": prefixes,
+        "internalPrefixes": prefixes + (["<scan root>"] if root_is_internal else []),
         "definitions": definition_files,
         "declarations": declaration_files,
         "counts": {

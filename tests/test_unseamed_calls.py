@@ -66,6 +66,13 @@ class StripNoiseTest(unittest.TestCase):
         kept = script.strip_noise(['t = time.time(); s = "// allow-unseamed"'], "python")
         self.assertEqual(len(kept), 1, kept)
 
+    def test_block_comment_directive_is_honored(self):
+        # C-family languages put the exemption in /* ... */.
+        self.assertEqual(
+            script.strip_noise(["t = Date.now(); /* allow-unseamed: intentional */"], "js"), []
+        )
+        self.assertEqual(len(script.strip_noise(["t = Date.now();"], "js")), 1)
+
     def test_single_line_triple_quote_does_not_toggle(self):
         kept = script.strip_noise(['x = """literal"""', "y = time.time()"])
         self.assertEqual(len(kept), 2)

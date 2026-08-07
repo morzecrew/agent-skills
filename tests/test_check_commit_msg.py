@@ -142,6 +142,12 @@ class InvalidMessageTest(unittest.TestCase):
         message = "✨ feat: x\n\nHelped-by: Someone <s@e>\nunindented continuation\n"
         self.assertTrue(any(t.startswith("C5") for t in errors(message)), errors(message))
 
+    def test_lowercase_hyphenated_prose_is_not_a_trailer(self):
+        # Regression: matching hyphenated tokens case-insensitively caught prose
+        # like "well-known:" and failed legitimate messages.
+        message = "✨ feat: x\n\nwell-known: this is prose\ncontinuing unindented here.\n"
+        self.assertEqual(errors(message), [])
+
     def test_past_tense_description(self):
         self.assert_flags("✨ feat(api): added OAuth login support", "C6")
 

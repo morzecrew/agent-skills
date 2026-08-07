@@ -48,7 +48,7 @@ LINK_DEF = re.compile(r"^\[([^\]]+)\]:\s*\S+", re.M)
 BULLET = re.compile(r"^-\s+(.*)$")
 SEMVER_CORE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
-FENCE = re.compile(r"^\s*(?:```|~~~)")
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 VERSION = re.compile(r"^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -61,12 +61,20 @@ def outside_fences(lines: list[str], start: int, end: int) -> list[int]:
     illustrations as violations.
     """
     kept: list[int] = []
-    fenced = False
+    opener: str | None = None
     for number in range(start, min(end, len(lines))):
-        if FENCE.match(lines[number]):
-            fenced = not fenced
-            continue
-        if not fenced:
+        match = FENCE.match(lines[number])
+        if match:
+            char = match.group(1)[0]
+            # GFM closes a block only with the character that opened it, so a
+            # ~~~ line inside a ``` block is content, not a delimiter.
+            if opener is None:
+                opener = char
+                continue
+            if char == opener:
+                opener = None
+                continue
+        if opener is None:
             kept.append(number)
     return kept
 
@@ -106,13 +114,10 @@ def validate(path: Path, house_rules: bool) -> list[str]:
     lines = text.splitlines()
     problems: list[str] = []
 
-    in_code = False
     sections: list[dict] = []
+    live_lines = set(outside_fences(lines, 0, len(lines)))
     for number, line in enumerate(lines):
-        if FENCE.match(line):
-            in_code = not in_code
-            continue
-        if in_code:
+        if number not in live_lines:
             continue
         heading = ANY_H2.match(line)
         if not heading:

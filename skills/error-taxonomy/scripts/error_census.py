@@ -44,7 +44,9 @@ RAISE_PATTERNS: dict[str, str] = {
     "rust": r"\b(Err|panic!|bail!|ensure!)\s*[\(!]",
     # `new` optional for Kotlin, but the target must look like a type and be
     # constructed — otherwise a bare rethrow (`throw e;`) becomes its own kind.
-    "java": r"\bthrow\s+(?:new\s+)?([A-Z][\w.]*)\s*\(",
+    # Qualified names are ordinary: java.io.IOException must match, so the
+    # uppercase test applies to the final component, not the package.
+    "java": r"\bthrow\s+(?:new\s+)?((?:[A-Za-z_]\w*\.)*[A-Z]\w*)\s*\(",
 }
 
 SUFFIX_LANGUAGE = {

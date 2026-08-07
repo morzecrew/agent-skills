@@ -124,6 +124,13 @@ class ChangelogTest(unittest.TestCase):
         fenced = "# CL\n\n## [Unreleased]\n\n### Added\n\n- x\n\n~~~text\n## [9.9.9] - not-a-date\n~~~\n"
         self.assertEqual(self.check(fenced), [])
 
+    def test_fence_closes_only_on_its_own_character(self):
+        # Regression: treating ``` and ~~~ interchangeably let a ~~~ line inside
+        # a backtick block end it early and leak its contents.
+        text = ("# CL\n\n## [Unreleased]\n\n### Added\n\n- x\n\n"
+                "```text\n~~~\n## [9.9.9] - not-a-date\n```\n")
+        self.assertEqual(self.check(text), [])
+
     def test_yanked_tag_accepted(self):
         self.assertNotIn("S2", " ".join(self.check(GOOD)))
 
