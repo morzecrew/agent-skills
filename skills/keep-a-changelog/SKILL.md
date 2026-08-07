@@ -125,7 +125,7 @@ These are deliberate local conventions, not part of the spec. In another reposit
 
 ```bash
 python3 scripts/validate_changelog.py CHANGELOG.md                 # spec only
-python3 scripts/validate_changelog.py --house-rules CHANGELOG.md   # + the local conventions below
+python3 scripts/validate_changelog.py --house-rules CHANGELOG.md   # + the local conventions above
 ```
 
 Run it after editing, and before cutting a version. It never edits — and it cannot judge whether an entry is user-relevant, outcome-oriented, or true, which is the part that matters most.

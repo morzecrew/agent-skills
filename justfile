@@ -5,12 +5,15 @@
 default:
     @just --list
 
-# Everything CI runs, in CI's order
+# What CI runs on every push (CI additionally validates PR commit messages,
+# which needs a base ref — run `just commits` for that locally)
 check: lint validate test
 
 # Markdown style (same config as the pre-commit hook)
 lint:
-    markdownlint README.md AGENTS.md skills/**/*.md
+    # Quoted: the shell has no globstar by default, so an unquoted **
+    # would silently skip skills/*/references/*.md.
+    markdownlint README.md AGENTS.md 'skills/**/*.md'
 
 # Structural validation of the skill collection — no LLM, no network
 validate:

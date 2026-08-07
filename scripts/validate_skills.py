@@ -15,7 +15,7 @@ Errors (fail the run):
   E9  a relative link to references/ points at a missing file
   E10 a file in references/ is never mentioned in its SKILL.md
   E11 README.md "Available Skills" is out of sync with skills/ (either direction)
-  E12 a bundled script does not compile (python) or parse (shell)
+  E12 a bundled script does not compile (python) or parse (shell, javascript)
   E13 a skill ships scripts/ that its SKILL.md never mentions
 
 Warnings (reported, do not fail):
@@ -146,6 +146,12 @@ def check_skill(skill_dir: Path, all_names: set[str]) -> None:
                     compile(script.read_text(encoding="utf-8"), str(script), "exec")
                 except (SyntaxError, UnicodeDecodeError) as exc:
                     err("E12", f"skills/{name}/scripts/{script.name} does not compile: {exc}")
+            elif script.suffix in {".js", ".mjs", ".cjs"}:
+                proc = subprocess.run(
+                    ["node", "--check", str(script)], capture_output=True, text=True
+                )
+                if proc.returncode != 0 and "not found" not in proc.stderr.lower():
+                    err("E12", f"skills/{name}/scripts/{script.name} does not parse: {proc.stderr.strip()[:160]}")
             elif script.suffix in {".sh", ".bash"}:
                 proc = subprocess.run(
                     ["bash", "-n", str(script)], capture_output=True, text=True

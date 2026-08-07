@@ -71,6 +71,16 @@ query($id: ID!, $after: String) {
 }
 """
 
+THREAD_AUTHOR_QUERY = """
+query($id: ID!) {
+  node(id: $id) {
+    ... on PullRequestReviewThread {
+      comments(first: 1) { nodes { author { login __typename } } }
+    }
+  }
+}
+"""
+
 RESOLVE_MUTATION = """
 mutation($thread: ID!) {
   resolveReviewThread(input: { threadId: $thread }) { thread { id isResolved } }
@@ -82,8 +92,8 @@ query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
       reviewThreads(first: 1) { totalCount }
-      reviews(first: 1) { totalCount }
-      comments(first: 1) { totalCount }
+      reviews(last: 20) { totalCount nodes { updatedAt } }
+      comments(last: 20) { totalCount nodes { updatedAt } }
     }
   }
 }
@@ -264,21 +274,34 @@ def cmd_status(owner: str, repo: str, pr: int) -> dict:
     return snapshot
 
 
-def comment_fingerprint(owner: str, repo: str, pr: int) -> tuple[int, int, int]:
-    """Cheap totals used to detect that reviewers have stopped writing."""
+def comment_fingerprint(owner: str, repo: str, pr: int) -> tuple:
+    """Signal that reviewers have stopped writing.
+
+    Counts alone are not enough: editing an existing review or comment — which
+    reviewers do while they refine a summary — leaves every total unchanged, so
+    the latest updatedAt values ride along.
+    """
     page = graphql(COUNTS_QUERY, {"owner": owner, "repo": repo}, {"pr": pr})
     node = page["repository"]["pullRequest"]
+    stamps = tuple(
+        sorted(
+            entry["updatedAt"]
+            for surface in ("reviews", "comments")
+            for entry in node[surface]["nodes"]
+        )
+    )
     return (
         node["reviewThreads"]["totalCount"],
         node["reviews"]["totalCount"],
         node["comments"]["totalCount"],
+        stamps,
     )
 
 
 def wait_verdict(
     snapshot: dict,
-    fingerprint: tuple[int, int, int],
-    previous: tuple[int, int, int] | None,
+    fingerprint: tuple,
+    previous: tuple | None,
     stable_since: float | None,
     now: float,
     settle_s: int,
@@ -364,8 +387,31 @@ def cmd_reply(owner: str, repo: str, pr: int, comment_id: int, body: str) -> dic
 
 
 def cmd_resolve(thread_id: str) -> dict:
+    """Resolve a bot thread. The skill's rail is enforced here, not just documented.
+
+    A human's thread is theirs to resolve; closing it for them ends a
+    conversation they did not agree was over.
+    """
+    node = graphql(THREAD_AUTHOR_QUERY, {"id": thread_id}, {})["node"]
+    if not node:
+        sys.exit(f"error: {thread_id} is not a review thread")
+    comments = node["comments"]["nodes"]
+    if not comments:
+        sys.exit(f"error: {thread_id} has no comments — refusing to resolve an unknown thread")
+    author = comments[0].get("author")
+    if author is None:
+        sys.exit(f"error: {thread_id}'s author is unavailable (deleted account) — resolve it by hand")
+    if not gql_is_bot(author):
+        sys.exit(
+            f"error: {thread_id} was opened by {author.get('login')}, a human — reply instead. "
+            "Resolving a human's thread is a hard rail in SKILL.md."
+        )
     data = graphql(RESOLVE_MUTATION, {"thread": thread_id}, {})
-    return {"resolved": data["resolveReviewThread"]["thread"]["isResolved"], "threadId": thread_id}
+    return {
+        "resolved": data["resolveReviewThread"]["thread"]["isResolved"],
+        "threadId": thread_id,
+        "author": author.get("login"),
+    }
 
 
 def read_body(args: argparse.Namespace) -> str:

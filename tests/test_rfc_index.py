@@ -59,7 +59,7 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertEqual(script.status_emoji(BETA), "✅")
 
     def test_file_without_index_row(self):
-        (self.rfcs / "0009-orphan.md").write_text("# RFC 0009 — Orphan\n\n- **Status:** 📝 Draft\n")
+        (self.rfcs / "0009-orphan.md").write_text("# RFC 0009 — Orphan\n\n- **Status:** 📝 Draft\n", encoding="utf-8")
         self.assertEqual(self.check(), 2)
 
     def test_index_row_without_file(self):
@@ -67,28 +67,28 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertEqual(self.check(), 2)
 
     def test_h1_number_disagrees_with_filename(self):
-        (self.rfcs / "0001-alpha.md").write_text(ALPHA.replace("RFC 0001", "RFC 0099"))
+        (self.rfcs / "0001-alpha.md").write_text(ALPHA.replace("RFC 0001", "RFC 0099"), encoding="utf-8")
         self.assertEqual(self.check(), 2)
 
     def test_header_status_disagrees_with_table(self):
-        (self.rfcs / "0001-alpha.md").write_text(ALPHA.replace("📝 Draft", "❌ Rejected"))
+        (self.rfcs / "0001-alpha.md").write_text(ALPHA.replace("📝 Draft", "❌ Rejected"), encoding="utf-8")
         self.assertEqual(self.check(), 2)
 
     def test_claimed_next_number_is_taken(self):
-        (self.rfcs / "INDEX.md").write_text(INDEX.replace("**0003**", "**0002**"))
+        (self.rfcs / "INDEX.md").write_text(INDEX.replace("**0003**", "**0002**"), encoding="utf-8")
         self.assertEqual(self.check(), 2)
 
     def test_claimed_next_number_below_highest(self):
-        (self.rfcs / "INDEX.md").write_text(INDEX.replace("**0003**", "**0001**"))
+        (self.rfcs / "INDEX.md").write_text(INDEX.replace("**0003**", "**0001**"), encoding="utf-8")
         self.assertEqual(self.check(), 2)
 
     def test_next_number_prefers_the_higher_of_disk_and_index(self):
         self.assertEqual(script.next_number(self.rfcs), 3)
-        (self.rfcs / "INDEX.md").write_text(INDEX.replace("**0003**", "**0099**"))
+        (self.rfcs / "INDEX.md").write_text(INDEX.replace("**0003**", "**0099**"), encoding="utf-8")
         self.assertEqual(script.next_number(self.rfcs), 99)
 
     def test_duplicate_numbers_on_disk_are_fatal(self):
-        (self.rfcs / "0001-duplicate.md").write_text(ALPHA)
+        (self.rfcs / "0001-duplicate.md").write_text(ALPHA, encoding="utf-8")
         with self.assertRaises(SystemExit):
             script.rfc_files(self.rfcs)
 
@@ -143,7 +143,7 @@ class RfcCollectionTest(unittest.TestCase):
     def test_missing_index_leaves_no_orphan_file(self):
         # Regression: the RFC was written before the index was resolved, so a
         # missing table left an orphan on disk.
-        (self.rfcs / "INDEX.md").write_text("# RFCs\n\nThe next free number is **0003**.\n")
+        (self.rfcs / "INDEX.md").write_text("# RFCs\n\nThe next free number is **0003**.\n", encoding="utf-8")
         result = run_script("rfc-writer", "rfc_index.py", "new", "Orphan", cwd=self.root)
         self.assertEqual(result.returncode, 1)
         self.assertFalse((self.rfcs / "0003-orphan.md").exists(), "no orphan RFC may survive")

@@ -15,6 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The default pull_request checkout is the merge commit with a
+          # shallow history, so origin/base..HEAD holds none of the PR's
+          # own commits and the message check would pass vacuously.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v20
@@ -34,6 +40,5 @@ jobs:
       - name: Commit message format
         if: github.event_name == 'pull_request'
         run: |
-          git fetch --quiet origin "${{ github.base_ref }}"
           python3 skills/gitmoji-conventional/scripts/check_commit_msg.py \
             --range "origin/${{ github.base_ref }}..HEAD"

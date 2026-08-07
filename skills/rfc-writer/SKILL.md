@@ -98,6 +98,7 @@ The bookkeeping — number allocation, file creation from the template, index-ro
 python3 scripts/rfc_index.py check          # index vs files, H1 vs filename, statuses, next-free
 python3 scripts/rfc_index.py next           # next free number
 python3 scripts/rfc_index.py new "Title"    # allocate + instantiate template + index row + bump
+python3 scripts/rfc_index.py new "Title" --number 42   # a reserved number, or re-creating a deleted RFC
 ```
 
 (Read-only except `new`; `--root` if the repo isn't the cwd.) The thinking — what the design says, what the one-liner claims, when a status changes — is yours.
