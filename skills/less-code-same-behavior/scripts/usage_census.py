@@ -24,7 +24,8 @@ shim-and-move, break-and-migrate, and leave-alone.
 Files come from `git ls-files` when the root is a repository (so ignored files
 stay ignored), else a filesystem walk. Read-only.
 
-Exit codes: 0 used · 1 usage error · 3 no usage beyond its own definition
+Exit codes: 0 used · 1 usage error · 3 no usage beyond its own definition.
+Unknown flags exit 2, from argparse itself.
 (a deletion candidate — still confirm the patterns this tool cannot see:
 dynamic dispatch, generated code, and other repositories).
 """
@@ -146,8 +147,10 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
         {h["file"] for h in hits if h["kind"] == "definition" and patterns["declaration"].search(h["text"])}
     )
     inference_source = declaration_files or definition_files
+    # A declaration sitting at the scan root has no parent segment; without this
+    # the root yields no prefix and every hit is reported as external.
     prefixes = list(internal_prefixes) or sorted(
-        {str(Path(f).parts[0]) + "/" for f in inference_source if Path(f).parts[:-1]}
+        {str(Path(f).parts[0]) + "/" if Path(f).parts[:-1] else "" for f in inference_source}
     )
     for hit in hits:
         hit["scope"] = (

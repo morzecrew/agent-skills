@@ -137,7 +137,12 @@ def strip_noise(lines: list[str], language: str = "python") -> list[tuple[int, s
         if TRIPLE_QUOTE.match(stripped) and quotes >= 2 and quotes % 2 == 0:
             continue
         prefixes = COMMENT_PREFIXES_BY_LANGUAGE.get(language, COMMENT_PREFIXES)
-        if stripped.startswith(prefixes) or DIRECTIVE.search(line):
+        if stripped.startswith(prefixes):
+            continue
+        # Split first, then look for the directive only in the comment: a string
+        # containing a comment marker could otherwise exempt its own line.
+        comment = TRAILING_COMMENT.search(stripped)
+        if comment and DIRECTIVE.search(comment.group(0)):
             continue
         # A clock name mentioned in a trailing comment is prose, not a call.
         code = TRAILING_COMMENT.sub("", stripped).strip()

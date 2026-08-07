@@ -92,6 +92,10 @@ class CensusTest(unittest.TestCase):
         self.write("src/a.py", '# raise exc.internal("not real")\nx = 1\n')
         self.assertEqual(self.census()["counts"]["sites"], 0)
 
+    def test_trailing_comment_is_not_a_raise_site(self):
+        self.write("src/a.py", 'x = 1  # raise exc.internal("not real")\n')
+        self.assertEqual(self.census()["counts"]["sites"], 0)
+
     def test_exclude_glob_skips_paths(self):
         self.write("src/a.py", 'raise exc.internal("real")\n')
         self.write("tests/test_a.py", 'raise exc.internal("boom")\n')

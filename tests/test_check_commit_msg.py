@@ -136,6 +136,12 @@ class InvalidMessageTest(unittest.TestCase):
         )
         self.assertEqual(errors(message), [])
 
+    def test_hyphenated_trailers_are_recognized_by_shape(self):
+        # A short whitelist dropped canonical keys like Helped-by; trailers are
+        # matched by their token shape instead.
+        message = "✨ feat: x\n\nHelped-by: Someone <s@e>\nunindented continuation\n"
+        self.assertTrue(any(t.startswith("C5") for t in errors(message)), errors(message))
+
     def test_past_tense_description(self):
         self.assert_flags("✨ feat(api): added OAuth login support", "C6")
 

@@ -21,6 +21,9 @@ jobs:
           # own commits and the message check would pass vacuously.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          # This workflow runs PR-authored code; no step fetches from
+          # GitHub afterwards, so the token need not stay in git config.
+          persist-credentials: false
 
       - name: markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v20

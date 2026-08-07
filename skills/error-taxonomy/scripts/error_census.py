@@ -71,6 +71,7 @@ def normalize_message(message: str) -> str:
 
 
 TRIPLE_QUOTE = re.compile(r'"""|\'\'\'')
+TRAILING_COMMENT = re.compile(r'\s+(?:#|//)(?![^\'"]*[\'"]\s*$).*$')
 
 
 def code_lines(lines: list[str]) -> list[tuple[int, str]]:
@@ -98,7 +99,11 @@ def code_lines(lines: list[str]) -> list[tuple[int, str]]:
             continue
         if stripped.startswith(("#", "//", "*", "/*")):
             continue
-        kept.append((number, stripped))
+        # `x = 1  # raise ValueError("not real")` is prose, not a raise site.
+        code = TRAILING_COMMENT.sub("", stripped).strip()
+        if not code:
+            continue
+        kept.append((number, code))
     return kept
 
 

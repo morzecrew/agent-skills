@@ -121,6 +121,15 @@ class NpmSummaryTest(unittest.TestCase):
         self.assertEqual(self.summary["firstRelease"], "2016-01-01")
         self.assertEqual(self.summary["latestRelease"], "2018-04-09")
 
+    def test_latest_release_date_follows_the_latest_tag(self):
+        # A prerelease can sort last; the age shown must belong to the version
+        # reported as latest.
+        payload = json_copy(NPM_PAYLOAD)
+        payload["time"]["2.0.0-beta.1"] = "2026-07-01T00:00:00.000Z"
+        summary = script.summarize_npm(payload, NOW)
+        self.assertEqual(summary["latestVersion"], "1.3.0")
+        self.assertEqual(summary["latestRelease"], "2018-04-09")
+
     def test_deprecation_is_surfaced(self):
         self.assertTrue(self.summary["deprecated"])
 

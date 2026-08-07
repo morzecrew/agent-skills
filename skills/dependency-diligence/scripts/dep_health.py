@@ -139,6 +139,9 @@ def summarize_npm(payload: dict, now: dt.datetime) -> dict:
         **(latest_manifest.get("optionalDependencies") or {}),
     }
     year_ago = now - dt.timedelta(days=365)
+    # Date the version we call "latest": a prerelease can sort last and would
+    # otherwise supply the age shown beside a different version.
+    latest_stamp = versions.get(latest_tag) or (dated[-1][1] if dated else None)
     repository = payload.get("repository")
     if isinstance(repository, dict):
         repository = repository.get("url")
@@ -154,8 +157,8 @@ def summarize_npm(payload: dict, now: dt.datetime) -> dict:
         "dependencyNames": sorted(dependencies)[:20],
         "releaseCount": len(dated),
         "firstRelease": dated[0][1].date().isoformat() if dated else None,
-        "latestRelease": dated[-1][1].date().isoformat() if dated else None,
-        "daysSinceLatestRelease": days_since(dated[-1][1], now) if dated else None,
+        "latestRelease": latest_stamp.date().isoformat() if latest_stamp else None,
+        "daysSinceLatestRelease": days_since(latest_stamp, now),
         "releasesLastYear": sum(1 for _, when in dated if when >= year_ago),
         "deprecated": bool(latest_manifest.get("deprecated")),
     }

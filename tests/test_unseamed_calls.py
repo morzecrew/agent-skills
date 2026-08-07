@@ -60,6 +60,12 @@ class StripNoiseTest(unittest.TestCase):
         # so strict mode could fail on prose.
         self.assertEqual(script.strip_noise(["x = 1  # time.time() mentioned"]), [(1, "x = 1")])
 
+    def test_directive_inside_a_string_does_not_exempt(self):
+        # Regression: anchoring to a comment marker was not enough while the
+        # search ran over the whole line — a string could carry the marker.
+        kept = script.strip_noise(['t = time.time(); s = "// allow-unseamed"'], "python")
+        self.assertEqual(len(kept), 1, kept)
+
     def test_single_line_triple_quote_does_not_toggle(self):
         kept = script.strip_noise(['x = """literal"""', "y = time.time()"])
         self.assertEqual(len(kept), 2)

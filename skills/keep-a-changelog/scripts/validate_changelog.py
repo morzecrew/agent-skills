@@ -109,7 +109,7 @@ def validate(path: Path, house_rules: bool) -> list[str]:
     in_code = False
     sections: list[dict] = []
     for number, line in enumerate(lines):
-        if line.lstrip().startswith("```"):
+        if FENCE.match(line):
             in_code = not in_code
             continue
         if in_code:

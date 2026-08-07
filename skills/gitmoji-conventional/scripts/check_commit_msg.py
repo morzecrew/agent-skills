@@ -55,8 +55,11 @@ BREAKING_TOKEN = re.compile(r"^(BREAKING[ -]CHANGE):", re.M)
 BREAKING_WRONG_CASE = re.compile(r"^(breaking[ -]change|Breaking[ -]Change):", re.M | re.I)
 # Real git trailers only. "Also:" opening a final prose paragraph is not a
 # trailer, and treating it as one rejected legitimate messages.
+# Git trailers are `Token: value` with no spaces in the token. Hyphenated keys
+# (Co-Authored-By, Helped-by, Co-developed-by) are matched by shape, so the set
+# stays open, while a single capitalized prose word ("Also:") is not a trailer.
 FOOTER_TOKEN = re.compile(
-    r"^(BREAKING[ -]CHANGE|Co-Authored-By|Signed-off-by|Closes|Fixes|Refs|Reviewed-by|Acked-by|Tested-by|Reported-by|Cc|See-also)(?::| #)",
+    r"^(?:[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+|BREAKING[ -]CHANGE|Closes|Fixes|Refs|Cc)(?::| #)",
     re.I,
 )
 

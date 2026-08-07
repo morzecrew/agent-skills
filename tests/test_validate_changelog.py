@@ -120,6 +120,10 @@ class ChangelogTest(unittest.TestCase):
         )
         self.assertEqual([p for p in self.check(illustrated) if p.startswith("S7")], [])
 
+    def test_tilde_fenced_headings_are_not_sections(self):
+        fenced = "# CL\n\n## [Unreleased]\n\n### Added\n\n- x\n\n~~~text\n## [9.9.9] - not-a-date\n~~~\n"
+        self.assertEqual(self.check(fenced), [])
+
     def test_yanked_tag_accepted(self):
         self.assertNotIn("S2", " ".join(self.check(GOOD)))
 
