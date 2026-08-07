@@ -91,7 +91,7 @@ COUNTS_QUERY = """
 query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
-      reviewThreads(first: 1) { totalCount }
+      reviewThreads(last: 20) { totalCount nodes { comments { totalCount } } }
       reviews(last: 20) { totalCount nodes { updatedAt } }
       comments(last: 20) { totalCount nodes { updatedAt } }
     }
@@ -290,11 +290,16 @@ def comment_fingerprint(owner: str, repo: str, pr: int) -> tuple:
             for entry in node[surface]["nodes"]
         )
     )
+    # A reply lands inside an existing thread, leaving every total unchanged.
+    thread_sizes = tuple(
+        entry["comments"]["totalCount"] for entry in node["reviewThreads"]["nodes"]
+    )
     return (
         node["reviewThreads"]["totalCount"],
         node["reviews"]["totalCount"],
         node["comments"]["totalCount"],
         stamps,
+        thread_sizes,
     )
 
 

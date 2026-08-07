@@ -194,6 +194,11 @@ def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = No
     number = next_number(rfc_dir) if number is None else number
     if not 1 <= number <= 9999:
         fail(f"--number must be between 1 and 9999 (got {number}) — RFC ids are four digits")
+    existing = rfc_files(rfc_dir)
+    if number in existing:
+        # The identifier is the number, not the filename: a different slug at the
+        # same number still produces two RFCs sharing one id.
+        fail(f"RFC {number:04d} already exists as {existing[number].name}")
     path = rfc_dir / f"{number:04d}-{slugify(title)}.md"
     if path.exists():
         fail(f"{path.name} already exists")

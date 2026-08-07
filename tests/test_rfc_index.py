@@ -148,6 +148,13 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertFalse((self.rfcs / "0003-orphan.md").exists(), "no orphan RFC may survive")
 
+    def test_number_already_taken_is_refused_whatever_the_slug(self):
+        # Regression: the guard compared filenames, so a different title at the
+        # same number produced two RFCs sharing one identifier.
+        result = run_script("rfc-writer", "rfc_index.py", "new", "Totally Different", "--number", "1", cwd=self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("already exists as 0001-alpha.md", result.stderr)
+
     def test_slugify(self):
         self.assertEqual(script.slugify("Portable Export & Import!"), "portable-export-import")
         with self.assertRaises(SystemExit):

@@ -10,8 +10,9 @@
 
 Both are read-only git/XML/text reads; neither edits or runs your tests.
 
-Coverage inputs: Cobertura XML (coverage.py `-x`, JaCoCo-style, gocover-cobertura)
-and LCOV `.info`. Paths are matched by longest common suffix, since report paths
+Coverage inputs: Cobertura XML (coverage.py `-x`, gocover-cobertura) and LCOV
+`.info`. JaCoCo's own XML uses a different element shape and is not read — convert
+it with a cobertura reporter first. Paths are matched by longest common suffix, since report paths
 are relative to whatever root the runner used.
 
 Exit codes: 0 ok · 1 usage/git error · 2 patch coverage below --min. Unknown flags exit 2, from argparse itself.

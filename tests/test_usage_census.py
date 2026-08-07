@@ -43,6 +43,14 @@ class CensusTest(unittest.TestCase):
         self.assertGreaterEqual(kinds.get("definition", 0), 1)
         self.assertGreater(result["counts"]["total"], 1, "not dead")
 
+    def test_facade_assignment_records_the_attribute_usage_too(self):
+        # Regression: `symbol = module.symbol` counted only as a definition,
+        # hiding the RHS usage that proves the symbol is reachable.
+        self.write("src/pkg/mod.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/__init__.py", "from . import mod\nhelper = mod.helper\n")
+        kinds = self.census("helper")["counts"]["byKind"]
+        self.assertGreaterEqual(kinds.get("attribute", 0), 1)
+
     def test_absent_symbol_reports_nothing(self):
         self.write("src/pkg/a.py", "def other():\n    return 1\n")
         result = self.census("run_coverage")

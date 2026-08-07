@@ -123,14 +123,17 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
                 continue
             kind = classify(line, patterns, in_import_block)
             if kind:
-                hits.append(
-                    {
-                        "file": str(path.relative_to(root)),
-                        "line": number,
-                        "kind": kind,
-                        "text": stripped[:160],
-                    }
-                )
+                entry = {
+                    "file": str(path.relative_to(root)),
+                    "line": number,
+                    "kind": kind,
+                    "text": stripped[:160],
+                }
+                hits.append(entry)
+                # `symbol = module.symbol` is a facade: recording only the
+                # definition would hide the very usage the audit is counting.
+                if kind == "definition" and patterns["attribute"].search(line):
+                    hits.append({**entry, "kind": "attribute"})
 
     definition_files = sorted({h["file"] for h in hits if h["kind"] == "definition"})
     # Prefer real declarations when inferring the internal boundary: a plain

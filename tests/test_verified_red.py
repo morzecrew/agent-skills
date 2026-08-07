@@ -141,6 +141,29 @@ class VerifiedRedTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 1)
 
+    def test_expect_red_exit_zero_is_refused(self):
+        # Regression: it made "red" mean "passed", certifying nothing.
+        (self.root / "t.py").write_text(DISCRIMINATING_TEST)
+        result = run_script(
+            "reproduce-then-fix", "verified_red.py", "--test-cmd", "true",
+            "--test-file", "t.py", "--expect-red-exit", "0", cwd=self.root,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("certifies nothing", result.stderr)
+
+    def test_subdirectory_root_is_refused(self):
+        # The red run executes at the worktree root, so a subdirectory root
+        # would run something different from the green half.
+        sub = self.root / "pkg"
+        sub.mkdir()
+        (sub / "t.py").write_text(DISCRIMINATING_TEST)
+        result = run_script(
+            "reproduce-then-fix", "verified_red.py", "--test-cmd", "true",
+            "--test-file", "t.py", cwd=sub,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("toplevel", result.stderr)
+
     def test_cli_exit_code_two_when_not_certified(self):
         self.apply_fix()
         (self.root / "test_blind.py").write_text(BLIND_TEST)

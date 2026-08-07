@@ -131,8 +131,17 @@ def main() -> int:
     args = parser.parse_args()
 
     root = args.root.resolve()
-    if git(root, "rev-parse", "--git-dir", check=False).returncode != 0:
+    toplevel = git(root, "rev-parse", "--show-toplevel", check=False)
+    if toplevel.returncode != 0:
         sys.exit(f"error: {root} is not a git repository")
+    # A subdirectory root would copy test files relative to it while the red run
+    # executes at the worktree root, so the two halves would not run the same
+    # thing and could certify on a mismatch.
+    resolved_top = Path(toplevel.stdout.strip()).resolve()
+    if resolved_top != root:
+        sys.exit(f"error: --root must be the repository toplevel ({resolved_top}), not a subdirectory")
+    if args.expect_red_exit == 0:
+        sys.exit("error: --expect-red-exit 0 would accept a passing red run, which certifies nothing")
 
     result = certify(
         root, args.base, args.test_cmd, args.test_file, args.expect_red_exit, args.verbose

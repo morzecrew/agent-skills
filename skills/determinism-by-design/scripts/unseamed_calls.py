@@ -92,6 +92,8 @@ COMMENT_PREFIXES = ("#", "//", "*", "/*")
 # literal on the same line to hide a real leak.
 DIRECTIVE = re.compile(r"(?:#|//|/\*)[^\n]*\b(?:allow-unseamed|seam-exempt)\b")
 TRIPLE_QUOTE = re.compile(r'"""|\'\'\'')
+# Trailing comments only — a "#" inside a string literal keeps its line.
+TRAILING_COMMENT = re.compile(r'\s+(?:#|//)(?![^\'"]*[\'"]\s*$).*$')
 
 
 def strip_noise(lines: list[str]) -> list[tuple[int, str]]:
@@ -103,16 +105,27 @@ def strip_noise(lines: list[str]) -> list[tuple[int, str]]:
     kept: list[tuple[int, str]] = []
     in_docstring = False
     for number, line in enumerate(lines, start=1):
-        quotes = len(TRIPLE_QUOTE.findall(line))
-        was_in = in_docstring
-        if quotes % 2:
-            in_docstring = not in_docstring
-        if was_in or in_docstring and quotes % 2:
-            continue
         stripped = line.strip()
+        # Only a delimiter that opens or closes the line toggles the state: a
+        # triple-quote sequence *inside* an ordinary string would otherwise
+        # swallow every following line.
+        delimits = bool(TRIPLE_QUOTE.match(stripped)) or bool(
+            TRIPLE_QUOTE.search(stripped[-3:]) if len(stripped) >= 3 else False
+        )
+        quotes = len(TRIPLE_QUOTE.findall(stripped))
+        was_in = in_docstring
+        if delimits and quotes % 2:
+            in_docstring = not in_docstring
+        # Skip lines inside a docstring *and* the line that opens one.
+        if was_in or (in_docstring and delimits and quotes % 2):
+            continue
         if stripped.startswith(COMMENT_PREFIXES) or DIRECTIVE.search(line):
             continue
-        kept.append((number, stripped))
+        # A clock name mentioned in a trailing comment is prose, not a call.
+        code = TRAILING_COMMENT.sub("", stripped).strip()
+        if not code:
+            continue
+        kept.append((number, code))
     return kept
 
 

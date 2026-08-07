@@ -39,6 +39,17 @@ class StripNoiseTest(unittest.TestCase):
         kept = script.strip_noise(['t = time.time(); label = "allow-unseamed"'])
         self.assertEqual(len(kept), 1, "a string literal must not exempt the line")
 
+    def test_triple_quote_inside_a_string_does_not_swallow_the_file(self):
+        # Regression: any line containing the marker toggled docstring state, so
+        # a normal string hid every following line from the scanner.
+        kept = script.strip_noise(['marker = "he said ...\'\'\' here"', "t = time.time()"])
+        self.assertEqual(len(kept), 2, kept)
+
+    def test_trailing_comment_mention_is_not_a_call(self):
+        # Regression: a clock name in an inline comment was reported as a leak,
+        # so strict mode could fail on prose.
+        self.assertEqual(script.strip_noise(["x = 1  # time.time() mentioned"]), [(1, "x = 1")])
+
     def test_single_line_triple_quote_does_not_toggle(self):
         kept = script.strip_noise(['x = """literal"""', "y = time.time()"])
         self.assertEqual(len(kept), 2)
