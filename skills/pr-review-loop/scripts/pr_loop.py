@@ -32,6 +32,7 @@ never-merge) stays in SKILL.md — this tool only makes the mechanics reliable.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -88,17 +89,6 @@ mutation($thread: ID!) {
 }
 """
 
-COUNTS_QUERY = """
-query($owner: String!, $repo: String!, $pr: Int!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $pr) {
-      reviewThreads(last: 20) { totalCount nodes { comments { totalCount } } }
-      reviews(last: 20) { totalCount nodes { updatedAt } }
-      comments(last: 20) { totalCount nodes { updatedAt } }
-    }
-  }
-}
-"""
 
 
 def run_gh(args: list[str]) -> str:
@@ -275,32 +265,52 @@ def cmd_status(owner: str, repo: str, pr: int) -> dict:
     return snapshot
 
 
+def surface_digest(items: list[dict]) -> tuple:
+    """Identity + last-touched + content, per item, order-independent.
+
+    Counts alone miss edits, and timestamps alone miss the surfaces that expose
+    no edit time (a REST review carries submitted_at, which a body edit leaves
+    untouched). Hashing the body too means any new, edited, or replied-to
+    comment moves the fingerprint.
+    """
+    return tuple(
+        sorted(
+            hashlib.sha256(
+                "|".join(
+                    (
+                        str(item.get("id")),
+                        str(item.get("updated_at") or item.get("submitted_at") or ""),
+                        item.get("body") or "",
+                    )
+                ).encode("utf-8")
+            ).hexdigest()[:16]
+            for item in items
+        )
+    )
+
+
 def comment_fingerprint(owner: str, repo: str, pr: int) -> tuple:
     """Signal that reviewers have stopped writing.
 
-    Counts alone are not enough: editing an existing review or comment — which
-    reviewers do while they refine a summary — leaves every total unchanged, so
-    the latest updatedAt values ride along.
+    Every surface is paginated in full rather than sampled. A windowed query
+    (`last: 20`) cannot see a reply on an older thread: no total changes, no
+    timestamp moves, and `wait` reports settled while comments are still
+    arriving. That stays silent on small PRs and appears exactly when a review
+    has grown big enough that waiting correctly matters most.
+
+    `pulls/{pr}/comments` is the flat list of review comments across every
+    thread, so replies land in it wherever their thread sits.
     """
-    page = graphql(COUNTS_QUERY, {"owner": owner, "repo": repo}, {"pr": pr})
-    node = page["repository"]["pullRequest"]
-    stamps = tuple(
-        sorted(
-            entry["updatedAt"]
-            for surface in ("reviews", "comments")
-            for entry in node[surface]["nodes"]
-        )
-    )
-    # A reply lands inside an existing thread, leaving every total unchanged.
-    thread_sizes = tuple(
-        entry["comments"]["totalCount"] for entry in node["reviewThreads"]["nodes"]
-    )
+    review_comments = rest_paginated(f"repos/{owner}/{repo}/pulls/{pr}/comments")
+    issue_comments = rest_paginated(f"repos/{owner}/{repo}/issues/{pr}/comments")
+    reviews = rest_paginated(f"repos/{owner}/{repo}/pulls/{pr}/reviews")
     return (
-        node["reviewThreads"]["totalCount"],
-        node["reviews"]["totalCount"],
-        node["comments"]["totalCount"],
-        stamps,
-        thread_sizes,
+        len(review_comments),
+        len(issue_comments),
+        len(reviews),
+        surface_digest(review_comments),
+        surface_digest(issue_comments),
+        surface_digest(reviews),
     )
 
 
@@ -353,7 +363,8 @@ def cmd_wait(
 
         if state == "done":
             snapshot["commentCounts"] = {
-                "reviewThreads": fingerprint[0], "reviews": fingerprint[1], "issueComments": fingerprint[2]
+                "reviewComments": fingerprint[0], "issueComments": fingerprint[1],
+                "reviews": fingerprint[2],
             }
             print(json.dumps(snapshot, indent=2))
             return 2 if snapshot["attention"] else 0

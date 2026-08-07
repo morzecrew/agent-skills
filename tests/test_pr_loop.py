@@ -46,6 +46,45 @@ class BotIdentityTest(unittest.TestCase):
         self.assertFalse(normalized["isBot"])
 
 
+class SurfaceDigestTest(unittest.TestCase):
+    """Any new, edited, or replied-to comment must move the fingerprint.
+
+    Regression: the fingerprint sampled `last: 20` per surface, so activity on
+    an older thread changed no total and moved no timestamp, and `wait` could
+    report settled while comments were still arriving.
+    """
+
+    def items(self, count: int = 25) -> list[dict]:
+        return [
+            {"id": i, "updated_at": "2026-01-01T00:00:00Z", "body": f"comment {i}"}
+            for i in range(count)
+        ]
+
+    def test_a_reply_past_the_twentieth_item_moves_the_fingerprint(self):
+        before = self.items()
+        after = before + [{"id": 99, "updated_at": "2026-01-01T00:01:00Z", "body": "reply"}]
+        self.assertNotEqual(script.surface_digest(before), script.surface_digest(after))
+
+    def test_editing_the_oldest_comment_moves_the_fingerprint(self):
+        before = self.items()
+        after = [dict(item) for item in before]
+        after[0]["body"] = "edited well after the window moved on"
+        self.assertNotEqual(script.surface_digest(before), script.surface_digest(after))
+
+    def test_an_edit_that_leaves_the_timestamp_alone_still_moves_it(self):
+        # A REST review exposes submitted_at, which a body edit never touches,
+        # so timestamps alone cannot carry this signal.
+        before = [{"id": 1, "submitted_at": "2026-01-01T00:00:00Z", "body": "looks good"}]
+        after = [{"id": 1, "submitted_at": "2026-01-01T00:00:00Z", "body": "actually, one thing"}]
+        self.assertNotEqual(script.surface_digest(before), script.surface_digest(after))
+
+    def test_ordering_alone_does_not_move_it(self):
+        items = self.items(5)
+        self.assertEqual(
+            script.surface_digest(items), script.surface_digest(list(reversed(items)))
+        )
+
+
 class WaitVerdictTest(unittest.TestCase):
     """The poll loop's state machine: checks complete, then comments must settle."""
 
