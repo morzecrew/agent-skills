@@ -144,10 +144,18 @@ def check_message(message: str, mapping: dict[str, str]) -> list[tuple[str, str]
 
 
 def check_footer_folding(lines: list[str]) -> list[str]:
-    """A footer's continuation lines must be indented, or they detach from the token."""
+    """A footer's continuation lines must be indented, or they detach from the token.
+
+    Git only reads trailers from the **last** paragraph, so the scan starts there.
+    Checking the whole body would misread ordinary prose that happens to open with
+    a capitalized word and a colon ("Also: we changed X") as a trailer token.
+    """
     problems: list[str] = []
+    start = last_paragraph_start(lines)
+    if start is None:
+        return problems
     in_footer = False
-    for number, line in enumerate(lines[1:], start=2):
+    for number, line in enumerate(lines[start:], start=start + 1):
         if not line.strip():
             in_footer = False
             continue
@@ -161,6 +169,20 @@ def check_footer_folding(lines: list[str]) -> list[str]:
             )
             in_footer = False
     return problems
+
+
+def last_paragraph_start(lines: list[str]) -> int | None:
+    """Index of the first line of the final paragraph, skipping the subject."""
+    body = lines[1:]
+    if not any(line.strip() for line in body):
+        return None
+    end = len(lines)
+    while end > 1 and not lines[end - 1].strip():
+        end -= 1
+    index = end - 1
+    while index > 1 and lines[index - 1].strip():
+        index -= 1
+    return index
 
 
 def commits_in_range(rev_range: str) -> list[tuple[str, str]]:

@@ -103,6 +103,18 @@ class InvalidMessageTest(unittest.TestCase):
         )
         self.assert_flags(message, "C5")
 
+    def test_prose_paragraph_opening_with_a_capitalized_word_is_not_a_trailer(self):
+        # Regression: git reads trailers only from the last paragraph, so a body
+        # paragraph beginning "Also:" must not be scanned for folding. Found by
+        # running this checker over the repository's own history.
+        message = (
+            "✅ test: add coverage\n\n"
+            "Also: the poller now waits for quiescence rather than\n"
+            "completion, because a check can go green early.\n\n"
+            "Co-Authored-By: Someone <someone@example.com>\n"
+        )
+        self.assertEqual(errors(message), [])
+
     def test_past_tense_description(self):
         self.assert_flags("✨ feat(api): added OAuth login support", "C6")
 
