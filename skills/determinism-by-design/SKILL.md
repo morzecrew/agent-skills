@@ -43,7 +43,16 @@ Two design rules make the seams system-grade rather than decorative:
 
 ## The whole-system constraint
 
-Determinism is only as strong as the *least* deterministic component: **every** randomness and time source must route through the seams, because one library carrying its own RNG stream — most scientific/statistics stacks do — reintroduces an uncontrolled input and quietly breaks whole-run replay. This is a dependency-adoption constraint, not just a coding rule (`dependency-diligence`'s principled-constraint test — one sentence rules out whole families), and it decays without enforcement: guard it with a check that fails when direct clock/RNG/entropy calls appear in seamed code (lint rule, import ban, or runtime guard — `ratchet-what-you-build`).
+Determinism is only as strong as the *least* deterministic component: **every** randomness and time source must route through the seams, because one library carrying its own RNG stream — most scientific/statistics stacks do — reintroduces an uncontrolled input and quietly breaks whole-run replay. This is a dependency-adoption constraint, not just a coding rule (`dependency-diligence`'s principled-constraint test — one sentence rules out whole families), and it decays without enforcement: guard it with a check that fails when direct clock/RNG/entropy calls appear in seamed code (`ratchet-what-you-build`).
+
+`scripts/unseamed_calls.py` is that check — it finds direct clock, sleep, randomness, UUID, and environment calls across Python, JS/TS, Go, Rust, and Java:
+
+```bash
+python3 scripts/unseamed_calls.py --seam src/pkg/time_source.py      # triage
+python3 scripts/unseamed_calls.py --seam src/pkg/time_source.py --strict   # then gate CI
+```
+
+It ignores comments, docstring prose, tests, and lines marked `allow-unseamed`, and reports hits *inside* declared seams separately from leaks. It warns without failing until you pass `--strict`: a first run over an existing codebase surfaces seams the tool cannot know about, and a check that cries wolf gets deleted along with its protection. Tune `--seam`/`--allow` until the list is true, then turn on the gate.
 
 ## Hermetic tests
 
