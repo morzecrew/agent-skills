@@ -59,6 +59,22 @@ class ParsingTest(unittest.TestCase):
         self.assertIsNone(script.parse_iso(None))
         self.assertIsNone(script.parse_iso("not a date"))
 
+    def test_non_string_time_values_are_ignored(self):
+        # Regression: npm `time` maps carry an "unpublished" object; parse_iso
+        # called .replace on a dict and aborted the run.
+        self.assertIsNone(script.parse_iso({"name": "x", "time": "2020-01-01"}))
+        self.assertIsNone(script.parse_iso(42))
+
+    def test_npm_payload_with_unpublished_entry(self):
+        payload = json_copy(NPM_PAYLOAD)
+        payload["time"]["unpublished"] = {"name": "someone", "time": "2019-01-01T00:00:00.000Z"}
+        summary = script.summarize_npm(payload, NOW)
+        self.assertEqual(summary["releaseCount"], 2)
+
+    def test_repo_slug_is_validated(self):
+        self.assertIsNone(script.repo_activity("not a slug", NOW))
+        self.assertIsNone(script.repo_activity("../../etc/passwd", NOW))
+
     def test_days_since(self):
         self.assertEqual(script.days_since(NOW - dt.timedelta(days=10), NOW), 10)
         self.assertIsNone(script.days_since(None, NOW))

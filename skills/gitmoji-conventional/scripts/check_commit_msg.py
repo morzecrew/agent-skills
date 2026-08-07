@@ -129,9 +129,13 @@ def check_message(message: str, mapping: dict[str, str]) -> list[tuple[str, str]
 
     problems.extend(check_footer_folding(lines))
 
+    if not description.strip():
+        problems.append("C6: description is empty")
+        description = ""
     if description.endswith("."):
         problems.append("C6: description ends with a period")
-    first_word = description.split()[0].lower().strip(",:")
+    words = description.split()
+    first_word = words[0].lower().strip(",:") if words else ""
     if first_word in NON_IMPERATIVE:
         problems.append(f"C6: description starts with '{first_word}' — use the imperative ('add', not 'added')")
     if len(lines) > 1 and lines[1].strip():
@@ -224,7 +228,8 @@ def main() -> int:
             errors = [text for level, text in findings if level == "error"]
             warnings += len(findings) - len(errors)
             failures += bool(errors)
-            print(f"{'FAIL' if errors else 'WARN'} {sha} {message.splitlines()[0]}")
+            subject = message.splitlines()[0] if message.splitlines() else "(empty message)"
+            print(f"{'FAIL' if errors else 'WARN'} {sha} {subject}")
             for level, text in findings:
                 print(f"     {'' if level == 'error' else 'warn: '}{text}")
         print(

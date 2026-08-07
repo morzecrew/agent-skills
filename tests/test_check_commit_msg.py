@@ -127,6 +127,10 @@ class InvalidMessageTest(unittest.TestCase):
     def test_empty_message(self):
         self.assert_flags("", "C1")
 
+    def test_whitespace_only_description(self):
+        # Regression: description.split()[0] raised IndexError on "✨ feat:  ".
+        self.assert_flags("✨ feat:  \n\nbody", "C6")
+
 
 class SeverityTest(unittest.TestCase):
     def test_long_subject_warns_but_does_not_fail(self):

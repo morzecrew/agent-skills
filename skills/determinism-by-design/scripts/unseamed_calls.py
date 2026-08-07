@@ -115,8 +115,18 @@ def strip_noise(lines: list[str]) -> list[tuple[int, str]]:
 
 
 def tracked_files(root: Path) -> list[Path]:
-    proc = subprocess.run(["git", "-C", str(root), "ls-files"], capture_output=True, text=True)
-    if proc.returncode == 0 and proc.stdout.strip():
+    """Tracked files when git is available, else a plain filesystem walk.
+
+    git can be absent entirely (containers, minimal CI images); without this
+    guard FileNotFoundError aborts the run before the documented fallback.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "ls-files"], capture_output=True, text=True, timeout=60
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        proc = None
+    if proc is not None and proc.returncode == 0 and proc.stdout.strip():
         return [root / line for line in proc.stdout.splitlines() if line.strip()]
     return [p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts]
 

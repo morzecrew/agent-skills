@@ -59,8 +59,10 @@ def requirement_name(requirement: str) -> str:
     return re.split(r"[\s<>=!~;,\[(]", requirement.strip(), maxsplit=1)[0]
 
 
-def parse_iso(value: str | None) -> dt.datetime | None:
-    if not value:
+def parse_iso(value: object) -> dt.datetime | None:
+    # npm `time` maps can carry an "unpublished" key whose value is an object,
+    # so a str-only assumption crashes on real registry documents.
+    if not isinstance(value, str) or not value:
         return None
     text = value.replace("Z", "+00:00")
     try:
@@ -153,23 +155,36 @@ def summarize_npm(payload: dict, now: dt.datetime) -> dict:
     }
 
 
+REPO_SLUG = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+GH_TIMEOUT_S = 30
+
+
+def run_gh(args: list[str]) -> subprocess.CompletedProcess | None:
+    """gh with a bound; None when it is missing, stalls, or fails."""
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=GH_TIMEOUT_S)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    return proc if proc.returncode == 0 else None
+
+
 def repo_activity(repo: str, now: dt.datetime) -> dict | None:
     """Commit/release recency via gh; None when gh is missing or unauthenticated."""
-    proc = subprocess.run(
+    if not REPO_SLUG.match(repo):
+        return None
+    proc = run_gh(
         ["gh", "api", f"repos/{repo}", "--jq",
-         "{pushed_at:.pushed_at,archived:.archived,openIssues:.open_issues_count,stars:.stargazers_count}"],
-        capture_output=True, text=True,
+         "{pushed_at:.pushed_at,archived:.archived,openIssues:.open_issues_count,stars:.stargazers_count}"]
     )
-    if proc.returncode != 0:
+    if proc is None:
         return None
     try:
         data = json.loads(proc.stdout)
     except json.JSONDecodeError:
         return None
     pushed = parse_iso(data.get("pushed_at"))
-    contributors = subprocess.run(
-        ["gh", "api", f"repos/{repo}/contributors?per_page=100", "--jq", "length"],
-        capture_output=True, text=True,
+    contributors = run_gh(
+        ["gh", "api", f"repos/{repo}/contributors?per_page=100", "--jq", "length"]
     )
     return {
         "repo": repo,
@@ -178,8 +193,8 @@ def repo_activity(repo: str, now: dt.datetime) -> dict | None:
         "daysSinceLastPush": days_since(pushed, now),
         "openIssues": data.get("openIssues"),
         "stars": data.get("stars"),
-        "contributors": int(contributors.stdout.strip()) if contributors.returncode == 0
-        and contributors.stdout.strip().isdigit() else None,
+        "contributors": int(contributors.stdout.strip())
+        if contributors is not None and contributors.stdout.strip().isdigit() else None,
     }
 
 
