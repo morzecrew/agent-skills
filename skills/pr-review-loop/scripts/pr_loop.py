@@ -293,34 +293,36 @@ def read_body(args: argparse.Namespace) -> str:
 
 
 def main() -> int:
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--repo", help="owner/name (default: repo of the cwd)")
+
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--repo", help="owner/name (default: repo of the cwd)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     for name in ("status", "collect"):
-        p = sub.add_parser(name)
+        p = sub.add_parser(name, parents=[common])
         p.add_argument("pr", type=int)
     sub.choices["collect"].add_argument("--unresolved-only", action="store_true")
 
-    p = sub.add_parser("wait")
+    p = sub.add_parser("wait", parents=[common])
     p.add_argument("pr", type=int)
     p.add_argument("--timeout-seconds", type=int, default=600)
     p.add_argument("--interval-seconds", type=int, default=60)
 
-    p = sub.add_parser("react")
+    p = sub.add_parser("react", parents=[common])
     p.add_argument("--surface", choices=("review", "issue"), required=True)
     p.add_argument("--comment-id", type=int, required=True)
     p.add_argument("--reaction", choices=("up", "down"), required=True)
 
-    p = sub.add_parser("reply")
+    p = sub.add_parser("reply", parents=[common])
     p.add_argument("pr", type=int)
     p.add_argument("--comment-id", type=int, required=True)
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--body")
     group.add_argument("--body-file")
 
-    p = sub.add_parser("resolve")
+    p = sub.add_parser("resolve", parents=[common])
     p.add_argument("--thread-id", required=True)
 
     args = parser.parse_args()
