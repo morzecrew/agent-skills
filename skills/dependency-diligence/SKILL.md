@@ -41,7 +41,14 @@ This test is why diligence is cheap: it's a property of *your architecture*, che
 
 ## Step 3 — Health and fit
 
-Only for candidates that survived steps 1–2:
+Only for candidates that survived steps 1–2. `scripts/dep_health.py` gathers the factual half:
+
+```bash
+python3 scripts/dep_health.py requests --ecosystem pypi
+python3 scripts/dep_health.py express --ecosystem npm --repo expressjs/express --json
+```
+
+It reports release cadence and recency, license, direct-dependency fan-out, and (with `gh`) commit recency, contributor count, and archived status — flagging stale releases, deprecation, missing licenses, and a bus factor of one. It deliberately produces evidence, never a verdict, and running it on a candidate that failed step 1 is wasted effort.
 
 - **Health:** maintenance activity and responsiveness (not stars), bus factor, security posture and CVE history, release discipline (semver honored? changelogs?), API stability across recent majors.
 - **Fit:** does its error model map onto yours (`error-taxonomy`)? Its sync/async model, its logging/telemetry behavior, its global state? A library that fights the project's idioms costs integration code forever.
