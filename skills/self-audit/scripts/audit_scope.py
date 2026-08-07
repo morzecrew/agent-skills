@@ -14,7 +14,7 @@ Coverage inputs: Cobertura XML (coverage.py `-x`, JaCoCo-style, gocover-cobertur
 and LCOV `.info`. Paths are matched by longest common suffix, since report paths
 are relative to whatever root the runner used.
 
-Exit codes: 0 ok · 1 usage/git error · 2 patch coverage below --min.
+Exit codes: 0 ok · 1 usage/git error · 2 patch coverage below --min. Unknown flags exit 2, from argparse itself.
 
 Reading the diff is still yours: this tool says where to look and what the tests
 missed, never whether the code is right.

@@ -20,7 +20,7 @@ values, numbers, and interpolations — so `f"unknown field {name}"` and
                   (default: the exception class or factory in the raise)
 
 Exit codes: 0 raise sites found · 1 usage error · 3 none found (check --languages
-or the patterns for your stack).
+or the patterns for your stack). Unknown flags exit 2, from argparse itself.
 
 The tool counts and clusters. Which kind each site *should* raise is the
 classification test in SKILL.md, and only a reader can apply it.
