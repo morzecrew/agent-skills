@@ -108,7 +108,9 @@ TRIPLE_QUOTE = re.compile(r'"""|\'\'\'')
 # Trailing comments only — a "#" inside a string literal keeps its line.
 TRAILING_COMMENT = re.compile(r'\s+(?:#|//)(?![^\'"]*[\'"]\s*$).*$')
 # Block comments carry directives in every C-family language.
-BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
+# Not preceded by a quote on the line: a string may carry the marker, and
+# treating it as a comment would let data disable the scan for its line.
+BLOCK_COMMENT = re.compile(r'^[^\'"]*?(/\*.*?\*/)', re.S)
 
 
 def strip_noise(lines: list[str], language: str = "python") -> list[tuple[int, str]]:
@@ -144,9 +146,9 @@ def strip_noise(lines: list[str], language: str = "python") -> list[tuple[int, s
         # Split first, then look for the directive only in the comment: a string
         # containing a comment marker could otherwise exempt its own line.
         comment = TRAILING_COMMENT.search(stripped)
-        block = BLOCK_COMMENT.search(stripped)
+        block = BLOCK_COMMENT.match(stripped)
         if (comment and DIRECTIVE.search(comment.group(0))) or (
-            block and DIRECTIVE.search(block.group(0))
+            block and DIRECTIVE.search(block.group(1))
         ):
             continue
         # A clock name mentioned in a trailing comment is prose, not a call.

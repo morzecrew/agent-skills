@@ -99,6 +99,15 @@ class CensusTest(unittest.TestCase):
         self.assertNotIn("", result["internalPrefixes"])
         self.assertGreater(result["counts"]["externalUsage"], 0)
 
+    def test_recorded_paths_are_posix(self):
+        # The scope tests split on "/", so a platform separator in the stored
+        # path would break the internal/external split.
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", "from .a import helper\n\nhelper()\n")
+        for hit in self.census("helper")["hits"]:
+            self.assertNotIn("\\", hit["file"])
+            self.assertIn("/", hit["file"])
+
     def test_string_reference_counted(self):
         self.write("src/pkg/reg.py", "def handler():\n    return 1\n")
         self.write("config/app.py", 'ENTRYPOINT = "handler"\n')

@@ -128,7 +128,9 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
             kind = classify(line, patterns, in_import_block)
             if kind:
                 entry = {
-                    "file": str(path.relative_to(root)),
+                    # posix form: the scope tests below split on "/", which a
+                    # Windows separator would defeat.
+                    "file": path.relative_to(root).as_posix(),
                     "line": number,
                     "kind": kind,
                     "text": stripped[:160],

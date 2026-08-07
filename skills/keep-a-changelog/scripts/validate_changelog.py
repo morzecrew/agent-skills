@@ -48,7 +48,7 @@ LINK_DEF = re.compile(r"^\[([^\]]+)\]:\s*\S+", re.M)
 BULLET = re.compile(r"^-\s+(.*)$")
 SEMVER_CORE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
-FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*(\S.*)?$")
 VERSION = re.compile(r"^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -61,17 +61,19 @@ def outside_fences(lines: list[str], start: int, end: int) -> list[int]:
     illustrations as violations.
     """
     kept: list[int] = []
-    opener: str | None = None
+    opener: tuple[str, int] | None = None
     for number in range(start, min(end, len(lines))):
         match = FENCE.match(lines[number])
         if match:
-            char = match.group(1)[0]
-            # GFM closes a block only with the character that opened it, so a
-            # ~~~ line inside a ``` block is content, not a delimiter.
+            run, trailing = match.group(1), match.group(2)
+            char, length = run[0], len(run)
             if opener is None:
-                opener = char
+                # An opening fence may carry an info string; a closing one may not.
+                opener = (char, length)
                 continue
-            if char == opener:
+            # GFM closes a block only with the same character, a run at least as
+            # long as the opener, and nothing but whitespace after it.
+            if char == opener[0] and length >= opener[1] and not trailing:
                 opener = None
                 continue
         if opener is None:

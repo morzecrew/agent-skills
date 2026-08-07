@@ -131,6 +131,13 @@ class ChangelogTest(unittest.TestCase):
                 "```text\n~~~\n## [9.9.9] - not-a-date\n```\n")
         self.assertEqual(self.check(text), [])
 
+    def test_shorter_inner_fence_does_not_close_the_block(self):
+        # GFM: a closing fence must use the same character and be at least as
+        # long as the opener, with nothing after it.
+        text = ("# CL\n\n## [Unreleased]\n\n### Added\n\n- x\n\n"
+                "````text\n```\n## [9.9.9] - not-a-date\n````\n")
+        self.assertEqual(self.check(text), [])
+
     def test_yanked_tag_accepted(self):
         self.assertNotIn("S2", " ".join(self.check(GOOD)))
 

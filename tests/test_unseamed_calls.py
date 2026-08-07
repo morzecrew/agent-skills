@@ -73,6 +73,12 @@ class StripNoiseTest(unittest.TestCase):
         )
         self.assertEqual(len(script.strip_noise(["t = Date.now();"], "js")), 1)
 
+    def test_block_directive_inside_a_string_does_not_exempt(self):
+        # The line-comment path already guarded this; the block-comment path
+        # reintroduced it.
+        kept = script.strip_noise(['t = Date.now(); s = "/* allow-unseamed */";'], "js")
+        self.assertEqual(len(kept), 1, kept)
+
     def test_single_line_triple_quote_does_not_toggle(self):
         kept = script.strip_noise(['x = """literal"""', "y = time.time()"])
         self.assertEqual(len(kept), 2)
