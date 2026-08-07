@@ -89,6 +89,19 @@ class ChangelogTest(unittest.TestCase):
         without = GOOD[: GOOD.index("[unreleased]:")].rstrip() + "\n"
         self.assertEqual([p for p in self.check(without) if p.startswith("S7")], [])
 
+    def test_non_semver_version_rejected(self):
+        self.assert_flags(GOOD.replace("## [1.1.0] -", "## [1.2] -"), "S2")
+
+    def test_fenced_examples_are_not_scanned(self):
+        # Regression: a changelog documenting its own format had its examples
+        # read as real categories and stacked bullets.
+        with_example = GOOD.replace(
+            "- A new thing.",
+            "- Documenting the format:\n\n```text\n### Bugfixes\n- one\n- two\n```",
+        )
+        found = self.check(with_example, house_rules=True)
+        self.assertEqual([p for p in found if p.startswith(("S5", "H1"))], [], found)
+
     def test_yanked_tag_accepted(self):
         self.assertNotIn("S2", " ".join(self.check(GOOD)))
 

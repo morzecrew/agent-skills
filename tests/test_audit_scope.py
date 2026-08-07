@@ -150,6 +150,13 @@ class GitScopeTest(unittest.TestCase):
         self.assertIsNotNone(matched, "a report rooted elsewhere must still match by suffix")
         self.assertEqual(matched[6], 0)
 
+    def test_ambiguous_suffix_matches_are_refused(self):
+        # Regression: two report paths sharing a longest suffix silently used
+        # the first, so coverage from an unrelated module could report a pass.
+        coverage = {"a/src/app.py": {1: 1}, "b/src/app.py": {1: 0}}
+        self.assertIsNone(script.match_path("src/app.py", coverage))
+        self.assertIsNotNone(script.match_path("src/app.py", {"ci/src/app.py": {1: 1}}))
+
     def test_unrelated_paths_do_not_match(self):
         coverage = {"other/project/thing.py": {1: 1}}
         self.assertIsNone(script.match_path("src/app.py", coverage))

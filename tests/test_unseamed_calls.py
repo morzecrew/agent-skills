@@ -32,6 +32,13 @@ class StripNoiseTest(unittest.TestCase):
         kept = script.strip_noise(["t = time.time()  # allow-unseamed: real clock on purpose"])
         self.assertEqual(kept, [])
 
+    def test_directive_must_be_in_a_comment(self):
+        # Regression: a bare substring match let a string literal on the same
+        # line hide a real leak from the scanner.
+        self.assertEqual(script.strip_noise(['t = time.time()  # allow-unseamed: on purpose']), [])
+        kept = script.strip_noise(['t = time.time(); label = "allow-unseamed"'])
+        self.assertEqual(len(kept), 1, "a string literal must not exempt the line")
+
     def test_single_line_triple_quote_does_not_toggle(self):
         kept = script.strip_noise(['x = """literal"""', "y = time.time()"])
         self.assertEqual(len(kept), 2)
@@ -79,6 +86,14 @@ class ScanTest(unittest.TestCase):
         self.write("tests/test_thing.py", "import time\nt = time.time()\n")
         self.assertEqual(self.scan()["counts"]["leaks"], 0)
         self.assertEqual(self.scan(allow=[])["counts"]["leaks"], 1)
+
+    def test_allowed_files_counts_files_not_hits(self):
+        # Regression: the counter incremented per call, so one file with three
+        # exempt calls was reported as three allowed files.
+        self.write("tests/test_thing.py", "import time\na = time.time()\nb = time.time()\nc = time.time()\n")
+        counts = self.scan()["counts"]
+        self.assertEqual(counts["allowedFiles"], 1)
+        self.assertEqual(counts["allowedHits"], 3)
 
     def test_other_languages(self):
         self.write("web/app.js", "const t = Date.now();\nconst r = Math.random();\n")

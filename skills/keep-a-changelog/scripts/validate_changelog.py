@@ -47,6 +47,26 @@ LINK_DEF = re.compile(r"^\[([^\]]+)\]:\s*\S+", re.M)
 BULLET = re.compile(r"^-\s+(.*)$")
 SEMVER_CORE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
+FENCE = re.compile(r"^\s*(?:```|~~~)")
+VERSION = re.compile(r"^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?$")
+
+
+def outside_fences(lines: list[str], start: int, end: int) -> list[int]:
+    """Line numbers in [start, end) that are not inside a fenced block.
+
+    A changelog that documents its own format contains ``### Added`` and
+    bullets inside examples; scanning those reports the document's own
+    illustrations as violations.
+    """
+    kept: list[int] = []
+    fenced = False
+    for number in range(start, min(end, len(lines))):
+        if FENCE.match(lines[number]):
+            fenced = not fenced
+            continue
+        if not fenced:
+            kept.append(number)
+    return kept
 
 
 def core_version(version: str) -> tuple[int, int, int] | None:
@@ -54,22 +74,27 @@ def core_version(version: str) -> tuple[int, int, int] | None:
     return (int(match.group(1)), int(match.group(2)), int(match.group(3))) if match else None
 
 
-def entry_texts(lines: list[str], start: int, end: int) -> list[tuple[int, str]]:
-    """Bullet entries in [start, end), each folded with its continuation lines."""
+def entry_texts(lines: list[str], live: list[int]) -> list[tuple[int, str]]:
+    """Bullet entries among `live` line numbers, folded with continuation lines."""
     entries: list[tuple[int, str]] = []
-    index = start
-    while index < end:
+    live_set = set(live)
+    position = 0
+    while position < len(live):
+        index = live[position]
         match = BULLET.match(lines[index])
         if not match:
-            index += 1
+            position += 1
             continue
         first_line = index
         text = match.group(1).strip()
-        index += 1
-        while index < end and lines[index].strip() and not BULLET.match(lines[index]):
-            if lines[index].startswith(("  ", "\t")):
-                text += " " + lines[index].strip()
-            index += 1
+        position += 1
+        while position < len(live):
+            following = live[position]
+            if following not in live_set or not lines[following].strip() or BULLET.match(lines[following]):
+                break
+            if lines[following].startswith(("  ", "\t")):
+                text += " " + lines[following].strip()
+            position += 1
         entries.append((first_line, text))
     return entries
 
@@ -123,6 +148,12 @@ def validate(path: Path, house_rules: bool) -> list[str]:
                 f"S3 line {section['line'] + 1}: '{section['date']}' is not an ISO 8601 date (YYYY-MM-DD)"
             )
 
+    for section in versions:
+        if not VERSION.match(section["version"].strip()):
+            problems.append(
+                f"S2 line {section['line'] + 1}: '[{section['version']}]' is not an X.Y.Z version"
+            )
+
     seen: dict[str, int] = {}
     for section in versions:
         if section["version"] in seen:
@@ -144,7 +175,8 @@ def validate(path: Path, house_rules: bool) -> list[str]:
     bounds = [s["line"] for s in sections] + [len(lines)]
     for index, section in enumerate(sections):
         start, end = section["line"] + 1, bounds[index + 1]
-        for number in range(start, end):
+        live = outside_fences(lines, start, end)
+        for number in live:
             category = H3.match(lines[number])
             if category and category.group(1).strip() not in CATEGORIES:
                 problems.append(
@@ -152,7 +184,7 @@ def validate(path: Path, house_rules: bool) -> list[str]:
                     f"spec categories ({', '.join(CATEGORIES)})"
                 )
         if house_rules:
-            problems.extend(check_house_rules(lines, start, end))
+            problems.extend(check_house_rules(lines, live))
 
     defined = {name.lower() for name in LINK_DEF.findall(text)}
     if defined:
@@ -165,12 +197,16 @@ def validate(path: Path, house_rules: bool) -> list[str]:
     return problems
 
 
-def check_house_rules(lines: list[str], start: int, end: int) -> list[str]:
+def check_house_rules(lines: list[str], live: list[int]) -> list[str]:
     problems: list[str] = []
-    for number in range(start, min(end, len(lines)) - 1):
-        if BULLET.match(lines[number]) and BULLET.match(lines[number + 1]):
-            problems.append(f"H1 line {number + 2}: bullet stacked on the previous one — blank line between entries")
-    for number, entry in entry_texts(lines, start, end):
+    live_set = set(live)
+    for number in live:
+        following = number + 1
+        if following not in live_set or following >= len(lines):
+            continue
+        if BULLET.match(lines[number]) and BULLET.match(lines[following]):
+            problems.append(f"H1 line {following + 1}: bullet stacked on the previous one — blank line between entries")
+    for number, entry in entry_texts(lines, live):
         if entry == "...":
             continue
         if len(entry) > MAX_CHARS:

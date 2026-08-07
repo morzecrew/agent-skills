@@ -98,6 +98,22 @@ class CensusTest(unittest.TestCase):
         self.assertEqual(self.census()["counts"]["sites"], 2)
         self.assertEqual(self.census(exclude=["tests/*"])["counts"]["sites"], 1)
 
+    def test_go_and_rust_kinds_are_captured(self):
+        self.write("svc/a.go", 'return fmt.Errorf("bad input")\n')
+        self.write("svc/b.rs", 'bail!("bad input");\n')
+        go = script.census(self.root, ["go"], [], [])
+        # Dotted names are shortened, as they are for Python classes.
+        self.assertIn("Errorf", go["counts"]["byKind"])
+        rust = script.census(self.root, ["rust"], [], [])
+        self.assertIn("bail!", rust["counts"]["byKind"])
+
+    def test_next_line_is_only_joined_while_the_call_is_open(self):
+        # Regression: an unrelated following statement's string was attributed
+        # to the preceding raise, inventing a message family.
+        self.write("src/a.py", 'raise exc.internal()\nlog.info("unrelated message here")\n')
+        families = self.census()["families"]
+        self.assertNotIn("unrelated message here", families)
+
     def test_other_languages(self):
         self.write("web/a.ts", 'throw new TypeError("bad input");\n')
         result = script.census(self.root, ["js"], [], [])

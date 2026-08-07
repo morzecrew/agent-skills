@@ -88,7 +88,9 @@ DEFAULT_ALLOW = [
 ]
 
 COMMENT_PREFIXES = ("#", "//", "*", "/*")
-DIRECTIVE = re.compile(r"(?:allow-unseamed|seam-exempt)")
+# Anchored to a comment marker: a bare substring can be planted in a string
+# literal on the same line to hide a real leak.
+DIRECTIVE = re.compile(r"(?:#|//|/\*)[^\n]*\b(?:allow-unseamed|seam-exempt)\b")
 TRIPLE_QUOTE = re.compile(r'"""|\'\'\'')
 
 
@@ -146,7 +148,8 @@ def scan(
     }
     leaks: list[dict] = []
     in_seam: list[dict] = []
-    allowed = 0
+    allowed_files: set[str] = set()
+    allowed_hits = 0
     scanned = 0
 
     for path in tracked_files(root):
@@ -173,7 +176,8 @@ def scan(
                 if is_seam:
                     in_seam.append(hit)
                 elif is_allowed:
-                    allowed += 1
+                    allowed_files.add(relative)
+                    allowed_hits += 1
                 else:
                     leaks.append(hit)
                 break
@@ -186,7 +190,7 @@ def scan(
         "seams": seams, "allowGlobs": allow,
         "counts": {
             "leaks": len(leaks), "insideSeams": len(in_seam),
-            "allowedFiles": allowed, "byKind": by_kind,
+            "allowedFiles": len(allowed_files), "allowedHits": allowed_hits, "byKind": by_kind,
         },
         "leaks": leaks, "insideSeams": in_seam,
     }
@@ -196,7 +200,8 @@ def render(result: dict, strict: bool) -> None:
     counts = result["counts"]
     print(
         f"scanned {result['filesScanned']} file(s): {counts['leaks']} unseamed call(s), "
-        f"{counts['insideSeams']} inside declared seams, {counts['allowedFiles']} in allowed files"
+        f"{counts['insideSeams']} inside declared seams, "
+        f"{counts['allowedHits']} in {counts['allowedFiles']} allowed file(s)"
     )
     if result["seams"]:
         print(f"seams: {', '.join(result['seams'])}")

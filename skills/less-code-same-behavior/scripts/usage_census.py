@@ -69,6 +69,9 @@ def build_patterns(symbol: str) -> dict[str, re.Pattern]:
             rf"^\s*(?:def|class|func|type|const|let|var|interface|struct|enum)\s+{s}\b"
             rf"|^\s*{s}\s*(?::[^=]+)?=(?!=)"
         ),
+        "declaration": re.compile(
+            rf"^\s*(?:def|class|func|type|interface|struct|enum)\s+{s}\b"
+        ),
         "from-import": re.compile(rf"^\s*from\s+\S+\s+import\s+.*\b{s}\b|^\s*{s}\s*,?\s*$"),
         "plain-import": re.compile(rf"^\s*(?:import|require)\s*\(?\s*[\"']?\S*\b{s}\b"),
         "attribute": re.compile(rf"\.{s}\b"),
@@ -130,8 +133,15 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
                 )
 
     definition_files = sorted({h["file"] for h in hits if h["kind"] == "definition"})
+    # Prefer real declarations when inferring the internal boundary: a plain
+    # `symbol = ...` in a test or config would otherwise make that directory
+    # "internal" and hide the external usage the audit is counting.
+    declaration_files = sorted(
+        {h["file"] for h in hits if h["kind"] == "definition" and patterns["declaration"].search(h["text"])}
+    )
+    inference_source = declaration_files or definition_files
     prefixes = list(internal_prefixes) or sorted(
-        {str(Path(f).parts[0]) + "/" for f in definition_files if Path(f).parts[:-1]}
+        {str(Path(f).parts[0]) + "/" for f in inference_source if Path(f).parts[:-1]}
     )
     for hit in hits:
         hit["scope"] = (
@@ -147,6 +157,7 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
         "root": str(root),
         "internalPrefixes": prefixes,
         "definitions": definition_files,
+        "declarations": declaration_files,
         "counts": {
             "total": len(hits),
             "byKind": by_kind,

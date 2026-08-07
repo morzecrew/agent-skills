@@ -183,7 +183,7 @@ def match_path(diff_path: str, coverage: dict[str, dict[int, int]]) -> dict[int,
     if diff_path in coverage:
         return coverage[diff_path]
     diff_parts = Path(diff_path).parts
-    best, best_score = None, 0
+    best, best_score, tied = None, 0, False
     for candidate, lines in coverage.items():
         candidate_parts = Path(candidate).parts
         score = 0
@@ -192,8 +192,12 @@ def match_path(diff_path: str, coverage: dict[str, dict[int, int]]) -> dict[int,
                 break
             score += 1
         if score > best_score:
-            best, best_score = lines, score
-    return best if best_score else None
+            best, best_score, tied = lines, score, False
+        elif score == best_score and score > 0:
+            tied = True
+    # Two report paths can share a longest suffix. Counting one of them would
+    # report coverage for a different module, so an ambiguous match is no match.
+    return None if tied or not best_score else best
 
 
 def cmd_patch_coverage(

@@ -40,8 +40,8 @@ from pathlib import Path
 RAISE_PATTERNS: dict[str, str] = {
     "python": r"\braise\s+([A-Za-z_][\w.]*)",
     "js": r"\bthrow\s+new\s+([A-Za-z_][\w.]*)",
-    "go": r"\b(?:errors\.New|fmt\.Errorf)\s*\(",
-    "rust": r"\b(?:Err|panic!|bail!)\s*[\(!]",
+    "go": r"\b(errors\.New|fmt\.Errorf)\s*\(",
+    "rust": r"\b(Err|panic!|bail!|ensure!)\s*[\(!]",
     "java": r"\bthrow\s+new\s+([A-Za-z_][\w.]*)",
 }
 
@@ -116,9 +116,15 @@ def census(
             match = raise_res[language].search(stripped)
             if not match:
                 continue
-            # The message often trails onto the next line; look one ahead.
+            # The message often trails onto the next line — but only join when
+            # the raise expression is still open, or an unrelated statement's
+            # string is attributed to this raise.
             window = stripped
-            if number < len(lines) and not MESSAGE.search(stripped):
+            if (
+                number < len(lines)
+                and not MESSAGE.search(stripped)
+                and stripped.count("(") > stripped.count(")")
+            ):
                 window = stripped + " " + lines[number].strip()
 
             kind = None
