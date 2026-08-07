@@ -99,6 +99,43 @@ class CensusTest(unittest.TestCase):
         self.assertNotIn("", result["internalPrefixes"])
         self.assertGreater(result["counts"]["externalUsage"], 0)
 
+    def test_sibling_directory_sharing_a_prefix_is_external(self):
+        # Regression: a raw string prefix made `--internal pkg` swallow
+        # `pkg2/`, scoring external usage as internal — and that split is what
+        # the shim-or-delete decision turns on.
+        self.write("pkg/thing.py", "def helper():\n    return 1\n")
+        self.write("pkg/inside.py", "from .thing import helper\n\nhelper()\n")
+        self.write("pkg2/outside.py", "from pkg.thing import helper\n\nhelper()\n")
+        result = self.census("helper", internal=["pkg"])
+        scopes = {h["file"]: h["scope"] for h in result["hits"]}
+        self.assertEqual(scopes["pkg2/outside.py"], "external")
+        self.assertEqual(scopes["pkg/inside.py"], "internal")
+        self.assertGreater(result["counts"]["externalUsage"], 0)
+
+    def test_prefix_matches_with_or_without_a_trailing_slash(self):
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", "from .a import helper\n\nhelper()\n")
+        for prefix in ("src", "src/", "./src"):
+            with self.subTest(prefix=prefix):
+                result = self.census("helper", internal=[prefix])
+                self.assertGreater(result["counts"]["internalUsage"], 0)
+                self.assertEqual(result["counts"]["externalUsage"], 0)
+
+    def test_repository_tracking_nothing_is_refused_not_walked(self):
+        # Regression: an empty `git ls-files` fell through to the filesystem
+        # walk, scanning the ignored files tracked mode promised to skip — and
+        # reporting from an unscanned tree would call live symbols deletable.
+        from support import git_repo
+
+        git_repo(self.root)
+        (self.root / ".gitignore").write_text("ignored/\n")
+        self.write("ignored/vendor.py", "def helper():\n    return 1\n")
+        result = run_script(
+            "less-code-same-behavior", "usage_census.py", "helper", "--root", str(self.root)
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no tracked files", result.stderr)
+
     def test_recorded_paths_are_posix(self):
         # The scope tests split on "/", so a platform separator in the stored
         # path would break the internal/external split.

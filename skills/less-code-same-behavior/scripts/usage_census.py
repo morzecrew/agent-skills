@@ -58,9 +58,31 @@ def tracked_files(root: Path) -> list[Path]:
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         proc = None
-    if proc is not None and proc.returncode == 0 and proc.stdout.strip():
-        return [root / line for line in proc.stdout.splitlines() if line.strip()]
+    if proc is not None and proc.returncode == 0:
+        tracked = [root / line for line in proc.stdout.splitlines() if line.strip()]
+        if tracked:
+            return tracked
+        # A repository that tracks nothing is still a repository, so an empty
+        # listing is not "no git here". Falling through to the walk would scan
+        # exactly the ignored files tracked mode promised to skip, and scanning
+        # nothing would report every symbol as a deletion candidate. Neither is
+        # an answer worth giving, so refuse to answer at all.
+        sys.exit(
+            f"error: {root} is a git repository with no tracked files — nothing to census. "
+            "`git add` the sources first, or point --root at a non-repository directory."
+        )
     return [p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts]
+
+
+def within_prefix(path: str, prefix: str) -> bool:
+    """Prefix test on path components, not on raw characters.
+
+    A raw string prefix makes `--internal pkg` swallow `pkg2/file.py`: those
+    hits score internal, external usage is undercounted, and the internal vs
+    external split is the whole basis of the shim-or-delete decision.
+    """
+    clean = prefix.replace("\\", "/").removeprefix("./").rstrip("/")
+    return bool(clean) and (path == clean or path.startswith(clean + "/"))
 
 
 def build_patterns(symbol: str) -> dict[str, re.Pattern]:
@@ -162,7 +184,7 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
         at_root = "/" not in hit["file"]
         hit["scope"] = (
             "internal"
-            if any(hit["file"].startswith(p) for p in prefixes)
+            if any(within_prefix(hit["file"], p) for p in prefixes)
             or (root_is_internal and at_root)
             else "external"
         )
