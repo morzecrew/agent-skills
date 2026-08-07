@@ -30,7 +30,18 @@ This skill runs the *author's* side of code review: taking a PR through rounds o
 
 ## The loop
 
-Concrete `gh`/API incantations for every step live in [references/github-mechanics.md](references/github-mechanics.md).
+For the mechanical steps, prefer the bundled tool over hand-crafted API calls — it handles two-level GraphQL pagination, the review-vs-issue comment surfaces, check-conclusion bucketing, and bot identification, which ad-hoc commands reliably get wrong:
+
+```bash
+python3 scripts/pr_loop.py status  $PR                    # checks + reviewers + unresolved count
+python3 scripts/pr_loop.py wait    $PR --timeout-seconds 600   # step 1 (exit 0 clean / 2 attention / 3 timeout)
+python3 scripts/pr_loop.py collect $PR --unresolved-only       # step 2 input, one JSON doc
+python3 scripts/pr_loop.py react   --surface review --comment-id ID --reaction up   # step 5
+python3 scripts/pr_loop.py reply   $PR --comment-id ID --body "…"                   # step 5
+python3 scripts/pr_loop.py resolve --thread-id THREAD_ID                            # step 5, bot threads only
+```
+
+(Paths relative to this skill's directory; needs an authenticated `gh`.) The raw incantations behind it live in [references/github-mechanics.md](references/github-mechanics.md) — use them only where the script can't run. The judgment steps — verdicts, dedup into findings, fixes, coverage, description edits — are yours, not the tool's.
 
 ### 1. Wait — bounded, not hopeful
 
