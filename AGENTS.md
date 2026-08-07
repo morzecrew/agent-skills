@@ -29,7 +29,9 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 
 ## Testing Instructions
 
-- **Structural validation (deterministic, no LLM):** `python3 scripts/validate_skills.py` — frontmatter shape, name/folder sync, description limits, required sections, Related-skills and references/ integrity, README sync. Runs in pre-commit and GitHub Actions (`.github/workflows/validate.yml`); no secrets involved.
+- **Everything CI runs:** `just check` (lint + validate + test). Individual recipes: `just lint`, `just validate`, `just test`, `just test-one <module>`, `just commits`, `just install-hooks`.
+- **Structural validation (deterministic, no LLM):** `python3 scripts/validate_skills.py` — frontmatter shape, name/folder sync, description limits, required sections, Related-skills and references/ integrity, bundled scripts compile and are documented, README sync. Runs in pre-commit and GitHub Actions (`.github/workflows/validate.yml`); no secrets involved.
+- **Skill-script unit tests:** `cd tests && python3 -m unittest discover` — stdlib `unittest`, no dependencies, no network. Covers the bundled scripts' logic and carries a regression test for every bug found while building them.
 - **Behavioral evals (local only, never CI):** `python3 evals/run.py` — runs eval prompts through the locally authenticated `claude` CLI and checks output assertions. Local-only by design so no LLM API keys ever enter the repository or CI. See `evals/README.md`.
 - Manually verify:
   - Skill instructions are clear and self-contained
@@ -48,3 +50,4 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 3. Document when the skill applies ("Use when") and what it covers ("Categories covered").
 4. Add the skill to README.md under "Available Skills".
 5. Run `python3 scripts/validate_skills.py` — it enforces 1-4.
+6. If the skill bundles `scripts/`, mention each script in `SKILL.md` (the validator requires it) and add tests under `tests/`.

@@ -1,0 +1,135 @@
+"""Tests for keep-a-changelog/scripts/validate_changelog.py."""
+
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from support import load_script
+
+script = load_script("keep-a-changelog", "validate_changelog.py")
+
+GOOD = """# Changelog
+
+## [Unreleased]
+
+### Added
+
+- A new thing.
+
+## [1.1.0] - 2026-02-01
+
+### Fixed
+
+- A bug.
+
+## [1.0.0] - 2026-01-01 [YANKED]
+
+### Added
+
+- First release.
+
+[unreleased]: https://x/compare/v1.1.0...HEAD
+[1.1.0]: https://x/compare/v1.0.0...v1.1.0
+[1.0.0]: https://x/releases/tag/v1.0.0
+"""
+
+
+class ChangelogTest(unittest.TestCase):
+    def check(self, text: str, house_rules: bool = False) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "CHANGELOG.md"
+            path.write_text(text, encoding="utf-8")
+            return script.validate(path, house_rules)
+
+    def assert_flags(self, text: str, code: str, house_rules: bool = False) -> None:
+        found = self.check(text, house_rules)
+        self.assertTrue(
+            any(problem.startswith(code) for problem in found),
+            f"expected {code}, got {found}",
+        )
+
+    def test_valid_changelog_is_clean(self):
+        self.assertEqual(self.check(GOOD), [])
+
+    def test_missing_unreleased(self):
+        self.assert_flags(GOOD.replace("## [Unreleased]", "## Whats new"), "S1")
+
+    def test_malformed_heading(self):
+        self.assert_flags(GOOD.replace("## [1.1.0] - 2026-02-01", "## 1.1.0 (Feb 2026)"), "S2")
+
+    def test_impossible_date(self):
+        self.assert_flags(GOOD.replace("2026-02-01", "2026-02-30"), "S3")
+
+    def test_non_iso_date(self):
+        # Parses as a heading, then fails the date check — the more precise
+        # diagnosis of the two.
+        self.assert_flags(GOOD.replace("2026-02-01", "01/02/2026"), "S3")
+
+    def test_versions_out_of_order(self):
+        swapped = GOOD.replace("## [1.1.0] - 2026-02-01", "## [0.9.0] - 2026-02-01")
+        self.assert_flags(swapped, "S4")
+
+    def test_unknown_category(self):
+        self.assert_flags(GOOD.replace("### Fixed", "### Bugfixes"), "S5")
+
+    def test_duplicate_version(self):
+        self.assert_flags(GOOD.replace("## [1.0.0] - 2026-01-01 [YANKED]", "## [1.1.0] - 2026-01-01"), "S6")
+
+    def test_link_reference_missing(self):
+        self.assert_flags(GOOD.replace("[1.0.0]: https://x/releases/tag/v1.0.0", ""), "S7")
+
+    def test_link_reference_orphaned(self):
+        self.assert_flags(GOOD.replace("[1.0.0]: https", "[9.9.9]: https"), "S7")
+
+    def test_link_checks_skipped_when_no_references_used(self):
+        # A collection that simply does not use link references must not be
+        # nagged into adding them.
+        without = GOOD[: GOOD.index("[unreleased]:")].rstrip() + "\n"
+        self.assertEqual([p for p in self.check(without) if p.startswith("S7")], [])
+
+    def test_yanked_tag_accepted(self):
+        self.assertNotIn("S2", " ".join(self.check(GOOD)))
+
+    def test_code_fences_are_not_parsed_as_headings(self):
+        with_fence = GOOD.replace(
+            "- A new thing.",
+            "- A new thing.\n\n  ```text\n  ## [not-a-heading] - nope\n  ```",
+        )
+        self.assertEqual([p for p in self.check(with_fence) if p.startswith("S2")], [])
+
+
+class HouseRulesTest(unittest.TestCase):
+    def check(self, text: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "CHANGELOG.md"
+            path.write_text(text, encoding="utf-8")
+            return script.validate(path, True)
+
+    def test_house_rules_are_off_by_default(self):
+        stacked = GOOD.replace("- A new thing.", "- One thing.\n- Another thing.")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "CHANGELOG.md"
+            path.write_text(stacked, encoding="utf-8")
+            self.assertEqual([p for p in script.validate(path, False) if p.startswith("H")], [])
+
+    def test_stacked_bullets_flagged(self):
+        stacked = GOOD.replace("- A new thing.", "- One thing.\n- Another thing.")
+        self.assertTrue(any(p.startswith("H1") for p in self.check(stacked)))
+
+    def test_overlong_entry_flagged(self):
+        long_entry = "- " + "x" * 400
+        self.assertTrue(any(p.startswith("H2") for p in self.check(GOOD.replace("- A new thing.", long_entry))))
+
+    def test_too_many_sentences_flagged(self):
+        wordy = "- One. Two. Three. Four."
+        self.assertTrue(any(p.startswith("H3") for p in self.check(GOOD.replace("- A new thing.", wordy))))
+
+    def test_placeholder_entry_is_exempt(self):
+        placeholder = GOOD.replace("- A new thing.", "- ...")
+        self.assertEqual([p for p in self.check(placeholder) if p.startswith("H")], [])
+
+
+if __name__ == "__main__":
+    unittest.main()

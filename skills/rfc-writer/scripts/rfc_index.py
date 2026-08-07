@@ -176,8 +176,8 @@ def template_body(script_dir: Path) -> str:
     return match.group(1)
 
 
-def cmd_new(rfc_dir: Path, title: str, script_dir: Path) -> int:
-    number = next_number(rfc_dir)
+def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = None) -> int:
+    number = next_number(rfc_dir) if number is None else number
     path = rfc_dir / f"{number:04d}-{slugify(title)}.md"
     if path.exists():
         fail(f"{path.name} already exists")
@@ -223,6 +223,11 @@ def main() -> int:
     sub.add_parser("next")
     new = sub.add_parser("new")
     new.add_argument("title")
+    new.add_argument(
+        "--number", type=int,
+        help="use this number instead of the next free one (a reserved number, or "
+             "re-creating a deleted RFC); refuses to overwrite an existing file",
+    )
 
     args = parser.parse_args()
     rfc_dir = find_dir(args.root)
@@ -232,7 +237,7 @@ def main() -> int:
     if args.cmd == "next":
         print(f"{next_number(rfc_dir):04d}")
         return 0
-    return cmd_new(rfc_dir, args.title, Path(__file__).resolve().parent)
+    return cmd_new(rfc_dir, args.title, Path(__file__).resolve().parent, args.number)
 
 
 if __name__ == "__main__":

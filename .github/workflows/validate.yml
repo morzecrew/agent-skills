@@ -26,3 +26,14 @@ jobs:
 
       - name: Structural skill validation
         run: python3 scripts/validate_skills.py
+
+      - name: Skill script tests
+        working-directory: tests
+        run: python3 -m unittest discover -s . -p 'test_*.py' -v
+
+      - name: Commit message format
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --quiet origin "${{ github.base_ref }}"
+          python3 skills/gitmoji-conventional/scripts/check_commit_msg.py \
+            --range "origin/${{ github.base_ref }}..HEAD"

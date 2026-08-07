@@ -5,7 +5,10 @@ Replaces hand-crafted API calls for the loop's mechanical steps:
 
   status   <pr>   one-shot snapshot: checks bucketed clean/pending/attention,
                   reviewers discovered (bots vs humans), unresolved thread count
-  wait     <pr>   bounded poll until every check completes (step 1)
+  wait     <pr>   bounded poll until every check completes *and* the comment
+                  count stops moving (step 1) — a reviewer's check often goes
+                  green before its review is posted, so completion alone is not
+                  the signal. Optionally require named reviewers to have spoken.
   collect  <pr>   every review thread (fully paginated, both levels), review
                   bodies, and issue comments, normalized to one JSON doc (step 2)
   react           👍/👎 on a comment, review or issue surface (step 5)
@@ -71,6 +74,18 @@ query($id: ID!, $after: String) {
 RESOLVE_MUTATION = """
 mutation($thread: ID!) {
   resolveReviewThread(input: { threadId: $thread }) { thread { id isResolved } }
+}
+"""
+
+COUNTS_QUERY = """
+query($owner: String!, $repo: String!, $pr: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 1) { totalCount }
+      reviews(first: 1) { totalCount }
+      comments(first: 1) { totalCount }
+    }
+  }
 }
 """
 
@@ -249,19 +264,87 @@ def cmd_status(owner: str, repo: str, pr: int) -> dict:
     return snapshot
 
 
-def cmd_wait(owner: str, repo: str, pr: int, timeout_s: int, interval_s: int) -> int:
+def comment_fingerprint(owner: str, repo: str, pr: int) -> tuple[int, int, int]:
+    """Cheap totals used to detect that reviewers have stopped writing."""
+    page = graphql(COUNTS_QUERY, {"owner": owner, "repo": repo}, {"pr": pr})
+    node = page["repository"]["pullRequest"]
+    return (
+        node["reviewThreads"]["totalCount"],
+        node["reviews"]["totalCount"],
+        node["comments"]["totalCount"],
+    )
+
+
+def wait_verdict(
+    snapshot: dict,
+    fingerprint: tuple[int, int, int],
+    previous: tuple[int, int, int] | None,
+    stable_since: float | None,
+    now: float,
+    settle_s: int,
+) -> tuple[str, float | None]:
+    """Decide one poll: 'pending-checks' | 'settling' | 'done', with the new stable-since.
+
+    Pure so the loop's logic is testable without the network.
+    """
+    if snapshot["pending"]:
+        return "pending-checks", None
+    if previous != fingerprint:
+        return "settling", now
+    if stable_since is None:
+        return "settling", now
+    if now - stable_since >= settle_s:
+        return "done", stable_since
+    return "settling", stable_since
+
+
+def cmd_wait(
+    owner: str, repo: str, pr: int, timeout_s: int, interval_s: int,
+    settle_s: int, expect_bots: list[str],
+) -> int:
     deadline = time.monotonic() + timeout_s
+    previous: tuple[int, int, int] | None = None
+    stable_since: float | None = None
+
     while True:
         snapshot = check_snapshot(owner, repo, pr)
-        if not snapshot["pending"]:
+        fingerprint = comment_fingerprint(owner, repo, pr)
+        now = time.monotonic()
+        state, stable_since = wait_verdict(
+            snapshot, fingerprint, previous, stable_since, now, settle_s
+        )
+        previous = fingerprint
+
+        missing: list[str] = []
+        if state == "done" and expect_bots:
+            spoke = {name.lower().removesuffix("[bot]") for name in cmd_status(owner, repo, pr)["reviewers"]["bots"]}
+            missing = [b for b in expect_bots if b.lower().removesuffix("[bot]") not in spoke]
+            if missing:
+                state = "settling"
+
+        if state == "done":
+            snapshot["commentCounts"] = {
+                "reviewThreads": fingerprint[0], "reviews": fingerprint[1], "issueComments": fingerprint[2]
+            }
             print(json.dumps(snapshot, indent=2))
             return 2 if snapshot["attention"] else 0
-        if time.monotonic() >= deadline:
+
+        if now >= deadline:
+            snapshot["timedOutWaitingFor"] = (
+                "checks" if snapshot["pending"] else ("reviewers: " + ", ".join(missing) if missing else "comments to settle")
+            )
             print(json.dumps(snapshot, indent=2))
-            print(f"timed out with {len(snapshot['pending'])} check(s) still pending", file=sys.stderr)
+            print(f"timed out after {timeout_s}s while waiting on {snapshot['timedOutWaitingFor']}", file=sys.stderr)
             return 3
-        print(f"waiting: {len(snapshot['pending'])} pending — {', '.join(snapshot['pending'][:5])}",
-              file=sys.stderr)
+
+        if snapshot["pending"]:
+            note = f"{len(snapshot['pending'])} check(s) pending — {', '.join(snapshot['pending'][:4])}"
+        elif missing:
+            note = f"checks done; waiting for {', '.join(missing)} to post"
+        else:
+            waited = int(now - stable_since) if stable_since else 0
+            note = f"checks done; comments settling ({waited}/{settle_s}s stable)"
+        print(f"waiting: {note}", file=sys.stderr)
         time.sleep(interval_s)
 
 
@@ -307,8 +390,16 @@ def main() -> int:
 
     p = sub.add_parser("wait", parents=[common])
     p.add_argument("pr", type=int)
-    p.add_argument("--timeout-seconds", type=int, default=600)
-    p.add_argument("--interval-seconds", type=int, default=60)
+    p.add_argument("--timeout-seconds", type=int, default=1800, help="give up after this long (default 30m)")
+    p.add_argument("--interval-seconds", type=int, default=60, help="poll every N seconds")
+    p.add_argument(
+        "--settle-seconds", type=int, default=90,
+        help="comment counts must hold steady this long after checks complete (default 90s)",
+    )
+    p.add_argument(
+        "--expect-bot", action="append", default=[], metavar="LOGIN",
+        help="require this reviewer to have posted before finishing (repeatable)",
+    )
 
     p = sub.add_parser("react", parents=[common])
     p.add_argument("--surface", choices=("review", "issue"), required=True)
@@ -336,7 +427,10 @@ def main() -> int:
     elif args.cmd == "collect":
         print(json.dumps(collect_all(owner, repo, args.pr, args.unresolved_only), indent=2))
     elif args.cmd == "wait":
-        return cmd_wait(owner, repo, args.pr, args.timeout_seconds, args.interval_seconds)
+        return cmd_wait(
+            owner, repo, args.pr, args.timeout_seconds, args.interval_seconds,
+            args.settle_seconds, args.expect_bot,
+        )
     elif args.cmd == "react":
         print(json.dumps(cmd_react(owner, repo, args.surface, args.comment_id, args.reaction), indent=2))
     elif args.cmd == "reply":
