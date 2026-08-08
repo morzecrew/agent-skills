@@ -40,7 +40,11 @@ STATUS_EMOJI = {"📝": "Draft", "🚧": "In progress", "✅": "Complete", "❌"
 RFC_FILENAME = re.compile(r"^(\d{4})-([a-z0-9-]+)\.md$")
 H1_NUMBER = re.compile(r"^#\s+RFC\s+(\d{4})\b", re.M)
 STATUS_LINE = re.compile(r"^-\s+\*\*Status:\*\*\s*(\S+)", re.M)
-INDEX_ROW = re.compile(r"^\|\s*\[(\d{4})\]\(([^)]+)\)\s*\|([^|]*)\|([^|]*)\|", re.M)
+# Cells may contain an escaped pipe, so a cell is "anything but a delimiter,
+# where a backslash escapes the next character". Reading with plain [^|]* ended
+# the title cell at the escape and shifted every column after it.
+CELL = r"(?:[^|\\]|\\.)*"
+INDEX_ROW = re.compile(rf"^\|\s*\[(\d{{4}})\]\(([^)]+)\)\s*\|({CELL})\|({CELL})\|", re.M)
 NEXT_FREE = re.compile(r"(next free number is\s+\*\*)(\d{4})(\*\*)", re.I)
 TEMPLATE_BLOCK = re.compile(r"```markdown\n(.*?)\n```", re.S)
 
@@ -65,15 +69,38 @@ def find_index(rfc_dir: Path) -> Path:
     fail(f"no INDEX.md or README.md in {rfc_dir}")
 
 
-def rfc_files(rfc_dir: Path) -> dict[int, Path]:
+def escape_cell(text: str) -> str:
+    """Make text safe for a GFM table cell: only the pipe needs escaping."""
+    return text.replace("|", "\\|")
+
+
+def numbered_files(rfc_dir: Path) -> dict[int, list[Path]]:
+    """Every number on disk, with all the files claiming it."""
     found: dict[int, list[Path]] = {}
     for path in sorted(rfc_dir.glob("*.md")):
         match = RFC_FILENAME.match(path.name)
         if match:
             found.setdefault(int(match.group(1)), []).append(path)
-    duplicates = {n: p for n, p in found.items() if len(p) > 1}
-    if duplicates:
-        listed = "; ".join(f"{n:04d}: {', '.join(x.name for x in p)}" for n, p in duplicates.items())
+    return found
+
+
+def describe_duplicates(found: dict[int, list[Path]]) -> str:
+    return "; ".join(
+        f"{number:04d}: {', '.join(p.name for p in paths)}"
+        for number, paths in sorted(found.items())
+        if len(paths) > 1
+    )
+
+
+def rfc_files(rfc_dir: Path, strict: bool = True) -> dict[int, Path]:
+    """Number -> file. `strict` fails on duplicates; `check` reports them instead.
+
+    A duplicate is a validation finding, and `check` documents exit 2 for those.
+    Failing hard here made it exit 1 — the code reserved for a usage or IO error
+    — so a broken collection was indistinguishable from a broken invocation.
+    """
+    found = numbered_files(rfc_dir)
+    if strict and (listed := describe_duplicates(found)):
         fail(f"duplicate RFC numbers on disk — {listed}")
     return {number: paths[0] for number, paths in found.items()}
 
@@ -120,9 +147,16 @@ def claimed_next(index_text: str) -> int | None:
 def cmd_check(rfc_dir: Path) -> int:
     index_path = find_index(rfc_dir)
     index_text = index_path.read_text(encoding="utf-8")
-    files = rfc_files(rfc_dir)
+    files = rfc_files(rfc_dir, strict=False)
     rows = index_rows(index_text)
     problems: list[str] = []
+
+    for number, paths in sorted(numbered_files(rfc_dir).items()):
+        if len(paths) > 1:
+            problems.append(
+                f"RFC {number:04d} is claimed by {len(paths)} files: "
+                f"{', '.join(p.name for p in paths)}"
+            )
 
     for number in duplicate_row_numbers(index_text):
         problems.append(f"{index_path.name}: RFC {number:04d} has more than one index row")
@@ -263,7 +297,12 @@ def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = No
                 rfc_handle.write(body + "\n")
         except FileExistsError:
             fail(f"{path.name} was created by another process — re-run to take the next number")
-        row = f"| [{number:04d}]({path.name}) | {title} | 📝 Draft | TODO: one-line summary |"
+        # A pipe in the title would open a new cell and shift every column after
+        # it, so the row the checker reads back is not the row that was written.
+        row = (
+            f"| [{number:04d}]({path.name}) | {escape_cell(title)} | 📝 Draft "
+            "| TODO: one-line summary |"
+        )
 
         lines = index_text.splitlines()
         lines.insert(insert_at, row)
@@ -272,7 +311,18 @@ def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = No
         # 0008 must not rewind the index to 0004.
         claimed = claimed_next(index_text) or 0
         next_free = max(number + 1, claimed)
-        updated = NEXT_FREE.sub(lambda m: f"{m.group(1)}{next_free:04d}{m.group(3)}", "\n".join(lines))
+        updated, bumped = NEXT_FREE.subn(
+            lambda m: f"{m.group(1)}{next_free:04d}{m.group(3)}", "\n".join(lines)
+        )
+        # A no-op substitution used to pass silently, so `new` reported success
+        # on an index carrying no claim at all — and the next run then allocated
+        # from the files alone, which is what the claim exists to backstop.
+        if not bumped:
+            path.unlink(missing_ok=True)
+            fail(
+                f"{index_path.name} has no 'next free number is **NNNN**' line to update — "
+                f"add one (see references/index-template.md); removed {path.name}"
+            )
         try:
             handle.seek(0)
             handle.truncate()

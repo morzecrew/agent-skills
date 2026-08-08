@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import re
 import tempfile
 import threading
 import unittest
@@ -149,6 +150,41 @@ class RfcCollectionTest(unittest.TestCase):
         result = run_script("rfc-writer", "rfc_index.py", "new", "Orphan", cwd=self.root)
         self.assertEqual(result.returncode, 1)
         self.assertFalse((self.rfcs / "0003-orphan.md").exists(), "no orphan RFC may survive")
+
+    def test_duplicate_numbers_are_a_check_finding_not_a_usage_error(self):
+        # Regression: failing hard inside rfc_files exited 1, the code reserved
+        # for a usage or IO error, so a broken collection was indistinguishable
+        # from a broken invocation. `check` documents exit 2 for findings.
+        (self.rfcs / "0001-duplicate-slug.md").write_text(ALPHA, encoding="utf-8")
+        result = run_script("rfc-writer", "rfc_index.py", "check", cwd=self.root)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("0001", result.stdout)
+
+    def test_pipe_in_a_title_does_not_corrupt_the_row(self):
+        # Regression: an unescaped pipe opened a new cell and shifted every
+        # column after it, so the row read back was not the row written.
+        result = run_script(
+            "rfc-writer", "rfc_index.py", "new", "Sharding | Rebalancing", cwd=self.root
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        index = (self.rfcs / "INDEX.md").read_text(encoding="utf-8")
+        row = next(line for line in index.splitlines() if "0003" in line)
+        self.assertIn(r"Sharding \| Rebalancing", row)
+        delimiters = len(re.findall(r"(?<!\\)\|", row))
+        self.assertEqual(delimiters, 5, f"exactly five unescaped delimiters: {row}")
+        self.assertEqual(self.check(), 0, "the collection must stay consistent")
+
+    def test_index_without_a_next_free_claim_is_refused(self):
+        # Regression: the substitution silently did nothing, so `new` reported
+        # success while leaving the index with no claim to allocate from.
+        (self.rfcs / "INDEX.md").write_text(
+            "# RFCs\n\n## Index\n\n| # | Title | Status | One-line |\n|---|---|---|---|\n",
+            encoding="utf-8",
+        )
+        result = run_script("rfc-writer", "rfc_index.py", "new", "Claimless", cwd=self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("next free number", result.stderr)
+        self.assertFalse((self.rfcs / "0003-claimless.md").exists(), "no orphan may survive")
 
     def test_failed_index_write_removes_the_new_rfc(self):
         # Regression: pre-resolving lookups covered a missing index, not a
