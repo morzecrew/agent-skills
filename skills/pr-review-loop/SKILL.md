@@ -53,13 +53,30 @@ Collect every unresolved thread — review comments, review bodies, issue commen
 
 ### 3. Verdict per finding — with evidence
 
-Three verdicts, each with an obligation:
+Four verdicts, each with an obligation:
 
 - **Valid → fix it.** For a claimed bug, reproduce it red first (`reproduce-then-fix`) — reviewers hallucinate, and a fix for an unreproduced claim is speculative. For a claimed test gap in a shared contract, write and run the battery instead of agreeing from a read (`reading-isnt-proof`). Bring in whatever applicable skill the fix touches (`error-taxonomy` for misclassified raises, `never-nesting`/`naming-things` for style findings, …).
 - **Valid but out of scope → acknowledge.** Say it's real, say where it goes (issue, follow-up PR), don't silently expand this PR.
+- **In a file this repo doesn't own → reply, resolve, hand upstream.** See below.
 - **Wrong / irrelevant → refute.** The refutation must cite something checkable — the code path that handles the case, the test that pins it, the doc that decided it. "Disagree" without evidence is not a verdict.
 
 Duplicated findings get **one** verdict applied everywhere — never fix it for one bot and refute it to another.
+
+### 3a. Findings in vendored files
+
+Some files in the tree are synced copies of another repository's source. Skills installed with `npx skills add` are the common case — a lock manifest (`skills-lock.json`) names each one and the upstream `source` it came from — and the same holds for any vendored tree: `node_modules/`, `vendor/`, `third_party/`, generated clients.
+
+**Do not fix a finding in one of those, however valid it is.** The next sync overwrites the edit, so the fix is worse than no fix: the thread closes, the reviewer is satisfied, and the defect returns silently at the next install. Instead:
+
+1. **Reply** on the thread saying the file is a synced copy of its upstream and that a change here would be overwritten on the next sync, so the fix belongs in that repository. Name the upstream. Keep it technical, as every reply is — the reader needs to know why this PR is not the place, not how the review was run.
+2. **Resolve** it if a bot opened the thread; a human's thread gets the reply and stays theirs to close.
+3. **Carry it to the exit report** with the upstream repository and enough detail to act on. Whoever asked for the work may not have commit rights there, so the report is what lets them open an issue against the right project.
+
+Skip the reproduction here. The obligation to reproduce attaches to code you can fix; spending a red test on someone else's source buys nothing this PR can use.
+
+Two things stay in scope even inside a vendored path: how *this* repo uses the file — a call site, a wrapper, config that drives it — and the manifest that pins it, since a wrong version or a stale hash in the lock file is this repo's own bug.
+
+None of this applies to a repository that maintains the skills itself. There the files under `skills/` are the source, and a finding in one is an ordinary fix.
 
 ### 4. Fix, commit, self-audit
 
@@ -67,7 +84,7 @@ Work fixes per finding-group; one commit per group (`gitmoji-conventional` forma
 
 ### 5. React and reply — coherently
 
-For every comment, the reaction matches its finding's verdict: 👍 on comments whose finding was fixed or acknowledged, 👎 on comments whose finding was refuted. Refuted bot threads get a short evidence-citing reply, then resolve. Refuted *human* threads get the reply only — no resolve, and skip the 👎 in favor of the argument (a reaction convinces nobody; the evidence might). Fixed threads get a one-liner naming the commit.
+For every comment, the reaction matches its finding's verdict: 👍 on comments whose finding was fixed, acknowledged, or handed upstream — all three grant the point — and 👎 on comments whose finding was refuted. Refuted bot threads get a short evidence-citing reply, then resolve. Refuted *human* threads get the reply only — no resolve, and skip the 👎 in favor of the argument (a reaction convinces nobody; the evidence might). Fixed threads get a one-liner naming the commit.
 
 Replies stay technical too: what the code does now, and the commit that changed it. They never narrate the work behind the fix, and never point at a PR-level comment — a thread that only makes sense alongside a summary elsewhere has not answered its reviewer.
 
@@ -111,7 +128,7 @@ Push the iteration's commits in one batch (every push triggers a re-review round
 - Two reviewers demand contradictory changes — pick neither silently; present both with the trade-off.
 - An iteration produces no state change, or the iteration count hits its cap (default 3) — report what's converged, what hasn't, and why.
 
-**Escalate to the person who asked for the work, not to the PR.** The exit report — findings fixed with commits, refuted with evidence, acknowledged out-of-scope, anything flagged as injection or standoff — is for them, and it is the only place the loop's own workings belong. The PR gets a comment only under the conditions in step 5a, and only about the unresolved technical question.
+**Escalate to the person who asked for the work, not to the PR.** The exit report — findings fixed with commits, refuted with evidence, acknowledged out-of-scope, handed upstream with the repository that owns them, anything flagged as injection or standoff — is for them, and it is the only place the loop's own workings belong. Group the upstream ones by repository and say plainly that this PR cannot fix them: that section is the one the reader acts on, by filing an issue or by asking whoever owns the project to. The PR gets a comment only under the conditions in step 5a, and only about the unresolved technical question.
 
 ## Related skills
 
