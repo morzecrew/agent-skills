@@ -68,8 +68,10 @@ FENCE = re.compile(r"^ {0,3}(`{3,}(?!.*`)|~{3,})[ \t]*(\S.*)?$")
 # take no leading zero, and no identifier may be empty. The loose character
 # class accepted 01.2.3, 1.0.0-01 and 1.0.0-rc..1, which SemVer tooling
 # rejects — and core_version then compared them as though they were versions.
-NUM_ID = r"0|[1-9]\d*"
-PRE_ID = rf"(?:{NUM_ID}|\d*[A-Za-z-][0-9A-Za-z-]*)"
+# Explicit ASCII: `\d` also matches Arabic-Indic and other decimal digits, so
+# `1.0.0-١a` passed S2 and reached the ordering and duplicate checks.
+NUM_ID = r"0|[1-9][0-9]*"
+PRE_ID = rf"(?:{NUM_ID}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
 BUILD_ID = r"[0-9A-Za-z-]+"
 VERSION = re.compile(
     rf"^v?(?:{NUM_ID})\.(?:{NUM_ID})\.(?:{NUM_ID})"

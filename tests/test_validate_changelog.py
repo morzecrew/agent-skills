@@ -191,12 +191,22 @@ class ChangelogTest(unittest.TestCase):
     def test_prerelease_case_is_significant(self):
         # SemVer compares prerelease identifiers case-sensitively, so
         # 1.0.0-RC.1 and 1.0.0-rc.1 are different releases; folding case
-        # rejected a valid file as containing duplicates.
-        text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [1.0.0-RC.1] - 2026-02-01")
-        text = text.replace("[1.1.0]: https", "[1.0.0-RC.1]: https")
-        text = text.replace("## [1.0.0] - 2026-01-01 [YANKED]", "## [1.0.0-rc.1] - 2026-01-01")
-        text = text.replace("[1.0.0]: https", "[1.0.0-rc.1]: https")
-        self.assertEqual([p for p in self.check(text) if p.startswith("S6")], [])
+        # rejected a valid file as containing duplicates. Uppercase sorts
+        # above lowercase, so this order also satisfies S4 — otherwise the
+        # fixture would carry a second, unrelated complaint.
+        text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [1.0.0-rc.1] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.0.0-rc.1]: https")
+        text = text.replace("## [1.0.0] - 2026-01-01 [YANKED]", "## [1.0.0-RC.1] - 2026-01-01")
+        text = text.replace("[1.0.0]: https", "[1.0.0-RC.1]: https")
+        found = self.check(text)
+        self.assertEqual([p for p in found if p.startswith("S6")], [], found)
+        self.assertEqual([p for p in found if p.startswith("S4")], [], found)
+
+    def test_non_ascii_digits_are_not_semver(self):
+        # `\d` matches Arabic-Indic digits too, so `1.0.0-١a` passed S2 and
+        # reached the ordering and duplicate checks.
+        self.assertFalse(script.VERSION.match("1.0.0-١a"))
+        self.assertFalse(script.VERSION.match("١.0.0"))
 
     def test_indented_link_definitions_are_seen(self):
         # Regression: anchored at column 0, an indented set read as "no link

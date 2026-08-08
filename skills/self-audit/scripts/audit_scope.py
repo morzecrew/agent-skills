@@ -14,7 +14,7 @@ Coverage inputs: Cobertura XML (coverage.py `-x`, gocover-cobertura) and LCOV
 `.info`. JaCoCo's own XML uses a different element shape and is not read — convert
 it with a cobertura reporter first. Paths are matched by longest common suffix, since report paths
 are relative to whatever root the runner used. An XML report that declares
-entities is refused rather than parsed (see ENTITY_DECL).
+entities is refused rather than parsed (see reject_entity_declarations).
 
 Exit codes: 0 ok · 1 usage/git error · 2 patch coverage below --min. Unknown flags exit 2, from argparse itself.
 
@@ -176,11 +176,20 @@ def is_lcov_report(path: Path, head: bytes) -> bool:
     BOM-prefixed Cobertura report named .lcov would otherwise be read as LCOV
     and come back empty.
     """
-    head = head[:4096].lstrip(codecs.BOM_UTF8).lstrip(codecs.BOM_UTF16_LE)
-    head = head.lstrip(codecs.BOM_UTF16_BE)
-    if head.lstrip().startswith(b"<"):
+    head = head[:4096]
+    for bom in (codecs.BOM_UTF8, codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE,
+                codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE):
+        if head.startswith(bom):
+            head = head[len(bom):]
+            break
+    # Drop the NUL padding a UTF-16 or UTF-32 encoding leaves between ASCII
+    # bytes: without this the '<' is never at the front and a wide-encoded
+    # Cobertura report named .lcov was dispatched to the LCOV parser, which
+    # found no coverage at all.
+    compact = head.replace(b"\x00", b"").lstrip()
+    if compact.startswith(b"<"):
         return False
-    if b"SF:" in head or b"TN:" in head:
+    if b"SF:" in compact or b"TN:" in compact:
         return True
     return path.suffix.lower() in {".info", ".lcov", ".dat"}
 
