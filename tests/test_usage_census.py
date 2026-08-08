@@ -198,6 +198,22 @@ class CensusTest(unittest.TestCase):
         self.assertEqual(result["counts"]["internalUsage"] + result["counts"]["externalUsage"], 0,
                          result["counts"])
 
+    def test_a_block_opener_inside_a_line_comment_does_not_swallow_the_file(self):
+        # Regression: block comments were scanned before line comments, so a
+        # `/*` sitting inside a `// …` comment opened a block that ran to the
+        # end of the file — and every live reference below it went uncounted,
+        # which is the false-dead verdict that ends in a delete.
+        self.write("src/pkg/a.js", "function helper() { return 1; }\n")
+        self.write("src/pkg/b.js", "// see /* the note above\nhelper();\n")
+        kinds = self.census("helper")["counts"]["byKind"]
+        self.assertGreaterEqual(kinds.get("call", 0), 1, kinds)
+
+    def test_generator_declaration_without_a_space_is_a_definition(self):
+        self.write("src/pkg/a.js", "function*helper() { yield 1; }\n")
+        kinds = self.census("helper")["counts"]["byKind"]
+        self.assertEqual(kinds.get("definition", 0), 1, kinds)
+        self.assertNotIn("call", kinds, kinds)
+
     def test_code_after_a_block_comment_on_one_line_still_counts(self):
         self.write("src/pkg/a.js", "function helper() { return 1; }\n")
         self.write("src/pkg/b.js", "/* note */ helper();\n")

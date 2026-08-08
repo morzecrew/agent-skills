@@ -120,12 +120,12 @@ def build_patterns(symbol: str) -> dict[str, re.Pattern]:
     receiver = rf"^\s*func\s+\([^)]*\)\s*{s}\b"
     return {
         "definition": re.compile(
-            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})\s*\*?\s+{s}\b"
+            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})(?:\s*\*\s*|\s+){s}\b"
             rf"|{receiver}"
             rf"|^\s*{s}\s*(?::[^=]+)?=(?!=)"
         ),
         "declaration": re.compile(
-            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})\s*\*?\s+{s}\b"
+            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})(?:\s*\*\s*|\s+){s}\b"
             rf"|{receiver}"
         ),
         "from-import": re.compile(rf"^\s*from\s+\S+\s+import\s+.*\b{s}\b"),
@@ -176,63 +176,57 @@ BLOCK_COMMENTS = {
 }
 
 
-def strip_block_comments(line: str, block: tuple[str, str] | None, inside: bool) -> tuple[str, bool]:
-    """Remove block-comment spans, carrying `inside` across lines.
+def strip_comments(
+    line: str, markers: tuple[str, ...], block: tuple[str, str] | None, inside: bool
+) -> tuple[str, bool]:
+    """Strip line and block comments in one left-to-right pass.
 
-    Returns the code outside the comment and whether the line ends still
-    inside one. Quote state is not tracked here: a marker inside a string is
-    rarer than a real comment, and over-stripping would only lose a reference
-    the line-comment path already handles conservatively.
+    One scanner, because the two forms interact: handling blocks first let a
+    `/*` sitting inside a `// …` comment open a block that swallowed every
+    following line, and a live reference below it then went uncounted — a used
+    symbol made to look deletable. A line comment ends the line; a block
+    comment opened outside one carries to the next.
+
+    Quotes are tracked so a marker inside a string literal does not truncate
+    real code.
     """
-    if block is None:
-        return line, False
-    opener, closer = block
+    opener, closer = block if block else (None, None)
     out: list[str] = []
+    quote: str | None = None
     index = 0
     while index < len(line):
         if inside:
-            end = line.find(closer, index)
+            end = line.find(closer, index) if closer else -1
             if end == -1:
                 return "".join(out), True
             index = end + len(closer)
             inside = False
             continue
-        start = line.find(opener, index)
-        if start == -1:
-            out.append(line[index:])
-            return "".join(out), False
-        out.append(line[index:start])
-        index = start + len(opener)
-        inside = True
-    return "".join(out), inside
-
-
-def code_part(line: str, markers: tuple[str, ...]) -> str:
-    """The line with any trailing line comment removed, quote-aware.
-
-    A symbol named only in a comment is not a reference to it, and counting one
-    produces exactly the false not-dead verdict this tool exists to prevent.
-    Quote tracking keeps a marker inside a string literal from truncating real
-    code.
-    """
-    if not markers:
-        return line
-    quote: str | None = None
-    index = 0
-    while index < len(line):
         char = line[index]
         if quote is not None:
             if char == "\\":
+                out.append(line[index:index + 2])
                 index += 2
                 continue
             if char == quote:
                 quote = None
-        elif char in "\"'`":
+            out.append(char)
+            index += 1
+            continue
+        if char in "\"'`":
             quote = char
-        elif any(line.startswith(marker, index) for marker in markers):
-            return line[:index]
+            out.append(char)
+            index += 1
+            continue
+        if any(line.startswith(marker, index) for marker in markers):
+            return "".join(out), False
+        if opener and line.startswith(opener, index):
+            index += len(opener)
+            inside = True
+            continue
+        out.append(char)
         index += 1
-    return line
+    return "".join(out), inside
 
 
 def classify(line: str, patterns: dict[str, re.Pattern], in_import_block: bool) -> str | None:
@@ -275,8 +269,7 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
             stripped = line.strip()
             # Comment stripping comes first: a line inside a block comment must
             # not drive the import-block state either.
-            code, in_block_comment = strip_block_comments(line, block, in_block_comment)
-            code = code_part(code, markers)
+            code, in_block_comment = strip_comments(line, markers, block, in_block_comment)
             if re.match(r"^\s*(?:from|import)\b.*\($", code):
                 in_import_block = True
             elif in_import_block and code.strip().startswith(")"):
