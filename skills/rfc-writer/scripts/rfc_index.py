@@ -47,6 +47,7 @@ CELL = r"(?:[^|\\]|\\.)*"
 INDEX_ROW = re.compile(rf"^\|\s*\[(\d{{4}})\]\(([^)]+)\)\s*\|({CELL})\|({CELL})\|", re.M)
 NEXT_FREE = re.compile(r"(next free number is\s+\*\*)(\d{4})(\*\*)", re.I)
 TEMPLATE_BLOCK = re.compile(r"```markdown\n(.*?)\n```", re.S)
+TEMPLATE_TITLE = "RFC NNNN — <Title>"
 
 
 def fail(message: str) -> None:
@@ -289,7 +290,16 @@ def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = No
         index_text = handle.read()
         insert_at = index_insert_position(index_text.splitlines(), index_path)
 
-        body = template_body(script_dir).replace("RFC NNNN — <Title>", f"RFC {number:04d} — {title}")
+        template = template_body(script_dir)
+        # An unchecked replace is silent when the template's placeholder is
+        # edited: the RFC would ship with a literal "RFC NNNN — <Title>" H1,
+        # and `check` would then report the file it just wrote as broken.
+        if TEMPLATE_TITLE not in template:
+            fail(
+                f"references/rfc-template.md no longer contains the '{TEMPLATE_TITLE}' "
+                "placeholder — restore it, or the H1 cannot be filled in"
+            )
+        body = template.replace(TEMPLATE_TITLE, f"RFC {number:04d} — {title}")
         try:
             # Exclusive create: two runs racing for the same number cannot both
             # win, which the existence check alone cannot guarantee.
@@ -348,10 +358,15 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="repo root (default: cwd)")
+    # Also accepted after the subcommand, which is where anyone would type it.
+    # SUPPRESS matters: a real default here would overwrite the top-level value
+    # whenever the flag was given before the subcommand instead.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--root", type=Path, default=argparse.SUPPRESS, help="repo root")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("check")
-    sub.add_parser("next")
-    new = sub.add_parser("new")
+    sub.add_parser("check", parents=[common])
+    sub.add_parser("next", parents=[common])
+    new = sub.add_parser("new", parents=[common])
     new.add_argument("title")
     new.add_argument(
         "--number", type=int,

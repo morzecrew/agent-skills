@@ -151,6 +151,36 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertFalse((self.rfcs / "0003-orphan.md").exists(), "no orphan RFC may survive")
 
+    def test_root_is_accepted_after_the_subcommand(self):
+        # Regression: --root was top-level only, so the form anyone would type
+        # failed outright with "unrecognized arguments".
+        for args in (["check", "--root", str(self.root)], ["--root", str(self.root), "check"]):
+            with self.subTest(args=args):
+                result = run_script("rfc-writer", "rfc_index.py", *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_root_before_the_subcommand_is_not_clobbered(self):
+        # The subcommand's own --root must not overwrite the top-level value
+        # with a default when it is absent.
+        result = run_script("rfc-writer", "rfc_index.py", "--root", str(self.root), "next")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "0003")
+
+    def test_template_without_its_placeholder_is_refused(self):
+        # Regression: the substitution was unchecked, so an edited template
+        # produced an RFC whose H1 was still the literal placeholder — which
+        # `check` then reported as a broken file the tool had just written.
+        template = SCRIPT_DIR.parent / "references" / "rfc-template.md"
+        original = template.read_text(encoding="utf-8")
+        template.write_text(original.replace("RFC NNNN — <Title>", "RFC ???"), encoding="utf-8")
+        try:
+            result = run_script("rfc-writer", "rfc_index.py", "new", "Doomed", cwd=self.root)
+        finally:
+            template.write_text(original, encoding="utf-8")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("placeholder", result.stderr)
+        self.assertFalse((self.rfcs / "0003-doomed.md").exists())
+
     def test_duplicate_numbers_are_a_check_finding_not_a_usage_error(self):
         # Regression: failing hard inside rfc_files exited 1, the code reserved
         # for a usage or IO error, so a broken collection was indistinguishable
