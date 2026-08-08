@@ -40,6 +40,8 @@ import time
 
 CLEAN_CONCLUSIONS = {"SUCCESS", "NEUTRAL"}
 PER_PAGE = 100
+# Generous for a slow API, short enough that `wait` still honours its deadline.
+GH_TIMEOUT_S = 120
 
 THREADS_QUERY = """
 query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
@@ -93,9 +95,19 @@ mutation($thread: ID!) {
 
 def run_gh(args: list[str]) -> str:
     try:
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True)
+        proc = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, timeout=GH_TIMEOUT_S
+        )
     except FileNotFoundError:
         sys.exit("gh CLI not found — install it and run `gh auth login`")
+    except subprocess.TimeoutExpired:
+        # Without this the call blocks forever and `wait` sails past the
+        # deadline it was given, never printing the timeout result that tells
+        # the caller what it was still waiting on.
+        sys.exit(
+            f"`gh {' '.join(args[:4])} …` did not return within {GH_TIMEOUT_S}s — "
+            "network stall or a hung credential helper"
+        )
     if proc.returncode != 0:
         shown = " ".join(args[:4])
         sys.exit(f"`gh {shown} …` failed (rc={proc.returncode}): {proc.stderr.strip()[:600]}")

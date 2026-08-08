@@ -46,6 +46,26 @@ class BotIdentityTest(unittest.TestCase):
         self.assertFalse(normalized["isBot"])
 
 
+class GhTimeoutTest(unittest.TestCase):
+    def test_a_blocked_gh_call_fails_rather_than_hanging(self):
+        # Regression: run_gh had no timeout, so cmd_wait could sail past the
+        # deadline it was given and never emit the timeout result that says
+        # what it was still waiting on.
+        original = script.subprocess.run
+
+        def blocked(*args, **kwargs):
+            self.assertIn("timeout", kwargs, "the call must be bounded")
+            raise script.subprocess.TimeoutExpired(cmd="gh", timeout=kwargs["timeout"])
+
+        script.subprocess.run = blocked
+        try:
+            with self.assertRaises(SystemExit) as caught:
+                script.run_gh(["api", "graphql"])
+        finally:
+            script.subprocess.run = original
+        self.assertIn("did not return", str(caught.exception))
+
+
 class ReactRailTest(unittest.TestCase):
     """👎 is bot-only. The module otherwise avoids faking the API, but a rail
     that is only documented is not a rail — this asserts no POST is even
