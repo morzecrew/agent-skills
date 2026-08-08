@@ -7,6 +7,8 @@ would test the fake, not the tool.
 
 from __future__ import annotations
 
+import contextlib
+import time
 import unittest
 
 from support import load_script
@@ -72,15 +74,26 @@ class GhTimeoutTest(unittest.TestCase):
         self.assertIn("did not return", str(caught.exception))
         self.assertEqual(self.budgets, [float(script.GH_TIMEOUT_S)])
 
-    def test_the_wait_budget_caps_each_call(self):
+    def test_the_wait_budget_is_shared_across_the_calls_in_a_poll(self):
         # Regression: a fixed per-call cap let `wait --timeout-seconds 1` spend
         # the full cap on its first call, and a paginated fingerprint makes
-        # several such calls per poll.
-        self.block()
-        with script.wait_budget(5), self.assertRaises(script.GhUnavailable):
-            script.run_gh(["api", "graphql"])
-        self.assertLessEqual(self.budgets[0], 5.0)
-        self.assertGreater(self.budgets[0], 0.0)
+        # several such calls per poll. One call proves only that a cap exists —
+        # the budget has to *shrink* across successive calls to bound the poll.
+        consumed: list[float] = []
+
+        def slow(*args, **kwargs):
+            consumed.append(kwargs["timeout"])
+            time.sleep(0.05)
+            raise script.subprocess.CalledProcessError(1, "gh")
+
+        script.subprocess.run = slow
+        with script.wait_budget(5):
+            for _ in range(3):
+                with contextlib.suppress(Exception):
+                    script.run_gh(["api", "graphql"])
+        self.assertEqual(len(consumed), 3)
+        self.assertLessEqual(consumed[0], 5.0)
+        self.assertLess(consumed[-1], consumed[0], "the budget must shrink as it is spent")
 
     def test_an_exhausted_budget_does_not_start_the_call(self):
         self.block()

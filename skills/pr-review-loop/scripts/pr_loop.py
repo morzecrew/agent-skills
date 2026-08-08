@@ -396,8 +396,12 @@ def cmd_wait(
 
     last_snapshot: dict = {"pending": [], "clean": [], "attention": []}
     while True:
+        missing: list[str] = []
         try:
-            with wait_budget(max(1.0, deadline - time.monotonic())):
+            # No floor: a positive minimum would start a call with no time left
+            # for it, and the wait would then run past the deadline it was
+            # given. An exhausted budget raises instead.
+            with wait_budget(deadline - time.monotonic()):
                 snapshot = check_snapshot(owner, repo, pr)
                 last_snapshot = snapshot
                 # Skip the fingerprint while checks are still running: the
@@ -406,6 +410,21 @@ def cmd_wait(
                 # Nothing is lost — a pending poll resets the settle clock.
                 if not snapshot["pending"]:
                     fingerprint = comment_fingerprint(owner, repo, pr)
+                now = time.monotonic()
+                state, stable_since = wait_verdict(
+                    snapshot, fingerprint, previous, stable_since, now, settle_s
+                )
+                previous = fingerprint
+                # Inside the budget too: this lookup paginates, and outside it
+                # a stall here would sail past the deadline unbounded.
+                if state == "done" and expect_bots:
+                    spoke = {
+                        name.lower().removesuffix("[bot]")
+                        for name in cmd_status(owner, repo, pr)["reviewers"]["bots"]
+                    }
+                    missing = [b for b in expect_bots if b.lower().removesuffix("[bot]") not in spoke]
+                    if missing:
+                        state = "settling"
         except GhUnavailable as stalled:
             # The wait's own contract wins over the individual call's failure:
             # report what we were waiting on, in the documented shape.
@@ -413,18 +432,6 @@ def cmd_wait(
             print(json.dumps(last_snapshot, indent=2))
             print(f"gave up after {timeout_s}s: {stalled}", file=sys.stderr)
             return 3
-        now = time.monotonic()
-        state, stable_since = wait_verdict(
-            snapshot, fingerprint, previous, stable_since, now, settle_s
-        )
-        previous = fingerprint
-
-        missing: list[str] = []
-        if state == "done" and expect_bots:
-            spoke = {name.lower().removesuffix("[bot]") for name in cmd_status(owner, repo, pr)["reviewers"]["bots"]}
-            missing = [b for b in expect_bots if b.lower().removesuffix("[bot]") not in spoke]
-            if missing:
-                state = "settling"
 
         if state == "done":
             snapshot["commentCounts"] = {

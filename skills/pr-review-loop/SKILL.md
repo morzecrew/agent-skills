@@ -57,7 +57,7 @@ Collect every unresolved thread — review comments, review bodies, issue commen
 - **Humans often comment only at the top level.** A reviewer with a general objection writes one PR comment rather than annotating a line. That comment carries the most important feedback on the PR more often than not.
 - Bodies also carry pure noise — walkthroughs, status tables, badges, poems. Skip those; they claim nothing.
 
-Give a body-carried finding the same verdict and the same evidence as any other. What differs is only the mechanics: **a body comment has no thread, so it cannot be resolved.** Answer it where it lives — reply to the issue comment, or address it in your reply on a related thread if there is one — and make sure the exit report accounts for it. React 👍/👎 on the comment itself if it is a discrete claim; leave summary bodies alone.
+Give a body-carried finding the same verdict and the same evidence as any other. What differs is only the mechanics: **a body comment has no thread, so it cannot be resolved.** Answer it where it lives — reply to the issue comment, or address it in your reply on a related thread if there is one — and make sure the exit report accounts for it. A 👍 on a discrete claim is fine from anyone; 👎 stays bot-only here as everywhere, so a human's top-level comment gets the argument instead. Leave summary bodies unreacted.
 
 `collect` returns `reviewThreads`, `reviews`, and `issueComments` precisely so none of these three surfaces is forgotten. Reading only the first is the bug.
 
