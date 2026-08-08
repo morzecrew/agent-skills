@@ -24,6 +24,8 @@ strand your work; the worktree is removed in a finally block either way.
                     error, which is otherwise refused: the red worktree holds
                     only base plus --test-file, so a conftest or helper missing
                     from both fails the run without testing anything
+  --timeout-seconds kill either run after this long (default 900); a hung
+                    reproduction is not a red result
 
 `--test-cmd` runs through your shell, so it takes the command lines you would
 type — pipes, `&&`, redirection. It therefore runs with your privileges: pass a
@@ -39,12 +41,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# Long enough for a real suite, short enough that a hung run is not forever.
+DEFAULT_TIMEOUT_S = 900
 
 # The red worktree is base plus only the files named by --test-file. A conftest,
 # fixture, or helper that lives in neither makes the red run die on the missing
@@ -69,7 +76,24 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     return proc
 
 
-def run_test(command: str, cwd: Path, label: str, verbose: bool) -> tuple[int, str]:
+def kill_tree(proc: subprocess.Popen) -> None:
+    """Kill the whole process group, not just the shell.
+
+    `shell=True` makes the shell the direct child; killing only it leaves the
+    test runner underneath still running and still holding the pipes.
+    """
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return
+        except (ProcessLookupError, PermissionError):
+            return
+    proc.kill()
+
+
+def run_test(
+    command: str, cwd: Path, label: str, verbose: bool, timeout_s: int
+) -> tuple[int, str, bool]:
     print(f"--- {label}: {command}  (in {cwd})", file=sys.stderr)
     # The shell is the interface here, not an injection path: --test-cmd is a
     # command line the operator writes ("pytest -k bug && ./check.sh"), run with
@@ -77,19 +101,31 @@ def run_test(command: str, cwd: Path, label: str, verbose: bool) -> tuple[int, s
     # into argv instead would silently drop the chaining and redirection real
     # test commands use. Both halves run the identical string, so neither can
     # diverge from the other.
+    # Its own session, so a timeout can take the entire process tree with it.
     # (Keep the nosec bare: bandit parses whatever trails it as further test ids.)
-    proc = subprocess.run(  # nosec B602
-        command, shell=True, cwd=str(cwd), capture_output=True, text=True
+    proc = subprocess.Popen(  # nosec B602
+        command, shell=True, cwd=str(cwd), stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, start_new_session=True,
     )
-    output = (proc.stdout + proc.stderr).strip()
+    timed_out = False
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        kill_tree(proc)
+        stdout, stderr = proc.communicate()
+    output = ((stdout or "") + (stderr or "")).strip()
+    if timed_out:
+        output = f"{output}\n[timed out after {timeout_s}s]".strip()
     if verbose and output:
         print(output, file=sys.stderr)
-    return proc.returncode, output
+    return proc.returncode, output, timed_out
 
 
 def certify(
     root: Path, base: str, test_cmd: str, test_files: list[Path],
     expect_red_exit: int | None, verbose: bool, allow_red_error: bool = False,
+    timeout_s: int = DEFAULT_TIMEOUT_S,
 ) -> dict:
     safe_files: list[Path] = []
     for relative in test_files:
@@ -112,12 +148,30 @@ def certify(
                     "testFiles": [str(p) for p in test_files]}
     try:
         git(root, "worktree", "add", "--detach", "--quiet", str(worktree), base)
+        worktree_real = worktree.resolve()
         for relative in test_files:
             target = worktree / relative
+            # The destination needs the same containment check as the source.
+            # The base checkout can itself contain a committed symlinked
+            # directory, and writing through one puts the file outside the
+            # throwaway worktree the whole isolation promise rests on. Check the
+            # deepest existing ancestor first, since mkdir(exist_ok=True) walks
+            # straight through an existing symlink without creating anything.
+            existing = target.parent
+            while not existing.exists():
+                existing = existing.parent
+            if not existing.resolve().is_relative_to(worktree_real):
+                sys.exit(f"error: {relative} resolves outside the worktree via a symlinked directory")
             target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.parent.resolve().is_relative_to(worktree_real):
+                sys.exit(f"error: {relative} resolves outside the worktree via a symlinked directory")
+            if target.is_symlink():
+                sys.exit(f"error: {relative} is a symlink in the base checkout — refusing to write through it")
             shutil.copy2(root / relative, target)
 
-        red_code, red_output = run_test(test_cmd, worktree, "RED (fix absent)", verbose)
+        red_code, red_output, red_timed_out = run_test(
+            test_cmd, worktree, "RED (fix absent)", verbose, timeout_s
+        )
         result["redExitCode"] = red_code
         result["redTail"] = red_output[-800:]
     finally:
@@ -125,20 +179,32 @@ def certify(
         shutil.rmtree(tmp_parent, ignore_errors=True)
         git(root, "worktree", "prune", check=False)
 
-    green_code, green_output = run_test(test_cmd, root, "GREEN (fix present)", verbose)
+    green_code, green_output, green_timed_out = run_test(
+        test_cmd, root, "GREEN (fix present)", verbose, timeout_s
+    )
     result["greenExitCode"] = green_code
     result["greenTail"] = green_output[-800:]
+    result["redTimedOut"] = red_timed_out
+    result["greenTimedOut"] = green_timed_out
 
     red_ok = (red_code != 0) if expect_red_exit is None else (red_code == expect_red_exit)
     # A red run that never got as far as running the test is not a reproduction,
     # however non-zero it exited.
     unrelated = red_ok and not allow_red_error and bool(INFRASTRUCTURE_RED.search(red_output))
+    timed_out = red_timed_out or green_timed_out
     green_ok = green_code == 0
-    result["redFailedAsRequired"] = red_ok and not unrelated
+    result["redFailedAsRequired"] = red_ok and not unrelated and not red_timed_out
     result["redFailedBeforeTesting"] = unrelated
     result["greenPassed"] = green_ok
-    result["certified"] = red_ok and green_ok and not unrelated
-    if unrelated:
+    result["certified"] = red_ok and green_ok and not unrelated and not timed_out
+    if timed_out:
+        half = "red" if red_timed_out else "green"
+        result["verdict"] = (
+            f"NOT CERTIFIED: the {half} run was killed after {timeout_s}s. A timeout is not a "
+            "result — a hung reproduction exits non-zero and would otherwise read as red. Fix the "
+            "hang or raise --timeout-seconds."
+        )
+    elif unrelated:
         result["verdict"] = (
             "NOT CERTIFIED: the red run failed before it could test anything — the output reads "
             "as a missing import, module, or test file rather than as the bug. The red worktree "
@@ -176,6 +242,10 @@ def main() -> int:
         help="accept a red run that died on a missing import or collection error "
              "(only when that failure *is* the bug being fixed)",
     )
+    parser.add_argument(
+        "--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_S,
+        help=f"kill either run after this long (default {DEFAULT_TIMEOUT_S})",
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--verbose", action="store_true", help="show both runs' output")
     args = parser.parse_args()
@@ -193,9 +263,11 @@ def main() -> int:
     if args.expect_red_exit == 0:
         sys.exit("error: --expect-red-exit 0 would accept a passing red run, which certifies nothing")
 
+    if args.timeout_seconds < 1:
+        sys.exit("error: --timeout-seconds must be at least 1")
     result = certify(
         root, args.base, args.test_cmd, args.test_file, args.expect_red_exit,
-        args.verbose, args.allow_red_error,
+        args.verbose, args.allow_red_error, args.timeout_seconds,
     )
     if args.json:
         print(json.dumps(result, indent=2))

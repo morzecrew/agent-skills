@@ -154,6 +154,48 @@ class VerifiedRedTest(unittest.TestCase):
         self.assertTrue(result["certified"], result)
         self.assertIn("chained", result["greenTail"])
 
+    @unittest.skipUnless(hasattr(Path, "symlink_to"), "no symlink support")
+    def test_symlinked_directory_in_base_cannot_be_written_through(self):
+        # Regression: the source was checked for containment but the
+        # destination was not, so a committed symlinked directory carried the
+        # copy straight out of the throwaway worktree.
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside = Path(outside_dir)
+            # The symlink is committed, so it exists in the base checkout the
+            # red run copies into...
+            (self.root / "tests").symlink_to(outside, target_is_directory=True)
+            commit_all(self.root, "commit a symlinked tests dir")
+            # ...but the working tree holds a real directory, so the source
+            # passes its own containment check and only the destination
+            # traverses the link.
+            (self.root / "tests").unlink()
+            (self.root / "tests").mkdir()
+            (self.root / "tests" / "t.py").write_text(DISCRIMINATING_TEST)
+            self.apply_fix()
+
+            with self.assertRaises(SystemExit) as caught:
+                script.certify(
+                    self.root, "HEAD", "python3 tests/t.py", [Path("tests/t.py")], None, False
+                )
+            self.assertIn("symlink", str(caught.exception))
+            self.assertEqual(list(outside.iterdir()), [], "nothing may be written outside")
+
+    def test_a_hung_run_is_killed_and_not_counted_as_red(self):
+        # Regression: neither run had a timeout, so a hanging reproduction hung
+        # the certifier — and a hang that exits non-zero would read as red.
+        # The verdict has to name the timeout: `certified` is False here anyway
+        # because the green half hangs too, so asserting only that would pass
+        # whether or not the timeout was ever taken into account.
+        self.apply_fix()
+        (self.root / "t.py").write_text("import time\ntime.sleep(120)\n")
+        result = script.certify(
+            self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False, False, 2
+        )
+        self.assertFalse(result["certified"], result)
+        self.assertTrue(result["redTimedOut"])
+        self.assertIn("killed after", result["verdict"].lower())
+        self.assertNotIn("fix is incomplete", result["verdict"])
+
     def test_missing_test_file_is_rejected(self):
         result = run_script(
             "reproduce-then-fix", "verified_red.py",
