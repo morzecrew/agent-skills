@@ -391,8 +391,28 @@ def cmd_wait(
 
 
 def cmd_react(owner: str, repo: str, surface: str, comment_id: int, reaction: str) -> dict:
+    """React to a comment. 👎 is bot-only, enforced here rather than documented.
+
+    The skill's rail is that a refuted human gets the argument, not a reaction:
+    a thumbs-down convinces nobody and reads as dismissing a reviewer, which is
+    the behaviour the loop forbids outright. 👍 stays open to everyone — it
+    acknowledges, it does not dismiss.
+    """
     root = "pulls" if surface == "review" else "issues"
     content = "+1" if reaction == "up" else "-1"
+    if content == "-1":
+        comment = gh_json(["api", f"repos/{owner}/{repo}/{root}/comments/{comment_id}"]) or {}
+        author = comment.get("user") or {}
+        if not author:
+            sys.exit(
+                f"error: cannot establish who wrote comment {comment_id} — refusing to post 👎 blind"
+            )
+        if not rest_is_bot(author):
+            sys.exit(
+                f"error: comment {comment_id} was written by {author.get('login')}, a human — "
+                "reply with the evidence instead. Reacting 👎 to a human reviewer is a hard rail "
+                "in SKILL.md."
+            )
     run_gh(["api", "-X", "POST", f"repos/{owner}/{repo}/{root}/comments/{comment_id}/reactions",
             "-f", f"content={content}"])
     return {"reacted": content, "surface": surface, "commentId": comment_id}

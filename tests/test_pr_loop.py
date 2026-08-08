@@ -46,6 +46,47 @@ class BotIdentityTest(unittest.TestCase):
         self.assertFalse(normalized["isBot"])
 
 
+class ReactRailTest(unittest.TestCase):
+    """👎 is bot-only. The module otherwise avoids faking the API, but a rail
+    that is only documented is not a rail — this asserts no POST is even
+    attempted, which needs the author lookup stubbed."""
+
+    def setUp(self):
+        self.posted: list[list[str]] = []
+        self.original_json, self.original_run = script.gh_json, script.run_gh
+        script.run_gh = lambda args: self.posted.append(args) or ""
+
+    def tearDown(self):
+        script.gh_json, script.run_gh = self.original_json, self.original_run
+
+    def stub_author(self, user: dict | None):
+        script.gh_json = lambda args: {"user": user}
+
+    def test_thumbs_down_on_a_human_is_refused(self):
+        self.stub_author({"type": "User", "login": "octocat"})
+        with self.assertRaises(SystemExit) as caught:
+            script.cmd_react("o", "r", "review", 1, "down")
+        self.assertIn("octocat", str(caught.exception))
+        self.assertEqual(self.posted, [], "no reaction may be posted")
+
+    def test_thumbs_down_on_a_bot_goes_through(self):
+        self.stub_author({"type": "Bot", "login": "coderabbitai[bot]"})
+        script.cmd_react("o", "r", "review", 1, "down")
+        self.assertEqual(len(self.posted), 1)
+
+    def test_thumbs_up_on_a_human_is_allowed(self):
+        # 👍 acknowledges rather than dismisses, so it needs no author check.
+        self.stub_author({"type": "User", "login": "octocat"})
+        script.cmd_react("o", "r", "review", 1, "up")
+        self.assertEqual(len(self.posted), 1)
+
+    def test_unknown_author_is_refused_rather_than_assumed_a_bot(self):
+        self.stub_author(None)
+        with self.assertRaises(SystemExit):
+            script.cmd_react("o", "r", "review", 1, "down")
+        self.assertEqual(self.posted, [])
+
+
 class SurfaceDigestTest(unittest.TestCase):
     """Any new, edited, or replied-to comment must move the fingerprint.
 
