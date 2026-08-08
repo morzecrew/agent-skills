@@ -47,23 +47,47 @@ class BotIdentityTest(unittest.TestCase):
 
 
 class GhTimeoutTest(unittest.TestCase):
+    def setUp(self):
+        self.original = script.subprocess.run
+        self.budgets: list[float] = []
+
+    def tearDown(self):
+        script.subprocess.run = self.original
+
+    def block(self):
+        def blocked(*args, **kwargs):
+            self.assertIn("timeout", kwargs, "the call must be bounded")
+            self.budgets.append(kwargs["timeout"])
+            raise script.subprocess.TimeoutExpired(cmd="gh", timeout=kwargs["timeout"])
+
+        script.subprocess.run = blocked
+
     def test_a_blocked_gh_call_fails_rather_than_hanging(self):
         # Regression: run_gh had no timeout, so cmd_wait could sail past the
         # deadline it was given and never emit the timeout result that says
         # what it was still waiting on.
-        original = script.subprocess.run
-
-        def blocked(*args, **kwargs):
-            self.assertIn("timeout", kwargs, "the call must be bounded")
-            raise script.subprocess.TimeoutExpired(cmd="gh", timeout=kwargs["timeout"])
-
-        script.subprocess.run = blocked
-        try:
-            with self.assertRaises(SystemExit) as caught:
-                script.run_gh(["api", "graphql"])
-        finally:
-            script.subprocess.run = original
+        self.block()
+        with self.assertRaises(script.GhUnavailable) as caught:
+            script.run_gh(["api", "graphql"])
         self.assertIn("did not return", str(caught.exception))
+        self.assertEqual(self.budgets, [float(script.GH_TIMEOUT_S)])
+
+    def test_the_wait_budget_caps_each_call(self):
+        # Regression: a fixed per-call cap let `wait --timeout-seconds 1` spend
+        # the full cap on its first call, and a paginated fingerprint makes
+        # several such calls per poll.
+        self.block()
+        with script.wait_budget(5), self.assertRaises(script.GhUnavailable):
+            script.run_gh(["api", "graphql"])
+        self.assertLessEqual(self.budgets[0], 5.0)
+        self.assertGreater(self.budgets[0], 0.0)
+
+    def test_an_exhausted_budget_does_not_start_the_call(self):
+        self.block()
+        with script.wait_budget(0), self.assertRaises(script.GhUnavailable) as caught:
+            script.run_gh(["api", "graphql"])
+        self.assertIn("no time left", str(caught.exception))
+        self.assertEqual(self.budgets, [], "no subprocess may be started")
 
 
 class ReactRailTest(unittest.TestCase):
@@ -90,15 +114,24 @@ class ReactRailTest(unittest.TestCase):
         self.assertEqual(self.posted, [], "no reaction may be posted")
 
     def test_thumbs_down_on_a_bot_goes_through(self):
+        # Assert the content and the target, not just that something was sent:
+        # posting +1 for a "down" reaction, or hitting the wrong surface root,
+        # would otherwise pass.
         self.stub_author({"type": "Bot", "login": "coderabbitai[bot]"})
-        script.cmd_react("o", "r", "review", 1, "down")
+        script.cmd_react("o", "r", "review", 7, "down")
         self.assertEqual(len(self.posted), 1)
+        args = self.posted[0]
+        self.assertIn("content=-1", args)
+        self.assertIn("repos/o/r/pulls/comments/7/reactions", args)
 
     def test_thumbs_up_on_a_human_is_allowed(self):
         # 👍 acknowledges rather than dismisses, so it needs no author check.
         self.stub_author({"type": "User", "login": "octocat"})
-        script.cmd_react("o", "r", "review", 1, "up")
+        script.cmd_react("o", "r", "issue", 7, "up")
         self.assertEqual(len(self.posted), 1)
+        args = self.posted[0]
+        self.assertIn("content=+1", args)
+        self.assertIn("repos/o/r/issues/comments/7/reactions", args)
 
     def test_unknown_author_is_refused_rather_than_assumed_a_bot(self):
         self.stub_author(None)

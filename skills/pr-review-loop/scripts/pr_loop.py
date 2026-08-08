@@ -32,6 +32,7 @@ never-merge) stays in SKILL.md — this tool only makes the mechanics reliable.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import subprocess
@@ -93,21 +94,56 @@ mutation($thread: ID!) {
 
 
 
+class GhUnavailable(Exception):
+    """A gh call could not finish inside the time it was allowed."""
+
+
+_deadline: float | None = None
+
+
+@contextlib.contextmanager
+def wait_budget(seconds: float):
+    """Bound every gh call inside this block by the time left overall.
+
+    A fixed per-call cap is not enough on its own: `wait --timeout-seconds 1`
+    would still let the first call run for the full cap, and a paginated
+    fingerprint makes several such calls per poll. Sharing one deadline keeps
+    the bound the caller asked for.
+    """
+    global _deadline
+    previous = _deadline
+    _deadline = time.monotonic() + seconds
+    try:
+        yield
+    finally:
+        _deadline = previous
+
+
+def call_budget() -> float:
+    if _deadline is None:
+        return float(GH_TIMEOUT_S)
+    return max(0.0, min(float(GH_TIMEOUT_S), _deadline - time.monotonic()))
+
+
 def run_gh(args: list[str]) -> str:
+    budget = call_budget()
+    shown = " ".join(args[:4])
+    if budget <= 0:
+        raise GhUnavailable(f"no time left for `gh {shown} …`")
     try:
         proc = subprocess.run(
-            ["gh", *args], capture_output=True, text=True, timeout=GH_TIMEOUT_S
+            ["gh", *args], capture_output=True, text=True, timeout=budget
         )
     except FileNotFoundError:
         sys.exit("gh CLI not found — install it and run `gh auth login`")
     except subprocess.TimeoutExpired:
-        # Without this the call blocks forever and `wait` sails past the
-        # deadline it was given, never printing the timeout result that tells
-        # the caller what it was still waiting on.
-        sys.exit(
-            f"`gh {' '.join(args[:4])} …` did not return within {GH_TIMEOUT_S}s — "
-            "network stall or a hung credential helper"
-        )
+        # Raised, not exited: `wait` turns this into its documented timeout
+        # result rather than a bare process error, so the caller still learns
+        # what it was waiting on.
+        raise GhUnavailable(
+            f"`gh {shown} …` did not return within {budget:.0f}s — network stall "
+            "or a hung credential helper"
+        ) from None
     if proc.returncode != 0:
         shown = " ".join(args[:4])
         sys.exit(f"`gh {shown} …` failed (rc={proc.returncode}): {proc.stderr.strip()[:600]}")
@@ -354,12 +390,29 @@ def cmd_wait(
     settle_s: int, expect_bots: list[str],
 ) -> int:
     deadline = time.monotonic() + timeout_s
-    previous: tuple[int, int, int] | None = None
+    previous: tuple | None = None
     stable_since: float | None = None
+    fingerprint: tuple = ()
 
+    last_snapshot: dict = {"pending": [], "clean": [], "attention": []}
     while True:
-        snapshot = check_snapshot(owner, repo, pr)
-        fingerprint = comment_fingerprint(owner, repo, pr)
+        try:
+            with wait_budget(max(1.0, deadline - time.monotonic())):
+                snapshot = check_snapshot(owner, repo, pr)
+                last_snapshot = snapshot
+                # Skip the fingerprint while checks are still running: the
+                # verdict is "pending" either way, and on a large PR each
+                # fingerprint costs a full pagination of three surfaces.
+                # Nothing is lost — a pending poll resets the settle clock.
+                if not snapshot["pending"]:
+                    fingerprint = comment_fingerprint(owner, repo, pr)
+        except GhUnavailable as stalled:
+            # The wait's own contract wins over the individual call's failure:
+            # report what we were waiting on, in the documented shape.
+            last_snapshot["timedOutWaitingFor"] = f"github ({stalled})"
+            print(json.dumps(last_snapshot, indent=2))
+            print(f"gave up after {timeout_s}s: {stalled}", file=sys.stderr)
+            return 3
         now = time.monotonic()
         state, stable_since = wait_verdict(
             snapshot, fingerprint, previous, stable_since, now, settle_s
@@ -540,4 +593,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except GhUnavailable as stalled:
+        # `wait` handles this itself, so reaching here means a one-shot command
+        # stalled; report it as an ordinary gh failure.
+        sys.exit(f"error: {stalled}")
