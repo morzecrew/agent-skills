@@ -313,17 +313,34 @@ class RfcCollectionTest(unittest.TestCase):
         # again on the file that is actually there now.
         index_path = self.rfcs / "INDEX.md"
         read_by_waiter: list[str] = []
+        opened_old_inode = threading.Event()
+        original_acquire = script.acquire_lock
+
+        # Without this the test covers the regression path only when the
+        # threads happen to interleave that way: if the replace lands first,
+        # the waiter opens the *new* inode, takes an uncontended lock, and
+        # never exercises the recheck. Signalling after the open and before
+        # the blocking acquire pins the order that matters.
+        def signalling_acquire(handle):
+            opened_old_inode.set()
+            original_acquire(handle)
 
         def waiter():
             with script.locked_index(index_path) as handle:
                 read_by_waiter.append(handle.read())
 
         with script.locked_index(index_path):
-            thread = threading.Thread(target=waiter, daemon=True)
-            thread.start()
-            # The waiter is now blocked on the inode we hold. Replace the file
-            # underneath it, exactly as cmd_new does.
-            script.replace_index(index_path, "# committed by the first writer\n")
+            script.acquire_lock = signalling_acquire
+            try:
+                thread = threading.Thread(target=waiter, daemon=True)
+                thread.start()
+                self.assertTrue(
+                    opened_old_inode.wait(5), "the waiter never opened the index"
+                )
+                # It now holds the inode we are about to unlink.
+                script.replace_index(index_path, "# committed by the first writer\n")
+            finally:
+                script.acquire_lock = original_acquire
 
         thread.join(timeout=10)
         self.assertEqual(len(read_by_waiter), 1, "the waiter must have run")
