@@ -40,6 +40,7 @@ flags exit 2, from argparse itself.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -52,6 +53,8 @@ from pathlib import Path
 
 # Long enough for a real suite, short enough that a hung run is not forever.
 DEFAULT_TIMEOUT_S = 900
+# How long to wait for output after the kill before giving up on it.
+GRACE_S = 10
 
 # The red worktree is base plus only the files named by --test-file. A conftest,
 # fixture, or helper that lives in neither makes the red run die on the missing
@@ -59,11 +62,29 @@ DEFAULT_TIMEOUT_S = 900
 # a reproduction and certifies a test that never ran. Refused by default, since
 # a false certificate is worse than no check at all.
 INFRASTRUCTURE_RED = re.compile(
-    r"ModuleNotFoundError|ImportError|No module named|ERR_MODULE_NOT_FOUND"
-    r"|Cannot find module|ERROR collecting|errors during collection"
-    r"|file or directory not found|no tests ran|collected 0 items"
-    r"|command not found|SyntaxError",
-    re.IGNORECASE,
+    r"""
+      ^\s*(?:ModuleNotFoundError|ImportError|SyntaxError)\b     # an uncaught one
+    | ^\s*E\s+(?:ModuleNotFoundError|ImportError|SyntaxError)\b # ...as pytest shows it
+    | ^ERROR\ collecting\b
+    | ^\s*\d+\ errors?\ during\ collection\b
+    | \bERR_MODULE_NOT_FOUND\b
+    | ^\s*Error:\ Cannot\ find\ module\b
+    | \bno\ tests\ ran\b
+    | \bcollected\ 0\ items\b
+    | :\ command\ not\ found$
+    """,
+    re.MULTILINE | re.VERBOSE,
+)
+# Signs the runner got as far as reporting on tests. A reproduction that names
+# ImportError in its own assertion message is a real red run, so the loose
+# substring match that used to decide this had to give way to two questions:
+# does the output look like a setup failure, and did the tests nevertheless run?
+TESTS_RAN = re.compile(
+    r"^\s*(?:E\s+)?AssertionError\b"
+    r"|\b\d+\s+(?:passed|failed)\b"
+    r"|^(?:FAILED|PASSED|ok|FAIL)\b"
+    r"|^\s*Ran\s+\d+\s+tests?\b",
+    re.MULTILINE,
 )
 
 
@@ -82,18 +103,24 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
 
 
 def kill_tree(proc: subprocess.Popen) -> None:
-    """Kill the whole process group, not just the shell.
+    """Kill the whole process group, falling back to the process itself.
 
     `shell=True` makes the shell the direct child; killing only it leaves the
-    test runner underneath still running and still holding the pipes.
+    test runner underneath still running and still holding the pipes. If the
+    group kill cannot be delivered, killing the direct child is still better
+    than returning with nothing signalled at all — which left the run unbounded
+    after a timeout had supposedly ended it.
     """
     if hasattr(os, "killpg"):
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             return
-        except (ProcessLookupError, PermissionError):
+        except ProcessLookupError:
             return
-    proc.kill()
+        except (PermissionError, OSError):
+            pass
+    with contextlib.suppress(ProcessLookupError, OSError):
+        proc.kill()
 
 
 def run_test(
@@ -118,7 +145,15 @@ def run_test(
     except subprocess.TimeoutExpired:
         timed_out = True
         kill_tree(proc)
-        stdout, stderr = proc.communicate()
+        try:
+            # Bounded: a command that daemonizes or starts its own session
+            # leaves a grandchild holding the pipe open, and an unbounded
+            # second communicate() would then hang forever — the very failure
+            # the timeout exists to prevent.
+            stdout, stderr = proc.communicate(timeout=GRACE_S)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = "", "[output unavailable: a detached process kept the pipes open]"
     output = ((stdout or "") + (stderr or "")).strip()
     if timed_out:
         output = f"{output}\n[timed out after {timeout_s}s]".strip()
@@ -195,7 +230,12 @@ def certify(
     red_ok = (red_code != 0) if expect_red_exit is None else (red_code == expect_red_exit)
     # A red run that never got as far as running the test is not a reproduction,
     # however non-zero it exited.
-    unrelated = red_ok and not allow_red_error and bool(INFRASTRUCTURE_RED.search(red_output))
+    unrelated = (
+        red_ok
+        and not allow_red_error
+        and bool(INFRASTRUCTURE_RED.search(red_output))
+        and not TESTS_RAN.search(red_output)
+    )
     timed_out = red_timed_out or green_timed_out
     green_ok = green_code == 0
     result["redFailedAsRequired"] = red_ok and not unrelated and not red_timed_out
