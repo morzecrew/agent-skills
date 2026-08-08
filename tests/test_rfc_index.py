@@ -170,16 +170,27 @@ class RfcCollectionTest(unittest.TestCase):
         # Regression: the substitution was unchecked, so an edited template
         # produced an RFC whose H1 was still the literal placeholder — which
         # `check` then reported as a broken file the tool had just written.
-        template = SCRIPT_DIR.parent / "references" / "rfc-template.md"
-        original = template.read_text(encoding="utf-8")
-        template.write_text(original.replace("RFC NNNN — <Title>", "RFC ???"), encoding="utf-8")
-        try:
-            result = run_script("rfc-writer", "rfc_index.py", "new", "Doomed", cwd=self.root)
-        finally:
-            template.write_text(original, encoding="utf-8")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("placeholder", result.stderr)
+        #
+        # The damaged template goes in a throwaway copy of the scripts
+        # directory, never in the working repository: an earlier version of
+        # this test edited the tracked rfc-template.md and restored it in a
+        # finally block, so an interrupt or a parallel run could leave the real
+        # template corrupted for every later test and user.
+        real = SCRIPT_DIR.parent / "references" / "rfc-template.md"
+        fake_script_dir = self.root / "fake-skill" / "scripts"
+        fake_script_dir.mkdir(parents=True)
+        (self.root / "fake-skill" / "references").mkdir()
+        (self.root / "fake-skill" / "references" / "rfc-template.md").write_text(
+            real.read_text(encoding="utf-8").replace("RFC NNNN — <Title>", "RFC ???"),
+            encoding="utf-8",
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            script.cmd_new(self.rfcs, "Doomed", fake_script_dir)
+        self.assertIn("placeholder", str(caught.exception))
         self.assertFalse((self.rfcs / "0003-doomed.md").exists())
+        self.assertIn("RFC NNNN — <Title>", real.read_text(encoding="utf-8"),
+                      "the tracked template must never be touched by a test")
 
     def test_duplicate_numbers_are_a_check_finding_not_a_usage_error(self):
         # Regression: failing hard inside rfc_files exited 1, the code reserved
@@ -220,35 +231,51 @@ class RfcCollectionTest(unittest.TestCase):
         # Regression: pre-resolving lookups covered a missing index, not a
         # failing write. A full disk or read-only mount left the RFC on disk
         # with no row and no next-free bump — an orphan nothing points at.
+        # The failure is injected at replace_index rather than at a handle's
+        # write: a buffered write usually reports a full disk at flush or
+        # close, so a test that only breaks write() would miss the real case.
         index_text = (self.rfcs / "INDEX.md").read_text(encoding="utf-8")
 
-        class FullDisk:
-            def read(self):
-                return index_text
+        def full_disk(_path, _text):
+            raise OSError("No space left on device")
 
-            def seek(self, *args):
-                pass
-
-            def truncate(self, *args):
-                pass
-
-            def write(self, *args):
-                raise OSError("No space left on device")
-
-        @contextlib.contextmanager
-        def failing_lock(_path):
-            yield FullDisk()
-
-        original = script.locked_index
-        script.locked_index = failing_lock
+        original = script.replace_index
+        script.replace_index = full_disk
         try:
             with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
                 script.cmd_new(self.rfcs, "Doomed", SCRIPT_DIR)
         finally:
-            script.locked_index = original
+            script.replace_index = original
 
         self.assertFalse((self.rfcs / "0003-doomed.md").exists(), "no orphan RFC may survive")
-        self.assertEqual((self.rfcs / "INDEX.md").read_text(encoding="utf-8"), index_text)
+        self.assertEqual(
+            (self.rfcs / "INDEX.md").read_text(encoding="utf-8"), index_text,
+            "a failed update must leave the index exactly as it was",
+        )
+        leftovers = [p.name for p in self.rfcs.iterdir() if p.name.endswith(".tmp")]
+        self.assertEqual(leftovers, [], "no temp file may survive a failed replace")
+
+    def test_index_replace_is_atomic_and_leaves_no_temp_file(self):
+        # Rewriting in place truncated the old contents before the new ones
+        # were durable. The replace either happens whole or not at all.
+        index_path = self.rfcs / "INDEX.md"
+        script.replace_index(index_path, "# replaced\n")
+        self.assertEqual(index_path.read_text(encoding="utf-8"), "# replaced\n")
+        self.assertEqual([p.name for p in self.rfcs.iterdir() if p.name.endswith(".tmp")], [])
+
+    def test_title_ending_in_a_backslash_does_not_corrupt_the_row(self):
+        # Regression: escaping only the pipe turned a trailing backslash into
+        # an escaped backslash followed by a live delimiter.
+        # The backslash must abut the pipe: with a space between them the
+        # escape never collides, and the test would pass either way.
+        result = run_script("rfc-writer", "rfc_index.py", "new", r"Windows C:\|Notes", cwd=self.root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        index = (self.rfcs / "INDEX.md").read_text(encoding="utf-8")
+        row = next(line for line in index.splitlines() if "0003" in line)
+        # Drop escaped pairs, then every pipe left is a real delimiter.
+        bare = re.sub(r"\\.", "", row)
+        self.assertEqual(bare.count("|"), 5, f"exactly five delimiters: {row}")
+        self.assertEqual(self.check(), 0, "the collection must stay consistent")
 
     @unittest.skipIf(script.fcntl is None, "no fcntl on this platform")
     def test_index_lock_excludes_a_concurrent_writer(self):

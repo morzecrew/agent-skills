@@ -26,14 +26,20 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 try:
     import fcntl
-except ImportError:  # Windows: the lock degrades to none, the rollback stays.
+except ImportError:
     fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 
 STATUS_EMOJI = {"📝": "Draft", "🚧": "In progress", "✅": "Complete", "❌": "Rejected"}
 
@@ -71,8 +77,13 @@ def find_index(rfc_dir: Path) -> Path:
 
 
 def escape_cell(text: str) -> str:
-    """Make text safe for a GFM table cell: only the pipe needs escaping."""
-    return text.replace("|", "\\|")
+    """Make text safe for a GFM table cell.
+
+    Backslashes go first: escaping only the pipe turned a title ending in a
+    backslash into `\\` followed by a bare `|`, which is an escaped backslash
+    and then a live delimiter — the corruption the escaping was added to stop.
+    """
+    return text.replace("\\", "\\\\").replace("|", "\\|")
 
 
 def numbered_files(rfc_dir: Path) -> dict[int, list[Path]]:
@@ -148,11 +159,14 @@ def claimed_next(index_text: str) -> int | None:
 def cmd_check(rfc_dir: Path) -> int:
     index_path = find_index(rfc_dir)
     index_text = index_path.read_text(encoding="utf-8")
-    files = rfc_files(rfc_dir, strict=False)
+    # One scan, two views: globbing twice can see different directory states,
+    # and the duplicate report would then not match the files it reports on.
+    found = numbered_files(rfc_dir)
+    files = {number: paths[0] for number, paths in found.items()}
     rows = index_rows(index_text)
     problems: list[str] = []
 
-    for number, paths in sorted(numbered_files(rfc_dir).items()):
+    for number, paths in sorted(found.items()):
         if len(paths) > 1:
             problems.append(
                 f"RFC {number:04d} is claimed by {len(paths)} files: "
@@ -248,6 +262,24 @@ def index_insert_position(lines: list[str], index_path: Path) -> int:
     return header + 1
 
 
+def acquire_lock(handle) -> None:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    elif msvcrt is not None:
+        # Windows has no flock; LK_LOCK blocks, retrying for about ten seconds
+        # before raising, which is far longer than this critical section.
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+
+
+def release_lock(handle) -> None:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    elif msvcrt is not None:
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 @contextlib.contextmanager
 def locked_index(index_path: Path):
     """Hold the index exclusively across the whole read-modify-write.
@@ -256,15 +288,42 @@ def locked_index(index_path: Path):
     different numbers still both rewrite the index, and without the lock the
     second write drops the first's row — losing the very record numbering is
     derived from. Reads elsewhere take no lock, so they cannot deadlock here.
+
+    The lock is held on the index as it stands on entry, and the update's last
+    act is an atomic replace, so a run that opens the file after that replace
+    reads content already committed rather than a half-written state.
     """
     with index_path.open("r+", encoding="utf-8") as handle:
-        if fcntl is not None:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        acquire_lock(handle)
         try:
             yield handle
         finally:
-            if fcntl is not None:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            release_lock(handle)
+
+
+def replace_index(index_path: Path, text: str) -> None:
+    """Write the index atomically: temp file beside it, fsync, then replace.
+
+    Rewriting in place truncated the old contents before the new ones were
+    durable, so a failure part-way left INDEX.md corrupted — and the rollback,
+    which only removed the newly created RFC, could not put it back. A buffered
+    handle also reports a full disk at flush or close rather than at write, so
+    the failure often arrived after the guard had already been passed.
+    """
+    handle = tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=index_path.parent,
+        prefix=f"{index_path.name}.", suffix=".tmp", delete=False,
+    )
+    temp_path = Path(handle.name)
+    try:
+        with handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, index_path)
+    except OSError:
+        temp_path.unlink(missing_ok=True)
+        raise
 
 
 def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = None) -> int:
@@ -334,17 +393,16 @@ def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = No
                 f"add one (see references/index-template.md); removed {path.name}"
             )
         try:
-            handle.seek(0)
-            handle.truncate()
-            handle.write(updated + "\n")
+            replace_index(index_path, updated + "\n")
         except OSError as exc:
             # Pre-resolving lookups cannot cover a failing write (read-only
             # mount, full disk). An RFC with no index row is an orphan nothing
-            # will point at, so undo the file we just created.
+            # will point at, so undo the file we just created. The index itself
+            # is untouched: the replace either happened or it did not.
             path.unlink(missing_ok=True)
             fail(
-                f"could not update {index_path.name}: {exc} — removed {path.name} "
-                "so the collection stays consistent"
+                f"could not update {index_path.name}: {exc} — removed {path.name}; "
+                f"{index_path.name} is unchanged"
             )
 
     print(f"created {path}")
