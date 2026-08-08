@@ -31,6 +31,29 @@ class MappingTest(unittest.TestCase):
         self.assertNotIn("💥", MAPPING)
 
 
+class BreakingChangeTest(unittest.TestCase):
+    def test_breaking_commit_still_needs_a_real_type(self):
+        # Regression: 💥 is deliberately absent from the mapping, and the branch
+        # that handles it skipped the type check entirely — so any invented type
+        # passed on the commit class most likely to be read later.
+        self.assertIn(
+            "C2", " ".join(errors("💥 bogus!: drop the v1 api")),
+        )
+
+    def test_breaking_commit_with_a_real_type_passes(self):
+        self.assertEqual(errors("💥 feat!: drop the v1 api"), [])
+
+    def test_miscased_marker_is_flagged_beside_a_correct_one(self):
+        # Regression: the check was suppressed whenever any correct marker was
+        # present, so a malformed footer rode along beside a well-formed one.
+        message = "💥 feat!: drop it\n\nBREAKING CHANGE: gone\nBreaking change: also gone"
+        self.assertTrue([e for e in errors(message) if "C5" in e and "uppercase" in e])
+
+    def test_both_accepted_spellings_stay_clean(self):
+        self.assertEqual(errors("💥 feat!: drop it\n\nBREAKING CHANGE: gone"), [])
+        self.assertEqual(errors("💥 feat!: drop it\n\nBREAKING-CHANGE: gone"), [])
+
+
 class ValidMessageTest(unittest.TestCase):
     def test_plain_feat(self):
         self.assertEqual(errors("✨ feat(api): add OAuth login support"), [])
