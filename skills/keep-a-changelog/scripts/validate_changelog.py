@@ -52,7 +52,10 @@ BULLET = re.compile(r"^-\s+(.*)$")
 SEMVER_CORE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 # A trailing period on a known abbreviation is not a sentence boundary; counting
 # it as one inflated the sentence count and failed entries that obeyed H3.
-ABBREVIATIONS = ("e.g", "i.e", "etc", "vs", "cf", "approx", "no", "al")
+# Deliberately short. "no" was here and suppressed the stop in "No." at the end
+# of an ordinary sentence, undercounting for H3; an abbreviation earns its place
+# only if it is far more often an abbreviation than a word.
+ABBREVIATIONS = ("e.g", "i.e", "etc", "vs", "cf", "approx")
 SENTENCE_END = re.compile(
     "".join(rf"(?<!\b{re.escape(word)})" for word in ABBREVIATIONS) + r"[.!?](?:\s|$)",
     re.I,
@@ -61,9 +64,18 @@ SENTENCE_END = re.compile(
 # string may not itself contain a backtick. Lines that break either rule are
 # ordinary content, and treating them as delimiters skips real structure.
 FENCE = re.compile(r"^ {0,3}(`{3,}(?!.*`)|~{3,})[ \t]*(\S.*)?$")
-# SemVer allows a prerelease and build metadata together (1.0.0-rc.1+build.5).
-# One combined group accepted either but not both, rejecting valid versions.
-VERSION = re.compile(r"^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.\-]+)?(?:\+[0-9A-Za-z.\-]+)?$")
+# The SemVer 2.0.0 grammar, not an approximation of it: numeric identifiers
+# take no leading zero, and no identifier may be empty. The loose character
+# class accepted 01.2.3, 1.0.0-01 and 1.0.0-rc..1, which SemVer tooling
+# rejects — and core_version then compared them as though they were versions.
+NUM_ID = r"0|[1-9]\d*"
+PRE_ID = rf"(?:{NUM_ID}|\d*[A-Za-z-][0-9A-Za-z-]*)"
+BUILD_ID = r"[0-9A-Za-z-]+"
+VERSION = re.compile(
+    rf"^v?(?:{NUM_ID})\.(?:{NUM_ID})\.(?:{NUM_ID})"
+    rf"(?:-{PRE_ID}(?:\.{PRE_ID})*)?"
+    rf"(?:\+{BUILD_ID}(?:\.{BUILD_ID})*)?$"
+)
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -143,10 +155,13 @@ def entry_texts(lines: list[str], live: list[int]) -> list[tuple[int, str]]:
                 following != previous_line + 1
                 or not lines[following].strip()
                 or BULLET.match(lines[following])
+                # An unindented line is not a continuation, and walking past it
+                # let a later indented line be folded onto this entry — text
+                # the entry never had, measured against H2 and H3.
+                or not lines[following].startswith(("  ", "\t"))
             ):
                 break
-            if lines[following].startswith(("  ", "\t")):
-                text += " " + lines[following].strip()
+            text += " " + lines[following].strip()
             previous_line = following
             position += 1
         entries.append((first_line, text))
@@ -222,9 +237,12 @@ def validate(path: Path, house_rules: bool) -> list[str]:
 
     seen: dict[str, int] = {}
     for section in versions:
-        # [1.0.0] and [v1.0.0] are the same release. Keying on the raw heading
-        # let a duplicate through whenever the two spelled the prefix differently.
-        key = section["version"].lower().removeprefix("v")
+        # [1.0.0] and [v1.0.0] are the same release, so the optional prefix is
+        # normalized away. The rest keeps its case: SemVer compares prerelease
+        # identifiers case-sensitively, so 1.0.0-RC.1 and 1.0.0-rc.1 are two
+        # different releases and folding them together rejected valid files.
+        raw = section["version"].strip()
+        key = raw[1:] if raw[:1] in {"v", "V"} else raw
         if key in seen:
             problems.append(
                 f"S6 line {section['line'] + 1}: version [{section['version']}] already appears "

@@ -177,6 +177,27 @@ class ChangelogTest(unittest.TestCase):
         text = text.replace("[1.1.0]: https", "[1.1.0-rc.1+build.5]: https")
         self.assertEqual([p for p in self.check(text) if p.startswith("S2")], [])
 
+    def test_malformed_semver_is_rejected(self):
+        # Regression: the loose character class accepted leading zeroes and
+        # empty identifiers, which SemVer tooling rejects — and core_version
+        # then ordered them as though they were versions.
+        for bad in ("01.2.3", "1.0.0-01", "1.0.0-rc..1", "1.0.0-"):
+            with self.subTest(version=bad):
+                self.assertFalse(script.VERSION.match(bad), bad)
+        for good in ("1.0.0", "v1.0.0", "1.0.0-rc.1", "1.0.0-rc.1+build.5", "1.0.0-0a"):
+            with self.subTest(version=good):
+                self.assertTrue(script.VERSION.match(good), good)
+
+    def test_prerelease_case_is_significant(self):
+        # SemVer compares prerelease identifiers case-sensitively, so
+        # 1.0.0-RC.1 and 1.0.0-rc.1 are different releases; folding case
+        # rejected a valid file as containing duplicates.
+        text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [1.0.0-RC.1] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.0.0-RC.1]: https")
+        text = text.replace("## [1.0.0] - 2026-01-01 [YANKED]", "## [1.0.0-rc.1] - 2026-01-01")
+        text = text.replace("[1.0.0]: https", "[1.0.0-rc.1]: https")
+        self.assertEqual([p for p in self.check(text) if p.startswith("S6")], [])
+
     def test_indented_link_definitions_are_seen(self):
         # Regression: anchored at column 0, an indented set read as "no link
         # definitions at all" — and S7 skips itself entirely in that case, so
@@ -248,6 +269,14 @@ class HouseRulesTest(unittest.TestCase):
     def test_properly_spaced_continuation_stays_clean(self):
         spaced = GOOD.replace("- A new thing.", "- One thing.\n  continued here.\n\n- Another thing.")
         self.assertEqual([p for p in self.check(spaced) if p.startswith("H1")], [])
+
+    def test_unindented_line_ends_the_entry(self):
+        # Regression: the fold walked past a non-continuation line, so a later
+        # indented line was appended to the earlier bullet — text the entry
+        # never had, then measured against H2 and H3.
+        lines = ["- short entry", "not indented, so not a continuation", "  " + "x" * 400]
+        text = GOOD.replace("- A new thing.", "\n".join(lines))
+        self.assertEqual([p for p in self.check(text) if p.startswith("H2")], [])
 
     def test_abbreviation_is_not_a_sentence_boundary(self):
         # Regression: "e.g." counted as a sentence end, inflating the count and
