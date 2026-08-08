@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import commit_all, git_repo, load_script, run_script
+from support import commit_all, git, git_repo, load_script, run_script
 
 script = load_script("self-audit", "audit_scope.py")
 
@@ -29,7 +29,9 @@ DOCTYPE_COBERTURA = """<?xml version="1.0" ?>
 </lines></class></classes></package></packages></coverage>
 """
 
-# Four levels of nesting; unrefused, this 400-byte file parses to a megabyte.
+# Four levels of nesting: &d; expands to roughly 10KB from ~300 bytes. The
+# point is the multiplier, not this size — each further level multiplies by ten
+# again, and the author of the report chooses how many to write.
 BILLION_LAUGHS = """<?xml version="1.0" ?>
 <!DOCTYPE coverage [
  <!ENTITY a "aaaaaaaaaa">
@@ -158,8 +160,7 @@ class GitScopeTest(unittest.TestCase):
             self.assertEqual(script.cmd_patch_coverage(self.root, "main~1", "HEAD", report, 80.0, True), 2)
 
     def test_entity_declaring_report_is_refused(self):
-        # ElementTree expands declared entities: this report parses to a
-        # megabyte of text, and one more level of nesting exhausts memory.
+        # ElementTree expands declared entities, tenfold per nesting level.
         self.add_function()
         (self.root / "coverage.xml").write_text(BILLION_LAUGHS)
         result = run_script(
@@ -168,6 +169,39 @@ class GitScopeTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("declares XML entities", result.stderr)
+
+    def test_a_comment_cannot_hide_the_entity_declarations(self):
+        # Regression: the guard located the prolog with a regex, and any
+        # comment holding a '<' ended that scan early — so a DOCTYPE placed
+        # after one was never examined and the declarations sailed through.
+        self.add_function()
+        hidden = BILLION_LAUGHS.replace(
+            '<?xml version="1.0" ?>\n', '<?xml version="1.0" ?>\n<!-- <coverage> -->\n'
+        )
+        (self.root / "coverage.xml").write_text(hidden)
+        result = run_script(
+            "self-audit", "audit_scope.py", "patch-coverage",
+            "--base", "main~1", "--report", "coverage.xml", cwd=self.root,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("declares XML entities", result.stderr)
+
+    def test_an_ordinary_comment_containing_a_tag_still_parses(self):
+        # The guard must not over-refuse: a comment with a '<' in it is fine.
+        self.add_function()
+        path = self.root / "coverage.xml"
+        lines = "\n".join(f'<line number="{n}" hits="1"/>' for n in (3, 4, 5, 6, 7, 8))
+        path.write_text(
+            COBERTURA.format(filename="src/app.py", lines=lines).replace(
+                '<?xml version="1.0" ?>\n', '<?xml version="1.0" ?>\n<!-- <x> -->\n'
+            )
+        )
+        result = run_script(
+            "self-audit", "audit_scope.py", "patch-coverage",
+            "--base", "main~1", "--report", "coverage.xml", "--json", cwd=self.root,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["patchCoverage"], 100.0)
 
     def test_external_dtd_doctype_still_parses(self):
         # The guard must reject declarations, not DTDs: coverage.py's own
@@ -212,16 +246,22 @@ class GitScopeTest(unittest.TestCase):
         self.assertIsNotNone(script.DIFF_HEADER.match("+++ /dev/null"))
         self.assertIsNone(script.DIFF_HEADER.match("+++ not a diff header"))
 
-        # End to end: a deletion contributes nothing, and the file before it
-        # keeps exactly its own added lines.
-        self.add_function()
+        # End to end, with a deletion that actually appears in the diff: the
+        # file has to exist at the base and be gone at HEAD, or git omits it
+        # entirely and no `+++ /dev/null` header is ever produced.
         (self.root / "z_doomed.py").write_text("a = 1\nb = 2\n")
-        commit_all(self.root, "add a file to delete")
+        commit_all(self.root, "add a file that the range will delete")
+        # The resolved sha, not the symbolic ref: "HEAD" would still mean HEAD
+        # after the commits below, and the diff would be empty.
+        base = git(self.root, "rev-parse", "HEAD").strip()
+        self.add_function()
         (self.root / "z_doomed.py").unlink()
         commit_all(self.root, "delete it")
 
-        # Three commits since the base: the function, the doomed file, its removal.
-        added = script.added_lines(self.root, "main~3", "HEAD")
+        diff = git(self.root, "diff", "--unified=0", "--no-color", f"{base}...HEAD")
+        self.assertIn("+++ /dev/null", diff, "the diff must contain a deletion header")
+
+        added = script.added_lines(self.root, base, "HEAD")
         self.assertEqual(added.get("src/app.py"), [3, 4, 5, 6, 7, 8])
         self.assertNotIn("z_doomed.py", added, "a deletion adds no lines")
 

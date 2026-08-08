@@ -25,11 +25,13 @@ missed, never whether the code is right.
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
 import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+import xml.parsers.expat as expat
 from pathlib import Path
 
 # A deleted file's +++ line is /dev/null. Matching only `b/<path>` left the
@@ -38,14 +40,12 @@ from pathlib import Path
 DIFF_HEADER = re.compile(r"^\+\+\+ (b/.*|/dev/null)$")
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
-# Refusing every DTD would refuse real reports: coverage.py emits a DOCTYPE
-# naming an external DTD, and ElementTree never retrieves those. The hazard is
-# an entity *declaration*, which ElementTree does expand — measured here, a
-# 400-byte report becomes a megabyte, and nesting one level further exhausts
-# memory. No coverage writer emits one, so the honest response is to refuse.
-# Declarations are legal only in the prolog, so that is the region scanned.
-ENTITY_DECL = re.compile(rb"<!ENTITY", re.IGNORECASE)
-ROOT_ELEMENT = re.compile(rb"<[^?!]")
+class EntityDeclared(Exception):
+    """An entity declaration was found in the prolog."""
+
+
+class PrologEnded(Exception):
+    """The root element was reached with no declaration seen."""
 
 TEST_HINTS = ("test", "spec", "conftest", "fixture")
 DOC_SUFFIXES = {".md", ".rst", ".txt", ".adoc"}
@@ -167,13 +167,17 @@ def cmd_scope(root: Path, base: str, head: str, as_json: bool) -> int:
     return 0
 
 
-def is_lcov_report(path: Path, data: bytes) -> bool:
+def is_lcov_report(path: Path, head: bytes) -> bool:
     """Recognise LCOV by its content, with the extension only as a tiebreak.
 
     Dispatching on `.info` alone sent coverage.lcov and lcov.dat to the XML
-    parser, which failed with a ParseError traceback rather than a message.
+    parser, which failed with a ParseError traceback rather than a message. The
+    BOM is stripped first: a byte-order mark is whitespace to no one, so a
+    BOM-prefixed Cobertura report named .lcov would otherwise be read as LCOV
+    and come back empty.
     """
-    head = data[:4096]
+    head = head[:4096].lstrip(codecs.BOM_UTF8).lstrip(codecs.BOM_UTF16_LE)
+    head = head.lstrip(codecs.BOM_UTF16_BE)
     if head.lstrip().startswith(b"<"):
         return False
     if b"SF:" in head or b"TN:" in head:
@@ -181,16 +185,60 @@ def is_lcov_report(path: Path, data: bytes) -> bool:
     return path.suffix.lower() in {".info", ".lcov", ".dat"}
 
 
+def read_head(path: Path, size: int = 4096) -> bytes:
+    """The first `size` bytes, so dispatch does not load the whole report."""
+    try:
+        with path.open("rb") as handle:
+            return handle.read(size)
+    except OSError as exc:
+        sys.exit(f"error: cannot read {path}: {exc}")
+
+
+def reject_entity_declarations(data: bytes, path: Path) -> None:
+    """Refuse a report that declares an XML entity.
+
+    Refusing every DTD would refuse real reports — coverage.py emits a DOCTYPE
+    naming an external DTD, which ElementTree never retrieves. The hazard is an
+    entity *declaration*, which ElementTree does expand: nesting multiplies the
+    text tenfold per level, so a few hundred bytes of declarations become
+    however much memory the author cares to ask for. No coverage writer emits
+    one.
+
+    Expat decides what a declaration is, rather than a regex hunting for the
+    prolog: any comment holding a `<` ended that scan early, and a DOCTYPE
+    after it was never examined at all. Parsing stops at the root element, so
+    the cost is the prolog rather than the document.
+    """
+    parser = expat.ParserCreate()
+
+    def refuse(*_args):
+        raise EntityDeclared()
+
+    def stop(*_args):
+        raise PrologEnded()
+
+    parser.EntityDeclHandler = refuse
+    parser.UnparsedEntityDeclHandler = refuse
+    parser.StartElementHandler = stop
+    try:
+        parser.Parse(data, True)
+    except PrologEnded:
+        return
+    except EntityDeclared:
+        sys.exit(
+            f"error: {path} declares XML entities. Coverage writers do not emit those, "
+            "and expanding them exhausts memory — refusing to parse. Regenerate the "
+            "report from your test runner."
+        )
+    except expat.ExpatError:
+        # Malformed: let the real parse below report it, so the message a user
+        # sees for bad XML comes from one place.
+        return
+
+
 def parse_cobertura(path: Path) -> dict[str, dict[int, int]]:
     data = path.read_bytes()
-    root_start = ROOT_ELEMENT.search(data)
-    prolog = data[: root_start.start()] if root_start else data
-    if ENTITY_DECL.search(prolog):
-        sys.exit(
-            f"error: {path} declares XML entities before its root element. Coverage "
-            "writers do not emit those, and expanding them exhausts memory — refusing "
-            "to parse. Regenerate the report from your test runner."
-        )
+    reject_entity_declarations(data, path)
     try:
         # Entity declarations are refused above; bare nosec because bandit reads
         # anything trailing it as further test ids.
@@ -271,7 +319,7 @@ def cmd_patch_coverage(
         sys.exit(f"error: {report} not found")
     coverage = (
         parse_lcov(report)
-        if is_lcov_report(report, report.read_bytes())
+        if is_lcov_report(report, read_head(report))
         else parse_cobertura(report)
     )
     if not coverage:
