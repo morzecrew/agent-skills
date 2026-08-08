@@ -208,6 +208,26 @@ class CensusTest(unittest.TestCase):
         kinds = self.census("helper")["counts"]["byKind"]
         self.assertGreaterEqual(kinds.get("call", 0), 1, kinds)
 
+    def test_rust_lifetimes_do_not_suppress_comment_stripping(self):
+        # Regression: `'a` opened a quote that never closed, so the rest of
+        # the line counted as string content and a block comment after it went
+        # unstripped — its mentions then scored as live usage.
+        self.write("src/pkg/a.rs", "pub fn helper() -> u32 { 1 }\n")
+        self.write("src/pkg/b.rs", "fn take<'a>(x: &str) {} /* helper is described here */\n")
+        self.write("src/pkg/c.rs", "'outer: loop { /* helper */ break 'outer; }\n")
+        counts = self.census("helper")["counts"]
+        self.assertEqual(counts["internalUsage"] + counts["externalUsage"], 0, counts)
+
+    def test_a_quote_inside_a_character_literal_does_not_open_a_string(self):
+        # The literal has to contain a quote character for this to bite: if
+        # `'"'` is not consumed as a unit, the inner `"` opens a string that
+        # runs to the end of the line and hides the comment behind it, so the
+        # commented-out mention counts as live.
+        self.write("src/pkg/a.rs", "pub fn helper() -> u32 { 1 }\n")
+        self.write("src/pkg/b.rs", "let q = '\"'; /* helper */\n")
+        counts = self.census("helper")["counts"]
+        self.assertEqual(counts["internalUsage"] + counts["externalUsage"], 0, counts)
+
     def test_generator_declaration_without_a_space_is_a_definition(self):
         self.write("src/pkg/a.js", "function*helper() { yield 1; }\n")
         kinds = self.census("helper")["counts"]["byKind"]

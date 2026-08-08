@@ -45,6 +45,9 @@ SKIP_SUFFIXES = {
     ".whl", ".so", ".dylib", ".dll", ".pyc", ".woff", ".woff2", ".ttf", ".lock",
 }
 MAX_BYTES = 2_000_000
+# A complete character literal: 'x', '\n', '\x41', '\u{1F600}'. Anything else
+# beginning with an apostrophe is a lifetime, a label, or a prime in a name.
+CHAR_LITERAL = re.compile(r"'(?:\\(?:u\{[0-9A-Fa-f]+\}|x[0-9A-Fa-f]{2}|.)|[^\\'])'")
 
 
 def tracked_files(root: Path) -> list[Path]:
@@ -213,7 +216,21 @@ def strip_comments(
             out.append(char)
             index += 1
             continue
-        if char in "\"'`":
+        if char == "'":
+            # Rust lifetimes and loop labels (`&'a str`, `'outer:`) open an
+            # apostrophe that never closes. Treating one as a string ran the
+            # "inside a string" state to the end of the line, so a block
+            # comment after it went unstripped and its mentions counted as
+            # live usage. Only a complete character literal is a string.
+            literal = CHAR_LITERAL.match(line, index)
+            if literal:
+                out.append(literal.group(0))
+                index = literal.end()
+            else:
+                out.append(char)
+                index += 1
+            continue
+        if char in "\"`":
             quote = char
             out.append(char)
             index += 1
