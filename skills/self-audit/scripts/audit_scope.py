@@ -37,6 +37,8 @@ from pathlib import Path
 # A deleted file's +++ line is /dev/null. Matching only `b/<path>` left the
 # parser pointing at the previous file, so the deletion's hunks — and every
 # hunk after it until the next header — were attributed to the wrong path.
+XML_ENCODING = re.compile(r"\s+encoding\s*=\s*(['\"])[^'\"]*\1")
+
 DIFF_HEADER = re.compile(r"^\+\+\+ (b/.*|/dev/null)$")
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
@@ -239,20 +241,61 @@ def reject_entity_declarations(data: bytes, path: Path) -> None:
             "and expanding them exhausts memory — refusing to parse. Regenerate the "
             "report from your test runner."
         )
-    except expat.ExpatError:
-        # Malformed: let the real parse below report it, so the message a user
-        # sees for bad XML comes from one place.
+    except (expat.ExpatError, ValueError):
+        # Malformed, or an encoding expat refuses outright — it raises
+        # ValueError, not ExpatError, for a multi-byte encoding declaration.
+        # Let the real parse below report it, so the message a user sees for a
+        # report that cannot be read comes from one place.
         return
 
 
+def wide_encoding(data: bytes) -> str | None:
+    """The UTF-16/32 form of these bytes, by BOM or by the XML spec's own rule.
+
+    Appendix F of the XML spec detects an encoding from the first four bytes,
+    because a conforming document begins with `<`. That covers the BOM-less
+    case, which matters: Python's "utf-32-be" codec writes no BOM at all.
+    """
+    for bom, encoding in (
+        (codecs.BOM_UTF32_LE, "utf-32-le"), (codecs.BOM_UTF32_BE, "utf-32-be"),
+        (codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"),
+    ):
+        if data.startswith(bom):
+            return encoding
+    for opener, encoding in (
+        (b"<\x00\x00\x00", "utf-32-le"), (b"\x00\x00\x00<", "utf-32-be"),
+        (b"<\x00", "utf-16-le"), (b"\x00<", "utf-16-be"),
+    ):
+        if data.startswith(opener):
+            return encoding
+    return None
+
+
+def to_parseable_xml(data: bytes) -> bytes:
+    """Re-encode to UTF-8 when the bytes are in a form expat cannot read.
+
+    Expat rejects UTF-32 outright and raises on a multi-byte encoding
+    declaration, so recognising a wide-encoded report and routing it to the XML
+    parser — as the dispatch now does — would only trade "no coverage found"
+    for a parse error. Converting is what recognising it has to mean.
+    """
+    encoding = wide_encoding(data)
+    if encoding is None:
+        return data
+    text = data.decode(encoding, "replace").lstrip("﻿")
+    # Drop the declared encoding: it describes neither these bytes nor what
+    # expat is about to read.
+    return XML_ENCODING.sub("", text, count=1).encode("utf-8")
+
+
 def parse_cobertura(path: Path) -> dict[str, dict[int, int]]:
-    data = path.read_bytes()
+    data = to_parseable_xml(path.read_bytes())
     reject_entity_declarations(data, path)
     try:
         # Entity declarations are refused above; bare nosec because bandit reads
         # anything trailing it as further test ids.
         root = ET.fromstring(data)  # nosec B314
-    except ET.ParseError as exc:
+    except (ET.ParseError, ValueError) as exc:
         sys.exit(
             f"error: {path} is not parseable XML ({exc}). Expected a Cobertura report "
             "or an LCOV file — check that the report is the one your runner wrote."

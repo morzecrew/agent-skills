@@ -186,6 +186,30 @@ class GitScopeTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("declares XML entities", result.stderr)
 
+    def test_wide_encoded_reports_are_converted_not_just_recognised(self):
+        # Regression: recognising a UTF-32 report and routing it to the XML
+        # parser only traded "no coverage found" for a parse error — expat
+        # rejects UTF-32 outright. Python's utf-32-be codec writes no BOM, so
+        # detection has to fall back to the XML spec's four-byte rule.
+        self.add_function()
+        body = COBERTURA.format(
+            filename="src/app.py",
+            lines="\n".join(f'<line number="{n}" hits="1"/>' for n in (3, 4, 5, 6, 7, 8)),
+        )
+        for encoding, name in (
+            ("utf-32", "coverage.xml"), ("utf-32-le", "coverage.xml"),
+            ("utf-32-be", "coverage.xml"), ("utf-16", "coverage.xml"),
+            ("utf-16-be", "coverage.lcov"),
+        ):
+            with self.subTest(encoding=encoding):
+                (self.root / name).write_bytes(body.encode(encoding))
+                result = run_script(
+                    "self-audit", "audit_scope.py", "patch-coverage",
+                    "--base", "main~1", "--report", name, "--json", cwd=self.root,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["patchCoverage"], 100.0)
+
     def test_an_ordinary_comment_containing_a_tag_still_parses(self):
         # The guard must not over-refuse: a comment with a '<' in it is fine.
         self.add_function()

@@ -191,9 +191,10 @@ class ChangelogTest(unittest.TestCase):
     def test_prerelease_case_is_significant(self):
         # SemVer compares prerelease identifiers case-sensitively, so
         # 1.0.0-RC.1 and 1.0.0-rc.1 are different releases; folding case
-        # rejected a valid file as containing duplicates. Uppercase sorts
-        # above lowercase, so this order also satisfies S4 — otherwise the
-        # fixture would carry a second, unrelated complaint.
+        # rejected a valid file as containing duplicates. In code-point order
+        # lowercase ranks above uppercase ('rc' > 'RC'), which is why rc.1 on
+        # top and RC.1 below also satisfies S4 — otherwise the fixture would
+        # carry a second, unrelated complaint.
         text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [1.0.0-rc.1] - 2026-02-01")
         text = text.replace("[1.1.0]: https", "[1.0.0-rc.1]: https")
         text = text.replace("## [1.0.0] - 2026-01-01 [YANKED]", "## [1.0.0-RC.1] - 2026-01-01")
