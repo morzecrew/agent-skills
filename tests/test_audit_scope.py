@@ -203,6 +203,59 @@ class GitScopeTest(unittest.TestCase):
         self.assertIsNone(script.match_path("src/app.py", coverage))
         self.assertIsNotNone(script.match_path("src/app.py", {"ci/src/app.py": {1: 1}}))
 
+    def test_deletion_marker_is_recognized_by_the_header_parser(self):
+        # `+++ /dev/null` marks a deleted file. Unmatched, it left the parser
+        # pointing at the file before it. No lines are misattributed today —
+        # with --unified=0 a deletion's hunk is always `+0,0`, so the stale
+        # pointer receives an empty range — but the parser should not depend
+        # on that to be correct, and a later change to the diff flags would.
+        self.assertIsNotNone(script.DIFF_HEADER.match("+++ /dev/null"))
+        self.assertIsNone(script.DIFF_HEADER.match("+++ not a diff header"))
+
+        # End to end: a deletion contributes nothing, and the file before it
+        # keeps exactly its own added lines.
+        self.add_function()
+        (self.root / "z_doomed.py").write_text("a = 1\nb = 2\n")
+        commit_all(self.root, "add a file to delete")
+        (self.root / "z_doomed.py").unlink()
+        commit_all(self.root, "delete it")
+
+        # Three commits since the base: the function, the doomed file, its removal.
+        added = script.added_lines(self.root, "main~3", "HEAD")
+        self.assertEqual(added.get("src/app.py"), [3, 4, 5, 6, 7, 8])
+        self.assertNotIn("z_doomed.py", added, "a deletion adds no lines")
+
+    def test_non_ascii_paths_survive_the_diff(self):
+        # Regression: git C-quotes non-ASCII paths in diff headers unless
+        # core.quotePath=false, and the quoted name matched nothing downstream.
+        (self.root / "café.py").write_text("x = 1\n")
+        commit_all(self.root, "add a non-ascii filename")
+        self.assertIn("café.py", script.added_lines(self.root, "main~1", "HEAD"))
+
+    def test_lcov_by_any_extension_is_not_sent_to_the_xml_parser(self):
+        # Regression: dispatch keyed on ".info", so coverage.lcov and lcov.dat
+        # reached the XML parser and died with a ParseError traceback.
+        self.add_function()
+        for name in ("coverage.lcov", "lcov.dat", "coverage.info"):
+            with self.subTest(name=name):
+                report = self.root / name
+                report.write_text("SF:src/app.py\nDA:3,1\nDA:4,0\nend_of_record\n")
+                with contextlib.redirect_stdout(io.StringIO()):
+                    code = script.cmd_patch_coverage(self.root, "main~1", "HEAD", report, None, True)
+                self.assertEqual(code, 0)
+
+    def test_unparseable_report_reports_rather_than_tracebacks(self):
+        self.add_function()
+        report = self.root / "coverage.xml"
+        report.write_text("this is not xml at all\n")
+        result = run_script(
+            "self-audit", "audit_scope.py", "patch-coverage",
+            "--base", "main~1", "--report", "coverage.xml", cwd=self.root,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("not parseable XML", result.stderr)
+
     def test_filename_alone_does_not_identify_a_file(self):
         # Regression: any shared suffix won, so src/app.py matched other/app.py
         # and reported a different module's coverage as its own.

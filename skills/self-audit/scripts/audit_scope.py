@@ -32,7 +32,10 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-DIFF_HEADER = re.compile(r"^\+\+\+ b/(.*)$")
+# A deleted file's +++ line is /dev/null. Matching only `b/<path>` left the
+# parser pointing at the previous file, so the deletion's hunks — and every
+# hunk after it until the next header — were attributed to the wrong path.
+DIFF_HEADER = re.compile(r"^\+\+\+ (b/.*|/dev/null)$")
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 # Refusing every DTD would refuse real reports: coverage.py emits a DOCTYPE
@@ -50,7 +53,13 @@ CONFIG_SUFFIXES = {".yml", ".yaml", ".toml", ".json", ".ini", ".cfg", ".conf", "
 
 
 def git(args: list[str], root: Path) -> str:
-    proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    # core.quotePath=false: git otherwise C-quotes any non-ASCII path
+    # ("caf\303\251.py") in diff headers and numstat output, and the quoted name
+    # matches nothing downstream — the file's added lines go uncounted.
+    proc = subprocess.run(
+        ["git", "-C", str(root), "-c", "core.quotePath=false", *args],
+        capture_output=True, text=True,
+    )
     if proc.returncode != 0:
         sys.exit(f"error: git {' '.join(args[:3])} failed: {proc.stderr.strip()[:300]}")
     return proc.stdout
@@ -90,8 +99,12 @@ def added_lines(root: Path, base: str, head: str) -> dict[str, list[int]]:
     for line in diff.splitlines():
         header = DIFF_HEADER.match(line)
         if header:
-            current = header.group(1)
-            added.setdefault(current, [])
+            target = header.group(1)
+            # A deletion contributes no added lines; drop the pointer rather
+            # than leaving it on the file before it.
+            current = None if target == "/dev/null" else target[2:]
+            if current is not None:
+                added.setdefault(current, [])
             continue
         hunk = HUNK.match(line)
         if hunk and current:
@@ -154,6 +167,20 @@ def cmd_scope(root: Path, base: str, head: str, as_json: bool) -> int:
     return 0
 
 
+def is_lcov_report(path: Path, data: bytes) -> bool:
+    """Recognise LCOV by its content, with the extension only as a tiebreak.
+
+    Dispatching on `.info` alone sent coverage.lcov and lcov.dat to the XML
+    parser, which failed with a ParseError traceback rather than a message.
+    """
+    head = data[:4096]
+    if head.lstrip().startswith(b"<"):
+        return False
+    if b"SF:" in head or b"TN:" in head:
+        return True
+    return path.suffix.lower() in {".info", ".lcov", ".dat"}
+
+
 def parse_cobertura(path: Path) -> dict[str, dict[int, int]]:
     data = path.read_bytes()
     root_start = ROOT_ELEMENT.search(data)
@@ -164,9 +191,15 @@ def parse_cobertura(path: Path) -> dict[str, dict[int, int]]:
             "writers do not emit those, and expanding them exhausts memory — refusing "
             "to parse. Regenerate the report from your test runner."
         )
-    # Entity declarations are refused above; bare nosec because bandit reads
-    # anything trailing it as further test ids.
-    root = ET.fromstring(data)  # nosec B314
+    try:
+        # Entity declarations are refused above; bare nosec because bandit reads
+        # anything trailing it as further test ids.
+        root = ET.fromstring(data)  # nosec B314
+    except ET.ParseError as exc:
+        sys.exit(
+            f"error: {path} is not parseable XML ({exc}). Expected a Cobertura report "
+            "or an LCOV file — check that the report is the one your runner wrote."
+        )
     sources = [s.text.strip() for s in root.findall(".//sources/source") if s.text]
     coverage: dict[str, dict[int, int]] = {}
     for cls in root.findall(".//class"):
@@ -236,7 +269,11 @@ def cmd_patch_coverage(
 ) -> int:
     if not report.is_file():
         sys.exit(f"error: {report} not found")
-    coverage = parse_lcov(report) if report.suffix == ".info" else parse_cobertura(report)
+    coverage = (
+        parse_lcov(report)
+        if is_lcov_report(report, report.read_bytes())
+        else parse_cobertura(report)
+    )
     if not coverage:
         sys.exit(f"error: no coverage data parsed from {report}")
 
