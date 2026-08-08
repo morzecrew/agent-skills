@@ -44,15 +44,26 @@ VERSION_HEADING = re.compile(
 )
 ANY_H2 = re.compile(r"^##\s+(.*)$")
 H3 = re.compile(r"^###\s+(.*)$")
-LINK_DEF = re.compile(r"^\[([^\]]+)\]:\s*\S+", re.M)
+# CommonMark allows a link reference definition up to three spaces of indent.
+# Anchoring at column 0 read those as absent, and S7 skips itself entirely when
+# it finds no definitions — so an indented set silently disabled the check.
+LINK_DEF = re.compile(r"^ {0,3}\[([^\]]+)\]:\s*\S+", re.M)
 BULLET = re.compile(r"^-\s+(.*)$")
 SEMVER_CORE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
-SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
+# A trailing period on a known abbreviation is not a sentence boundary; counting
+# it as one inflated the sentence count and failed entries that obeyed H3.
+ABBREVIATIONS = ("e.g", "i.e", "etc", "vs", "cf", "approx", "no", "al")
+SENTENCE_END = re.compile(
+    "".join(rf"(?<!\b{re.escape(word)})" for word in ABBREVIATIONS) + r"[.!?](?:\s|$)",
+    re.I,
+)
 # GFM: a fence is indented at most three spaces, and a backtick fence's info
 # string may not itself contain a backtick. Lines that break either rule are
 # ordinary content, and treating them as delimiters skips real structure.
 FENCE = re.compile(r"^ {0,3}(`{3,}(?!.*`)|~{3,})[ \t]*(\S.*)?$")
-VERSION = re.compile(r"^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?$")
+# SemVer allows a prerelease and build metadata together (1.0.0-rc.1+build.5).
+# One combined group accepted either but not both, rejecting valid versions.
+VERSION = re.compile(r"^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.\-]+)?(?:\+[0-9A-Za-z.\-]+)?$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -92,7 +103,6 @@ def core_version(version: str) -> tuple[int, int, int] | None:
 def entry_texts(lines: list[str], live: list[int]) -> list[tuple[int, str]]:
     """Bullet entries among `live` line numbers, folded with continuation lines."""
     entries: list[tuple[int, str]] = []
-    live_set = set(live)
     position = 0
     while position < len(live):
         index = live[position]
@@ -102,13 +112,23 @@ def entry_texts(lines: list[str], live: list[int]) -> list[tuple[int, str]]:
             continue
         first_line = index
         text = match.group(1).strip()
+        previous_line = index
         position += 1
         while position < len(live):
             following = live[position]
-            if following not in live_set or not lines[following].strip() or BULLET.match(lines[following]):
+            # `following` comes from `live`, so testing it for membership in
+            # live was always false. What the fold actually needs is adjacency:
+            # a line separated by a fenced block is not a continuation of this
+            # entry, and joining it would measure text the entry never had.
+            if (
+                following != previous_line + 1
+                or not lines[following].strip()
+                or BULLET.match(lines[following])
+            ):
                 break
             if lines[following].startswith(("  ", "\t")):
                 text += " " + lines[following].strip()
+            previous_line = following
             position += 1
         entries.append((first_line, text))
     return entries
@@ -183,13 +203,16 @@ def validate(path: Path, house_rules: bool) -> list[str]:
 
     seen: dict[str, int] = {}
     for section in versions:
-        if section["version"] in seen:
+        # [1.0.0] and [v1.0.0] are the same release. Keying on the raw heading
+        # let a duplicate through whenever the two spelled the prefix differently.
+        key = section["version"].lower().removeprefix("v")
+        if key in seen:
             problems.append(
                 f"S6 line {section['line'] + 1}: version [{section['version']}] already appears "
-                f"at line {seen[section['version']] + 1}"
+                f"at line {seen[key] + 1}"
             )
         else:
-            seen[section["version"]] = section["line"]
+            seen[key] = section["line"]
 
     for earlier, later in zip(versions, versions[1:]):
         top, below = core_version(earlier["version"]), core_version(later["version"])
@@ -230,11 +253,20 @@ def check_house_rules(lines: list[str], live: list[int]) -> list[str]:
     problems: list[str] = []
     live_set = set(live)
     for number in live:
-        following = number + 1
-        if following not in live_set or following >= len(lines):
+        # Look back from each bullet rather than forward from the previous one:
+        # comparing adjacent bullet lines missed an entry that ran onto a
+        # continuation line, which is exactly where entries get stacked.
+        previous = number - 1
+        if not BULLET.match(lines[number]) or previous < 0 or previous not in live_set:
             continue
-        if BULLET.match(lines[number]) and BULLET.match(lines[following]):
-            problems.append(f"H1 line {following + 1}: bullet stacked on the previous one — blank line between entries")
+        above = lines[previous]
+        if not above.strip():
+            continue
+        if BULLET.match(above) or above.startswith(("  ", "\t")):
+            problems.append(
+                f"H1 line {number + 1}: bullet stacked on the previous entry — "
+                "blank line between entries"
+            )
     for number, entry in entry_texts(lines, live):
         if entry == "...":
             continue

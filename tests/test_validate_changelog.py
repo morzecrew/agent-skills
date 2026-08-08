@@ -170,6 +170,31 @@ class ChangelogTest(unittest.TestCase):
         self.assertEqual([p for p in self.check(with_fence) if p.startswith("S2")], [])
 
 
+    def test_prerelease_with_build_metadata_is_valid_semver(self):
+        # Regression: one combined group accepted a prerelease or build
+        # metadata but not both, rejecting a version SemVer allows.
+        text = GOOD.replace("[1.1.0] - 2026-02-01", "[1.1.0-rc.1+build.5] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.1.0-rc.1+build.5]: https")
+        self.assertEqual([p for p in self.check(text) if p.startswith("S2")], [])
+
+    def test_indented_link_definitions_are_seen(self):
+        # Regression: anchored at column 0, an indented set read as "no link
+        # definitions at all" — and S7 skips itself entirely in that case, so
+        # the check silently disabled rather than failing. Every definition is
+        # indented here: leaving one at column 0 would keep S7 alive and the
+        # test would pass either way.
+        text = GOOD.replace("[unreleased]: ", "  [unreleased]: ")
+        text = text.replace("[1.1.0]: ", "  [1.1.0]: ")
+        text = text.replace("[1.0.0]: https://x/releases/tag/v1.0.0", "  [nonsense]: https://x/y")
+        self.assert_flags(text, "S7")
+
+    def test_duplicate_version_across_a_v_prefix(self):
+        # Regression: keying on the raw heading made [1.0.0] and [v1.0.0] look
+        # like different releases.
+        text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [v1.0.0] - 2026-02-01")
+        self.assert_flags(text, "S6")
+
+
 class HouseRulesTest(unittest.TestCase):
     def check(self, text: str) -> list[str]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -199,6 +224,27 @@ class HouseRulesTest(unittest.TestCase):
     def test_placeholder_entry_is_exempt(self):
         placeholder = GOOD.replace("- A new thing.", "- ...")
         self.assertEqual([p for p in self.check(placeholder) if p.startswith("H")], [])
+
+    def test_bullet_stacked_on_a_continuation_line_is_flagged(self):
+        # Regression: H1 compared adjacent bullet lines, so an entry that ran
+        # onto a continuation line hid the stacking that follows it.
+        stacked = GOOD.replace("- A new thing.", "- One thing.\n  continued here.\n- Another thing.")
+        self.assertTrue(any(p.startswith("H1") for p in self.check(stacked)), self.check(stacked))
+
+    def test_properly_spaced_continuation_stays_clean(self):
+        spaced = GOOD.replace("- A new thing.", "- One thing.\n  continued here.\n\n- Another thing.")
+        self.assertEqual([p for p in self.check(spaced) if p.startswith("H1")], [])
+
+    def test_abbreviation_is_not_a_sentence_boundary(self):
+        # Regression: "e.g." counted as a sentence end, inflating the count and
+        # failing entries that obeyed H3.
+        entry = "- Adds a thing, e.g. a widget, i.e. the small kind, etc. and more."
+        self.assertEqual([p for p in self.check(GOOD.replace("- A new thing.", entry)) if p.startswith("H3")], [])
+
+    def test_real_sentences_are_still_counted(self):
+        self.assertTrue(
+            any(p.startswith("H3") for p in self.check(GOOD.replace("- A new thing.", "- One. Two. Three. Four.")))
+        )
 
 
 if __name__ == "__main__":
