@@ -20,6 +20,24 @@ DISCRIMINATING_TEST = (
 BLIND_TEST = "from app import clamp\nassert clamp(5, 0, 10) == 5\n"
 
 
+def _can_symlink() -> bool:
+    """Whether this process may create a symlink.
+
+    `hasattr(Path, "symlink_to")` was the old guard and never skipped: the
+    method always exists. What actually varies is permission — Windows without
+    developer mode raises OSError.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            Path(tmp, "link").symlink_to(tmp, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            return False
+        return True
+
+
+CAN_SYMLINK = _can_symlink()
+
+
 class VerifiedRedTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -108,6 +126,188 @@ class VerifiedRedTest(unittest.TestCase):
         self.assertTrue(matching["redFailedAsRequired"])
         mismatched = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], 4, False)
         self.assertFalse(mismatched["redFailedAsRequired"])
+
+    def test_red_run_that_cannot_import_is_not_a_reproduction(self):
+        # Regression: the red worktree is base plus only --test-file, so a
+        # helper that exists solely in the working tree made the red run die on
+        # the import. That non-zero exit looked exactly like a reproduction and
+        # certified a test that never ran — worse than running no check at all.
+        (self.root / "helper.py").write_text("VALUE = 0\n")  # never committed
+        self.apply_fix()
+        (self.root / "t.py").write_text("import helper\n" + DISCRIMINATING_TEST)
+        result = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False)
+        self.assertFalse(result["certified"], result)
+        self.assertTrue(result["redFailedBeforeTesting"])
+        self.assertIn("--test-file", result["verdict"])
+
+    def test_a_real_failure_naming_importerror_is_still_red(self):
+        # Regression: the guard matched loose substrings across the whole
+        # output, so a reproduction whose own assertion message names
+        # ImportError was rejected as a setup failure that never ran.
+        # The output has to actually trip INFRASTRUCTURE_RED — a line starting
+        # with ImportError — while still showing the tests ran. Without that
+        # collision the guard is never consulted and the test proves nothing.
+        self.apply_fix()
+        (self.root / "t.py").write_text(
+            "from app import clamp\n"
+            "print('ImportError: sample text this test asserts about')\n"
+            "assert clamp(-5, 0, 10) == 0, 'lower bound not applied'\n"
+        )
+        result = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False)
+        self.assertTrue(script.INFRASTRUCTURE_RED.search(result["redTail"]),
+                        "the fixture must trip the setup-failure pattern")
+        self.assertTrue(result["certified"], result)
+        self.assertFalse(result["redFailedBeforeTesting"])
+
+    def test_an_earlier_stages_summary_is_not_proof_this_test_ran(self):
+        # Regression: any "1 passed" anywhere suppressed the setup-failure
+        # verdict, so a chained command whose *later* stage failed to import
+        # was certified. Order decides: the setup error came last here.
+        chained = "1 passed in 0.01s\nModuleNotFoundError: No module named 'helper'\n"
+        self.assertTrue(script.looks_like_setup_failure(chained))
+
+    def test_stream_order_survives_a_split_across_stdout_and_stderr(self):
+        # Regression: stdout and stderr were captured separately and joined
+        # afterwards, so an early summary on stderr looked later than a
+        # subsequent failure on stdout, and the run was certified. Merging at
+        # the source keeps the order the command produced.
+        self.apply_fix()
+        (self.root / "t.py").write_text(
+            "import sys\n"
+            "print('1 passed in 0.01s', file=sys.stderr)\n"        # earlier, on stderr
+            "print('ModuleNotFoundError: No module named \\'x\\'')\n"  # later, on stdout
+            "sys.exit(1)\n"
+        )
+        result = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False)
+        self.assertTrue(result["redFailedBeforeTesting"], result["redTail"])
+        self.assertFalse(result["certified"])
+
+    def test_a_setup_failure_is_named_even_with_a_mismatched_expected_exit(self):
+        # Regression: the check was gated on the exit code matching
+        # --expect-red-exit, so an import failure exiting 1 against an expected
+        # 3 was reported as "the test passed without the fix". It never ran.
+        self.apply_fix()
+        (self.root / "helper_mod.py").write_text("VALUE = 1\n")  # never committed
+        (self.root / "t.py").write_text("import helper_mod\n" + DISCRIMINATING_TEST)
+        result = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], 3, False)
+        self.assertTrue(result["redFailedBeforeTesting"], result["redTail"])
+        self.assertIn("--test-file", result["verdict"])
+        self.assertNotIn("passed without the fix", result["verdict"])
+
+    def test_a_summary_after_the_error_means_the_tests_ran(self):
+        recovered = "ImportError: mentioned in a fixture\n1 failed in 0.02s\n"
+        self.assertFalse(script.looks_like_setup_failure(recovered))
+
+    def test_kill_falls_back_when_the_group_kill_fails(self):
+        # Regression: a PermissionError from killpg returned with nothing
+        # signalled, leaving the run unbounded after its timeout.
+        killed: list[str] = []
+
+        class FakeProc:
+            pid = 4242
+
+            def kill(self):
+                killed.append("kill")
+
+        original_killpg, original_getpgid = script.os.killpg, script.os.getpgid
+        script.os.getpgid = lambda _pid: 4242
+        script.os.killpg = lambda *_a: (_ for _ in ()).throw(PermissionError("nope"))
+        try:
+            script.kill_tree(FakeProc())
+        finally:
+            script.os.killpg, script.os.getpgid = original_killpg, original_getpgid
+        self.assertEqual(killed, ["kill"], "the direct child must still be killed")
+
+    def test_import_failure_can_be_accepted_when_it_is_the_bug(self):
+        (self.root / "helper.py").write_text("VALUE = 0\n")
+        self.apply_fix()
+        (self.root / "t.py").write_text("import helper\n" + DISCRIMINATING_TEST)
+        result = script.certify(
+            self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False, True
+        )
+        self.assertTrue(result["certified"], result)
+
+    def test_carrying_the_helper_across_certifies_normally(self):
+        # The remedy the verdict names must actually work.
+        (self.root / "helper.py").write_text("VALUE = 0\n")
+        self.apply_fix()
+        (self.root / "t.py").write_text("import helper\n" + DISCRIMINATING_TEST)
+        result = script.certify(
+            self.root, "HEAD", "python3 t.py", [Path("t.py"), Path("helper.py")], None, False
+        )
+        self.assertTrue(result["certified"], result)
+        self.assertFalse(result["redFailedBeforeTesting"])
+
+    def test_shell_command_lines_are_honored(self):
+        # --test-cmd is a shell command line by contract — operators chain and
+        # redirect in it. Running it as a split argv instead would feed "&&" to
+        # python3 as a filename, so both halves would fail for the wrong reason.
+        self.apply_fix()
+        (self.root / "t.py").write_text(DISCRIMINATING_TEST)
+        result = script.certify(
+            self.root, "HEAD", "python3 t.py && echo chained", [Path("t.py")], None, False
+        )
+        self.assertTrue(result["certified"], result)
+        self.assertIn("chained", result["greenTail"])
+
+    @unittest.skipUnless(CAN_SYMLINK, "creating symlinks is not permitted here")
+    def test_symlinked_directory_in_base_cannot_be_written_through(self):
+        # Regression: the source was checked for containment but the
+        # destination was not, so a committed symlinked directory carried the
+        # copy straight out of the throwaway worktree.
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside = Path(outside_dir)
+            # The symlink is committed, so it exists in the base checkout the
+            # red run copies into...
+            (self.root / "tests").symlink_to(outside, target_is_directory=True)
+            commit_all(self.root, "commit a symlinked tests dir")
+            # ...but the working tree holds a real directory, so the source
+            # passes its own containment check and only the destination
+            # traverses the link.
+            (self.root / "tests").unlink()
+            (self.root / "tests").mkdir()
+            (self.root / "tests" / "t.py").write_text(DISCRIMINATING_TEST)
+            self.apply_fix()
+
+            with self.assertRaises(SystemExit) as caught:
+                script.certify(
+                    self.root, "HEAD", "python3 tests/t.py", [Path("tests/t.py")], None, False
+                )
+            self.assertIn("symlink", str(caught.exception))
+            self.assertEqual(list(outside.iterdir()), [], "nothing may be written outside")
+
+    def test_a_hung_run_is_killed_and_not_counted_as_red(self):
+        # Regression: neither run had a timeout, so a hanging reproduction hung
+        # the certifier — and a hang that exits non-zero would read as red.
+        # The verdict has to name the timeout: `certified` is False here anyway
+        # because the green half hangs too, so asserting only that would pass
+        # whether or not the timeout was ever taken into account.
+        self.apply_fix()
+        (self.root / "t.py").write_text("import time\ntime.sleep(120)\n")
+        result = script.certify(
+            self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False, False, 2
+        )
+        self.assertFalse(result["certified"], result)
+        self.assertTrue(result["redTimedOut"])
+        self.assertIn("killed after", result["verdict"].lower())
+        self.assertNotIn("fix is incomplete", result["verdict"])
+
+    def test_missing_git_is_reported_not_raised(self):
+        # Regression: git can be absent entirely (containers, minimal CI
+        # images). The documented contract is exit 1 for a usage error, and
+        # usage_census already guards the same call.
+        original = script.subprocess.run
+
+        def no_git(*args, **kwargs):
+            raise FileNotFoundError("git")
+
+        script.subprocess.run = no_git
+        try:
+            with self.assertRaises(SystemExit) as caught:
+                script.git(self.root, "rev-parse", "--show-toplevel")
+        finally:
+            script.subprocess.run = original
+        self.assertIn("git not found", str(caught.exception))
 
     def test_missing_test_file_is_rejected(self):
         result = run_script(

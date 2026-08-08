@@ -170,6 +170,77 @@ class ChangelogTest(unittest.TestCase):
         self.assertEqual([p for p in self.check(with_fence) if p.startswith("S2")], [])
 
 
+    def test_prerelease_with_build_metadata_is_valid_semver(self):
+        # Regression: one combined group accepted a prerelease or build
+        # metadata but not both, rejecting a version SemVer allows.
+        text = GOOD.replace("[1.1.0] - 2026-02-01", "[1.1.0-rc.1+build.5] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.1.0-rc.1+build.5]: https")
+        self.assertEqual([p for p in self.check(text) if p.startswith("S2")], [])
+
+    def test_malformed_semver_is_rejected(self):
+        # Regression: the loose character class accepted leading zeroes and
+        # empty identifiers, which SemVer tooling rejects — and core_version
+        # then ordered them as though they were versions.
+        for bad in ("01.2.3", "1.0.0-01", "1.0.0-rc..1", "1.0.0-"):
+            with self.subTest(version=bad):
+                self.assertFalse(script.VERSION.match(bad), bad)
+        for good in ("1.0.0", "v1.0.0", "1.0.0-rc.1", "1.0.0-rc.1+build.5", "1.0.0-0a"):
+            with self.subTest(version=good):
+                self.assertTrue(script.VERSION.match(good), good)
+
+    def test_prerelease_case_is_significant(self):
+        # SemVer compares prerelease identifiers case-sensitively, so
+        # 1.0.0-RC.1 and 1.0.0-rc.1 are different releases; folding case
+        # rejected a valid file as containing duplicates. In code-point order
+        # lowercase ranks above uppercase ('rc' > 'RC'), which is why rc.1 on
+        # top and RC.1 below also satisfies S4 — otherwise the fixture would
+        # carry a second, unrelated complaint.
+        text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [1.0.0-rc.1] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.0.0-rc.1]: https")
+        text = text.replace("## [1.0.0] - 2026-01-01 [YANKED]", "## [1.0.0-RC.1] - 2026-01-01")
+        text = text.replace("[1.0.0]: https", "[1.0.0-RC.1]: https")
+        found = self.check(text)
+        self.assertEqual([p for p in found if p.startswith("S6")], [], found)
+        self.assertEqual([p for p in found if p.startswith("S4")], [], found)
+
+    def test_non_ascii_digits_are_not_semver(self):
+        # `\d` matches Arabic-Indic digits too, so `1.0.0-١a` passed S2 and
+        # reached the ordering and duplicate checks.
+        self.assertFalse(script.VERSION.match("1.0.0-١a"))
+        self.assertFalse(script.VERSION.match("١.0.0"))
+
+    def test_indented_link_definitions_are_seen(self):
+        # Regression: anchored at column 0, an indented set read as "no link
+        # definitions at all" — and S7 skips itself entirely in that case, so
+        # the check silently disabled rather than failing. Every definition is
+        # indented here: leaving one at column 0 would keep S7 alive and the
+        # test would pass either way.
+        text = GOOD.replace("[unreleased]: ", "  [unreleased]: ")
+        text = text.replace("[1.1.0]: ", "  [1.1.0]: ")
+        text = text.replace("[1.0.0]: https://x/releases/tag/v1.0.0", "  [nonsense]: https://x/y")
+        self.assert_flags(text, "S7")
+
+    def test_prerelease_ranks_below_its_own_release(self):
+        # Regression: comparing only the numeric core made 1.0.0-rc.1 and
+        # 1.0.0 equal, so a prerelease listed above its release passed S4.
+        text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [1.0.0-rc.1] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.0.0-rc.1]: https")
+        self.assert_flags(text, "S4")
+
+    def test_release_above_its_prerelease_is_correct_order(self):
+        text = GOOD.replace("## [1.0.0] - 2026-01-01 [YANKED]", "## [1.0.0-rc.1] - 2026-01-01")
+        text = text.replace("[1.0.0]: https", "[1.0.0-rc.1]: https")
+        text = text.replace("## [1.1.0] - 2026-02-01", "## [1.0.0] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.0.0]: https")
+        self.assertEqual([p for p in self.check(text) if p.startswith("S4")], [])
+
+    def test_duplicate_version_across_a_v_prefix(self):
+        # Regression: keying on the raw heading made [1.0.0] and [v1.0.0] look
+        # like different releases.
+        text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [v1.0.0] - 2026-02-01")
+        self.assert_flags(text, "S6")
+
+
 class HouseRulesTest(unittest.TestCase):
     def check(self, text: str) -> list[str]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -199,6 +270,35 @@ class HouseRulesTest(unittest.TestCase):
     def test_placeholder_entry_is_exempt(self):
         placeholder = GOOD.replace("- A new thing.", "- ...")
         self.assertEqual([p for p in self.check(placeholder) if p.startswith("H")], [])
+
+    def test_bullet_stacked_on_a_continuation_line_is_flagged(self):
+        # Regression: H1 compared adjacent bullet lines, so an entry that ran
+        # onto a continuation line hid the stacking that follows it.
+        stacked = GOOD.replace("- A new thing.", "- One thing.\n  continued here.\n- Another thing.")
+        self.assertTrue(any(p.startswith("H1") for p in self.check(stacked)), self.check(stacked))
+
+    def test_properly_spaced_continuation_stays_clean(self):
+        spaced = GOOD.replace("- A new thing.", "- One thing.\n  continued here.\n\n- Another thing.")
+        self.assertEqual([p for p in self.check(spaced) if p.startswith("H1")], [])
+
+    def test_unindented_line_ends_the_entry(self):
+        # Regression: the fold walked past a non-continuation line, so a later
+        # indented line was appended to the earlier bullet — text the entry
+        # never had, then measured against H2 and H3.
+        lines = ["- short entry", "not indented, so not a continuation", "  " + "x" * 400]
+        text = GOOD.replace("- A new thing.", "\n".join(lines))
+        self.assertEqual([p for p in self.check(text) if p.startswith("H2")], [])
+
+    def test_abbreviation_is_not_a_sentence_boundary(self):
+        # Regression: "e.g." counted as a sentence end, inflating the count and
+        # failing entries that obeyed H3.
+        entry = "- Adds a thing, e.g. a widget, i.e. the small kind, etc. and more."
+        self.assertEqual([p for p in self.check(GOOD.replace("- A new thing.", entry)) if p.startswith("H3")], [])
+
+    def test_real_sentences_are_still_counted(self):
+        self.assertTrue(
+            any(p.startswith("H3") for p in self.check(GOOD.replace("- A new thing.", "- One. Two. Three. Four.")))
+        )
 
 
 if __name__ == "__main__":
