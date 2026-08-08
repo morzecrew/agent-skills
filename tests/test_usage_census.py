@@ -112,6 +112,17 @@ class CensusTest(unittest.TestCase):
         self.assertEqual(scopes["pkg/inside.py"], "internal")
         self.assertGreater(result["counts"]["externalUsage"], 0)
 
+    def test_scan_root_prefix_marks_everything_internal(self):
+        # Regression: `--internal .` reduced to the empty string and marked
+        # every hit external, inverting the split it was asked to define.
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", "from .a import helper\n\nhelper()\n")
+        for prefix in (".", "./"):
+            with self.subTest(prefix=prefix):
+                counts = self.census("helper", internal=[prefix])["counts"]
+                self.assertGreater(counts["internalUsage"], 0)
+                self.assertEqual(counts["externalUsage"], 0)
+
     def test_prefix_matches_with_or_without_a_trailing_slash(self):
         self.write("src/pkg/a.py", "def helper():\n    return 1\n")
         self.write("src/pkg/b.py", "from .a import helper\n\nhelper()\n")
@@ -170,8 +181,26 @@ class CensusTest(unittest.TestCase):
         self.assertEqual(result["counts"]["internalUsage"] + result["counts"]["externalUsage"], 0)
 
     def test_marker_inside_a_string_does_not_truncate_the_line(self):
+        # The call must sit on the same line as the string holding the marker:
+        # on its own line it survives even a quote-unaware truncator, and the
+        # test would pass without exercising the thing it names.
         self.write("src/pkg/a.py", "def helper():\n    return 1\n")
-        self.write("src/pkg/b.py", 'LABEL = "# not a comment"\nhelper()\n')
+        self.write("src/pkg/b.py", 'value = call("#nope") or helper()\n')
+        self.assertGreaterEqual(self.census("helper")["counts"]["byKind"].get("call", 0), 1)
+
+    def test_block_comment_mentions_are_not_usage(self):
+        # Regression: /* helper */ reached classify() and counted as a live
+        # reference, so a dead symbol named in one dodged the exit-3 verdict.
+        self.write("src/pkg/a.js", "function helper() { return 1; }\n")
+        self.write("src/pkg/b.js", "/* helper() is gone */\nconst x = 1;\n")
+        self.write("src/pkg/c.js", "/*\n * helper is described here\n */\nconst y = 2;\n")
+        result = self.census("helper")
+        self.assertEqual(result["counts"]["internalUsage"] + result["counts"]["externalUsage"], 0,
+                         result["counts"])
+
+    def test_code_after_a_block_comment_on_one_line_still_counts(self):
+        self.write("src/pkg/a.js", "function helper() { return 1; }\n")
+        self.write("src/pkg/b.js", "/* note */ helper();\n")
         self.assertGreaterEqual(self.census("helper")["counts"]["byKind"].get("call", 0), 1)
 
     def test_python_floor_division_is_not_read_as_a_comment(self):

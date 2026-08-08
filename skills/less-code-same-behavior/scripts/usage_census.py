@@ -58,14 +58,18 @@ def tracked_files(root: Path) -> list[Path]:
         # byte ("caf\303\251.py"). Those names never resolve, so the files were
         # skipped in silence — and a symbol whose only reference lived in one
         # would be reported unused, which is the verdict that ends in a delete.
+        # Bytes, not text: a tracked name the locale cannot decode would
+        # otherwise raise and abort the whole census. surrogateescape keeps
+        # arbitrary path bytes round-trippable through the filesystem calls.
         proc = subprocess.run(
             ["git", "-C", str(root), "ls-files", "-z"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, timeout=60,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         proc = None
     if proc is not None and proc.returncode == 0:
-        tracked = [root / name for name in proc.stdout.split("\0") if name]
+        names = proc.stdout.decode(sys.getfilesystemencoding(), "surrogateescape")
+        tracked = [root / name for name in names.split("\0") if name]
         if tracked:
             return tracked
         # A repository that tracks nothing is still a repository, so an empty
@@ -87,12 +91,22 @@ def within_prefix(path: str, prefix: str) -> bool:
     hits score internal, external usage is undercounted, and the internal vs
     external split is the whole basis of the shim-or-delete decision.
     """
-    clean = prefix.replace("\\", "/").removeprefix("./").rstrip("/")
-    return bool(clean) and (path == clean or path.startswith(clean + "/"))
+    clean = prefix.replace("\\", "/").rstrip("/")
+    while clean.startswith("./"):
+        clean = clean[2:]
+    # `.` and `./` name the scan root, so everything is inside them. Reducing
+    # them to the empty string instead marked every hit external and inverted
+    # the split this function exists to get right.
+    if clean in {"", "."}:
+        return True
+    return path == clean or path.startswith(clean + "/")
 
 
 # Modifiers that can precede a declaration keyword in the languages covered.
-MODIFIERS = r"(?:(?:export|default|public|private|protected|internal|static|final|async|pub)\s+)*"
+MODIFIERS = (
+    r"(?:(?:export|default|public|private|protected|internal|static|final|async"
+    r"|pub(?:\([^)]*\))?)\s+)*"  # pub(crate), pub(super), … are Rust visibility
+)
 # `function` for JS/PHP, `fn` for Rust — without them a real declaration scored
 # as a call, so an unused function could never reach the exit-3 deletion
 # candidate the tool exists to identify.
@@ -106,20 +120,23 @@ def build_patterns(symbol: str) -> dict[str, re.Pattern]:
     receiver = rf"^\s*func\s+\([^)]*\)\s*{s}\b"
     return {
         "definition": re.compile(
-            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})\s+{s}\b"
+            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})\s*\*?\s+{s}\b"
             rf"|{receiver}"
             rf"|^\s*{s}\s*(?::[^=]+)?=(?!=)"
         ),
         "declaration": re.compile(
-            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})\s+{s}\b"
+            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})\s*\*?\s+{s}\b"
             rf"|{receiver}"
         ),
         "from-import": re.compile(rf"^\s*from\s+\S+\s+import\s+.*\b{s}\b"),
         # Only meaningful inside a parenthesized import list; on its own a
         # bare line is a standalone reference, not an import. Neighbours on the
         # same line are allowed — `helper, other,` is still an import of both.
+        # `original as helper` binds the symbol too, so the symbol may appear
+        # on either side of an `as`.
         "import-list-item": re.compile(
-            rf"^[\s(]*(?:\w+(?:\s+as\s+\w+)?\s*,\s*)*{s}(?:\s+as\s+\w+)?"
+            rf"^[\s(]*(?:\w+(?:\s+as\s+\w+)?\s*,\s*)*"
+            rf"(?:{s}(?:\s+as\s+\w+)?|\w+\s+as\s+{s})"
             rf"(?:\s*,\s*\w+(?:\s+as\s+\w+)?)*\s*,?\s*\)?\s*$"
         ),
         "plain-import": re.compile(rf"^\s*(?:import|require)\s*\(?\s*[\"']?\S*\b{s}\b"),
@@ -143,6 +160,51 @@ LINE_COMMENTS = {
     ".c": ("//",), ".h": ("//",), ".cc": ("//",), ".cpp": ("//",), ".hpp": ("//",),
     ".cs": ("//",), ".php": ("//", "#"), ".sql": ("--",), ".lua": ("--",),
 }
+
+
+# Languages whose block comments run across lines. Tracked with a carry flag,
+# because `/* helper */` reaching classify() counted as a live reference and a
+# dead symbol mentioned in one could dodge the deletion verdict.
+BLOCK_COMMENTS = {
+    ".js": ("/*", "*/"), ".mjs": ("/*", "*/"), ".cjs": ("/*", "*/"),
+    ".jsx": ("/*", "*/"), ".ts": ("/*", "*/"), ".tsx": ("/*", "*/"),
+    ".go": ("/*", "*/"), ".rs": ("/*", "*/"), ".java": ("/*", "*/"),
+    ".kt": ("/*", "*/"), ".swift": ("/*", "*/"), ".scala": ("/*", "*/"),
+    ".c": ("/*", "*/"), ".h": ("/*", "*/"), ".cc": ("/*", "*/"),
+    ".cpp": ("/*", "*/"), ".hpp": ("/*", "*/"), ".cs": ("/*", "*/"),
+    ".php": ("/*", "*/"), ".css": ("/*", "*/"), ".scss": ("/*", "*/"),
+}
+
+
+def strip_block_comments(line: str, block: tuple[str, str] | None, inside: bool) -> tuple[str, bool]:
+    """Remove block-comment spans, carrying `inside` across lines.
+
+    Returns the code outside the comment and whether the line ends still
+    inside one. Quote state is not tracked here: a marker inside a string is
+    rarer than a real comment, and over-stripping would only lose a reference
+    the line-comment path already handles conservatively.
+    """
+    if block is None:
+        return line, False
+    opener, closer = block
+    out: list[str] = []
+    index = 0
+    while index < len(line):
+        if inside:
+            end = line.find(closer, index)
+            if end == -1:
+                return "".join(out), True
+            index = end + len(closer)
+            inside = False
+            continue
+        start = line.find(opener, index)
+        if start == -1:
+            out.append(line[index:])
+            return "".join(out), False
+        out.append(line[index:start])
+        index = start + len(opener)
+        inside = True
+    return "".join(out), inside
 
 
 def code_part(line: str, markers: tuple[str, ...]) -> str:
@@ -204,17 +266,23 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
             continue
         if symbol not in text:
             continue
-        markers = LINE_COMMENTS.get(path.suffix.lower(), ())
+        suffix = path.suffix.lower()
+        markers = LINE_COMMENTS.get(suffix, ())
+        block = BLOCK_COMMENTS.get(suffix)
+        in_block_comment = False
         in_import_block = False
         for number, line in enumerate(text.splitlines(), start=1):
             stripped = line.strip()
-            if re.match(r"^\s*(?:from|import)\b.*\($", line):
+            # Comment stripping comes first: a line inside a block comment must
+            # not drive the import-block state either.
+            code, in_block_comment = strip_block_comments(line, block, in_block_comment)
+            code = code_part(code, markers)
+            if re.match(r"^\s*(?:from|import)\b.*\($", code):
                 in_import_block = True
-            elif in_import_block and stripped.startswith(")"):
+            elif in_import_block and code.strip().startswith(")"):
                 in_import_block = False
             if not word.search(line):
                 continue
-            code = code_part(line, markers)
             # Named only in a comment: kept as evidence, excluded from usage.
             kind = classify(code, patterns, in_import_block) if word.search(code) else "comment"
             if kind:
