@@ -203,6 +203,17 @@ class GitScopeTest(unittest.TestCase):
         self.assertIsNone(script.match_path("src/app.py", coverage))
         self.assertIsNotNone(script.match_path("src/app.py", {"ci/src/app.py": {1: 1}}))
 
+    def test_filename_alone_does_not_identify_a_file(self):
+        # Regression: any shared suffix won, so src/app.py matched other/app.py
+        # and reported a different module's coverage as its own.
+        self.assertIsNone(script.match_path("src/app.py", {"other/app.py": {1: 1}}))
+        self.assertIsNone(script.match_path("src/deep/app.py", {"vendor/app.py": {1: 0}}))
+
+    def test_root_level_file_still_matches_on_its_name(self):
+        # Its name is the whole path, so a one-component match is the most any
+        # report could offer — refusing it would measure nothing.
+        self.assertIsNotNone(script.match_path("setup.py", {"repo/setup.py": {1: 1}}))
+
     def test_unrelated_paths_do_not_match(self):
         coverage = {"other/project/thing.py": {1: 1}}
         self.assertIsNone(script.match_path("src/app.py", coverage))

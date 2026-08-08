@@ -219,7 +219,16 @@ def match_path(diff_path: str, coverage: dict[str, dict[int, int]]) -> dict[int,
             tied = True
     # Two report paths can share a longest suffix. Counting one of them would
     # report coverage for a different module, so an ambiguous match is no match.
-    return None if tied or not best_score else best
+    if tied or not best_score:
+        return None
+    # A bare filename match is not identification: src/app.py and other/app.py
+    # share app.py and nothing else, and attributing one's coverage to the other
+    # is a wrong answer wearing a number. Demand either a directory component
+    # too, or that the match account for the whole diff path (a root-level file
+    # legitimately matches on its name alone).
+    if best_score < 2 and best_score != len(diff_parts):
+        return None
+    return best
 
 
 def cmd_patch_coverage(
@@ -330,7 +339,9 @@ def main() -> int:
             sys.exit(f"error: {root} is not a git repository")
     minimum = getattr(args, "minimum", None)
     if minimum is not None and not (0.0 <= minimum <= 100.0):
-        # nan compares false against everything, so it would clear any gate.
+        # Written as a range test rather than `< 0 or > 100` so that nan, which
+        # compares false against everything, fails it too instead of sailing
+        # through to clear whatever gate --min was meant to enforce.
         sys.exit(f"error: --min must be a percentage between 0 and 100 (got {minimum})")
     base = args.base or detect_base(root)
 
