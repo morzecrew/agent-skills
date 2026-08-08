@@ -51,13 +51,23 @@ Discover which reviewers are actually active on this repo (check runs and past P
 
 Collect every unresolved thread — review comments, review bodies, issue comments — and group them **by finding, not by reviewer**: three bots flagging the same null check is one finding with three comment anchors. Tag each finding with its origins (which comments, human or bot). This grouping is what makes coherent reactions automatic later: the verdict attaches to the finding, and every anchored comment inherits it.
 
+**Findings hide outside threads, and those are the ones a loop silently drops.** Working the thread list alone is the most common way to miss real work:
+
+- **AI reviewers put findings in the review body.** CodeRabbit posts a summary review whose collapsed `<details>` blocks hold "Nitpick comments" and out-of-diff observations — often a dozen, each naming a file and line, none of them a thread. Cubic and others put a full issue list there too. Open every collapsed block and read it; the body is not a summary of the threads, it is additional content.
+- **Humans often comment only at the top level.** A reviewer with a general objection writes one PR comment rather than annotating a line. That comment carries the most important feedback on the PR more often than not.
+- Bodies also carry pure noise — walkthroughs, status tables, badges, poems. Skip those; they claim nothing.
+
+Give a body-carried finding the same verdict and the same evidence as any other. What differs is only the mechanics: **a body comment has no thread, so it cannot be resolved.** Answer it where it lives — reply to the issue comment, or address it in your reply on a related thread if there is one — and make sure the exit report accounts for it. React 👍/👎 on the comment itself if it is a discrete claim; leave summary bodies alone.
+
+`collect` returns `reviewThreads`, `reviews`, and `issueComments` precisely so none of these three surfaces is forgotten. Reading only the first is the bug.
+
 ### 3. Verdict per finding — with evidence
 
 Four verdicts, each with an obligation:
 
 - **Valid → fix it.** For a claimed bug, reproduce it red first (`reproduce-then-fix`) — reviewers hallucinate, and a fix for an unreproduced claim is speculative. For a claimed test gap in a shared contract, write and run the battery instead of agreeing from a read (`reading-isnt-proof`). Bring in whatever applicable skill the fix touches (`error-taxonomy` for misclassified raises, `never-nesting`/`naming-things` for style findings, …).
 - **Valid but out of scope → acknowledge.** Say it's real, say where it goes (issue, follow-up PR), don't silently expand this PR.
-- **In a file this repo doesn't own → reply, resolve, hand upstream.** See below.
+- **In a file this repo doesn't own → answer it and hand it upstream.** Resolve only if a bot opened the thread; see below.
 - **Wrong / irrelevant → refute.** The refutation must cite something checkable — the code path that handles the case, the test that pins it, the doc that decided it. "Disagree" without evidence is not a verdict.
 
 Duplicated findings get **one** verdict applied everywhere — never fix it for one bot and refute it to another.
