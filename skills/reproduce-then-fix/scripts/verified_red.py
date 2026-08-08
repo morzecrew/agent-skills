@@ -68,9 +68,14 @@ INFRASTRUCTURE_RED = re.compile(
 
 
 def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-    proc = subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True
-    )
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), *args], capture_output=True, text=True
+        )
+    except FileNotFoundError:
+        # git can be absent entirely (containers, minimal CI images). The
+        # documented contract is exit 1 for a usage error, not a traceback.
+        sys.exit("error: git not found — this tool needs it to build the red worktree")
     if check and proc.returncode != 0:
         sys.exit(f"error: git {' '.join(args[:3])} failed: {proc.stderr.strip()[:300]}")
     return proc

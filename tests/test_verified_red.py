@@ -196,6 +196,23 @@ class VerifiedRedTest(unittest.TestCase):
         self.assertIn("killed after", result["verdict"].lower())
         self.assertNotIn("fix is incomplete", result["verdict"])
 
+    def test_missing_git_is_reported_not_raised(self):
+        # Regression: git can be absent entirely (containers, minimal CI
+        # images). The documented contract is exit 1 for a usage error, and
+        # usage_census already guards the same call.
+        original = script.subprocess.run
+
+        def no_git(*args, **kwargs):
+            raise FileNotFoundError("git")
+
+        script.subprocess.run = no_git
+        try:
+            with self.assertRaises(SystemExit) as caught:
+                script.git(self.root, "rev-parse", "--show-toplevel")
+        finally:
+            script.subprocess.run = original
+        self.assertIn("git not found", str(caught.exception))
+
     def test_missing_test_file_is_rejected(self):
         result = run_script(
             "reproduce-then-fix", "verified_red.py",
