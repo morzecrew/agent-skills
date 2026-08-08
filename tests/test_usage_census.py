@@ -136,6 +136,67 @@ class CensusTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("no tracked files", result.stderr)
 
+    def test_go_receiver_method_is_a_definition(self):
+        # Regression: `func (r *Runtime) Helper()` scored as a call, so the
+        # declaration counted as usage of itself and an unused method could
+        # never reach the exit-3 deletion candidate this tool exists to find.
+        self.write("src/pkg/runtime.go", "func (r *Runtime) Helper() error {\n\treturn nil\n}\n")
+        kinds = self.census("Helper")["counts"]["byKind"]
+        self.assertEqual(kinds.get("definition", 0), 1, kinds)
+        self.assertNotIn("call", kinds, kinds)
+
+    def test_unused_go_method_is_a_deletion_candidate(self):
+        self.write("src/pkg/runtime.go", "func (r *Runtime) Helper() error {\n\treturn nil\n}\n")
+        result = run_script(
+            "less-code-same-behavior", "usage_census.py", "Helper", "--root", str(self.root)
+        )
+        self.assertEqual(result.returncode, 3, result.stdout)
+
+    def test_js_function_declaration_is_a_definition(self):
+        for source in ("function Helper() {}", "async function Helper() {}", "export function Helper() {}"):
+            with self.subTest(source=source):
+                self.write("src/pkg/a.js", source + "\n")
+                kinds = self.census("Helper")["counts"]["byKind"]
+                self.assertEqual(kinds.get("definition", 0), 1, kinds)
+
+    def test_comment_mentions_are_not_usage(self):
+        # Regression: a symbol named only in comments counted as a reference,
+        # producing the false not-dead verdict the tool exists to prevent.
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", "# helper is dead, remove it\nx = 1\n")
+        self.write("src/pkg/c.js", "// helper()\nconst y = 2;\n")
+        result = self.census("helper")
+        self.assertEqual(result["counts"]["byKind"].get("comment", 0), 2, result["counts"])
+        self.assertEqual(result["counts"]["internalUsage"] + result["counts"]["externalUsage"], 0)
+
+    def test_marker_inside_a_string_does_not_truncate_the_line(self):
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", 'LABEL = "# not a comment"\nhelper()\n')
+        self.assertGreaterEqual(self.census("helper")["counts"]["byKind"].get("call", 0), 1)
+
+    def test_python_floor_division_is_not_read_as_a_comment(self):
+        # `//` is a comment in JS but floor division in Python; stripping it
+        # everywhere would drop a real reference.
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", "n = total // helper\n")
+        kinds = self.census("helper")["counts"]["byKind"]
+        self.assertNotIn("comment", kinds, kinds)
+
+    def test_right_hand_side_of_a_definition_is_recorded(self):
+        # Regression: first match wins, so a definition line stopped there and
+        # the call on its right-hand side was lost.
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", "from .a import helper\n\nhelper = wrap(helper())\n")
+        kinds = self.census("helper")["counts"]["byKind"]
+        self.assertGreaterEqual(kinds.get("call", 0), 1, kinds)
+
+    def test_import_list_member_beside_neighbours(self):
+        # Regression: only a lone symbol on its own line counted as an import.
+        pats = script.build_patterns("helper")
+        for line in ("    helper, other,", "    other, helper", "    helper as h, other,"):
+            with self.subTest(line=line):
+                self.assertEqual(script.classify(line, pats, True), "from-import")
+
     def test_recorded_paths_are_posix(self):
         # The scope tests split on "/", so a platform separator in the stored
         # path would break the internal/external split.

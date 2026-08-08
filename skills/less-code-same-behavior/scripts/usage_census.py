@@ -14,6 +14,7 @@ Patterns counted separately:
   call         `symbol(`
   string       "symbol" / 'symbol' — reflection, config, serialized references
   bare         any other word-boundary mention
+  comment      named only in a comment — recorded as evidence, never as usage
 
 Hits are split **internal** (inside the definition's own top-level package
 directory) vs **external**, because that split is what decides between
@@ -85,26 +86,86 @@ def within_prefix(path: str, prefix: str) -> bool:
     return bool(clean) and (path == clean or path.startswith(clean + "/"))
 
 
+# Modifiers that can precede a declaration keyword in the languages covered.
+MODIFIERS = r"(?:(?:export|default|public|private|protected|internal|static|final|async|pub)\s+)*"
+# `function` for JS/PHP, `fn` for Rust — without them a real declaration scored
+# as a call, so an unused function could never reach the exit-3 deletion
+# candidate the tool exists to identify.
+DECL_KEYWORDS = r"def|class|func|function|fn|type|const|let|var|interface|struct|enum"
+
+
 def build_patterns(symbol: str) -> dict[str, re.Pattern]:
     s = re.escape(symbol)
+    # Go methods carry a receiver between the keyword and the name
+    # (`func (r *Runtime) Helper() error`), which the plain keyword form misses.
+    receiver = rf"^\s*func\s+\([^)]*\)\s*{s}\b"
     return {
         "definition": re.compile(
-            rf"^\s*(?:async\s+)?(?:def|class|func|type|const|let|var|interface|struct|enum)\s+{s}\b"
+            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})\s+{s}\b"
+            rf"|{receiver}"
             rf"|^\s*{s}\s*(?::[^=]+)?=(?!=)"
         ),
         "declaration": re.compile(
-            rf"^\s*(?:async\s+)?(?:def|class|func|type|interface|struct|enum|const|let|var)\s+{s}\b"
+            rf"^\s*{MODIFIERS}(?:{DECL_KEYWORDS})\s+{s}\b"
+            rf"|{receiver}"
         ),
         "from-import": re.compile(rf"^\s*from\s+\S+\s+import\s+.*\b{s}\b"),
         # Only meaningful inside a parenthesized import list; on its own a
-        # bare line is a standalone reference, not an import.
-        "import-list-item": re.compile(rf"^\s*{s}(?:\s+as\s+\w+)?\s*,?\s*$"),
+        # bare line is a standalone reference, not an import. Neighbours on the
+        # same line are allowed — `helper, other,` is still an import of both.
+        "import-list-item": re.compile(
+            rf"^[\s(]*(?:\w+(?:\s+as\s+\w+)?\s*,\s*)*{s}(?:\s+as\s+\w+)?"
+            rf"(?:\s*,\s*\w+(?:\s+as\s+\w+)?)*\s*,?\s*\)?\s*$"
+        ),
         "plain-import": re.compile(rf"^\s*(?:import|require)\s*\(?\s*[\"']?\S*\b{s}\b"),
         "attribute": re.compile(rf"\.{s}\b"),
         "call": re.compile(rf"\b{s}\s*\("),
         "string": re.compile(rf"[\"']{s}[\"']"),
         "bare": re.compile(rf"\b{s}\b"),
     }
+
+
+# Per-language, because the marker is not universal: `//` is floor division in
+# Python and `#` is not a comment in C or JavaScript, so a blanket rule would
+# drop real references. Unlisted suffixes strip nothing.
+LINE_COMMENTS = {
+    ".py": ("#",), ".pyi": ("#",), ".sh": ("#",), ".bash": ("#",), ".zsh": ("#",),
+    ".rb": ("#",), ".yml": ("#",), ".yaml": ("#",), ".toml": ("#",), ".cfg": ("#",),
+    ".pl": ("#",), ".r": ("#",), ".tf": ("#",),
+    ".js": ("//",), ".mjs": ("//",), ".cjs": ("//",), ".jsx": ("//",),
+    ".ts": ("//",), ".tsx": ("//",), ".go": ("//",), ".rs": ("//",),
+    ".java": ("//",), ".kt": ("//",), ".swift": ("//",), ".scala": ("//",),
+    ".c": ("//",), ".h": ("//",), ".cc": ("//",), ".cpp": ("//",), ".hpp": ("//",),
+    ".cs": ("//",), ".php": ("//", "#"), ".sql": ("--",), ".lua": ("--",),
+}
+
+
+def code_part(line: str, markers: tuple[str, ...]) -> str:
+    """The line with any trailing line comment removed, quote-aware.
+
+    A symbol named only in a comment is not a reference to it, and counting one
+    produces exactly the false not-dead verdict this tool exists to prevent.
+    Quote tracking keeps a marker inside a string literal from truncating real
+    code.
+    """
+    if not markers:
+        return line
+    quote: str | None = None
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if quote is not None:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+        elif char in "\"'`":
+            quote = char
+        elif any(line.startswith(marker, index) for marker in markers):
+            return line[:index]
+        index += 1
+    return line
 
 
 def classify(line: str, patterns: dict[str, re.Pattern], in_import_block: bool) -> str | None:
@@ -138,6 +199,7 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
             continue
         if symbol not in text:
             continue
+        markers = LINE_COMMENTS.get(path.suffix.lower(), ())
         in_import_block = False
         for number, line in enumerate(text.splitlines(), start=1):
             stripped = line.strip()
@@ -147,7 +209,9 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
                 in_import_block = False
             if not word.search(line):
                 continue
-            kind = classify(line, patterns, in_import_block)
+            code = code_part(line, markers)
+            # Named only in a comment: kept as evidence, excluded from usage.
+            kind = classify(code, patterns, in_import_block) if word.search(code) else "comment"
             if kind:
                 entry = {
                     # posix form: the scope tests below split on "/", which a
@@ -158,10 +222,15 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
                     "text": stripped[:160],
                 }
                 hits.append(entry)
-                # `symbol = module.symbol` is a facade: recording only the
-                # definition would hide the very usage the audit is counting.
-                if kind == "definition" and patterns["attribute"].search(line):
-                    hits.append({**entry, "kind": "attribute"})
+                # First match wins, so a definition line stops there and its
+                # right-hand side is lost — and `symbol = module.symbol` is
+                # exactly how a live symbol hides behind a facade. Classify the
+                # RHS separately and record that too.
+                if kind == "definition" and "=" in code:
+                    rhs = code.split("=", 1)[1]
+                    rhs_kind = classify(rhs, patterns, False) if word.search(rhs) else None
+                    if rhs_kind and rhs_kind != "definition":
+                        hits.append({**entry, "kind": rhs_kind})
 
     definition_files = sorted({h["file"] for h in hits if h["kind"] == "definition"})
     # Prefer real declarations when inferring the internal boundary: a plain
@@ -192,7 +261,9 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
     by_kind: dict[str, int] = {}
     for hit in hits:
         by_kind[hit["kind"]] = by_kind.get(hit["kind"], 0) + 1
-    usage = [h for h in hits if h["kind"] != "definition"]
+    # A mention in a comment is evidence, not a use: it must not keep a dead
+    # symbol looking alive, and it must not count toward the deletion verdict.
+    usage = [h for h in hits if h["kind"] not in {"definition", "comment"}]
     return {
         "symbol": symbol,
         "root": str(root),
@@ -219,7 +290,7 @@ def render(result: dict) -> None:
         print("defined in: (no definition site matched — check the spelling or a generated source)")
     print(f"internal prefixes: {', '.join(result['internalPrefixes']) or '(none inferred)'}")
     print("\nby pattern:")
-    for kind in ("definition", "from-import", "plain-import", "attribute", "call", "string", "bare"):
+    for kind in ("definition", "from-import", "plain-import", "attribute", "call", "string", "bare", "comment"):
         if kind in counts["byKind"]:
             print(f"  {kind:<13} {counts['byKind'][kind]}")
     print(f"\nusage excluding definitions: {counts['internalUsage']} internal, {counts['externalUsage']} external")
