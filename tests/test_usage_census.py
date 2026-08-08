@@ -197,6 +197,21 @@ class CensusTest(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertEqual(script.classify(line, pats, True), "from-import")
 
+    def test_non_ascii_tracked_paths_are_not_skipped(self):
+        # Regression: git C-quotes such names ("caf\303\251.py") unless -z is
+        # passed. The quoted name resolved to nothing, so the file was skipped
+        # in silence — and a symbol referenced only there read as unused.
+        from support import commit_all, git_repo
+
+        git_repo(self.root)
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/café.py", "from .a import helper\n\nhelper()\n")
+        commit_all(self.root, "add a non-ascii filename")
+        result = self.census("helper")
+        files = {hit["file"] for hit in result["hits"]}
+        self.assertIn("src/pkg/café.py", files, files)
+        self.assertGreater(result["counts"]["internalUsage"] + result["counts"]["externalUsage"], 0)
+
     def test_recorded_paths_are_posix(self):
         # The scope tests split on "/", so a platform separator in the stored
         # path would break the internal/external split.

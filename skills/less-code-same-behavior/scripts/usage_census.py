@@ -54,13 +54,18 @@ def tracked_files(root: Path) -> list[Path]:
     guard FileNotFoundError aborts the run before the documented fallback.
     """
     try:
+        # -z: without it git C-quotes any path holding a non-ASCII or unusual
+        # byte ("caf\303\251.py"). Those names never resolve, so the files were
+        # skipped in silence — and a symbol whose only reference lived in one
+        # would be reported unused, which is the verdict that ends in a delete.
         proc = subprocess.run(
-            ["git", "-C", str(root), "ls-files"], capture_output=True, text=True, timeout=60
+            ["git", "-C", str(root), "ls-files", "-z"],
+            capture_output=True, text=True, timeout=60,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         proc = None
     if proc is not None and proc.returncode == 0:
-        tracked = [root / line for line in proc.stdout.splitlines() if line.strip()]
+        tracked = [root / name for name in proc.stdout.split("\0") if name]
         if tracked:
             return tracked
         # A repository that tracks nothing is still a repository, so an empty
