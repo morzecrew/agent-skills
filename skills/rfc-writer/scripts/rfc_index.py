@@ -28,6 +28,7 @@ import argparse
 import contextlib
 import os
 import re
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -268,8 +269,11 @@ def acquire_lock(handle) -> None:
     elif msvcrt is not None:
         # Windows has no flock; LK_LOCK blocks, retrying for about ten seconds
         # before raising, which is far longer than this critical section.
+        # locking() moves the file position, so put it back — the caller reads
+        # from this handle, and starting at byte 1 would drop a byte.
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        handle.seek(0)
 
 
 def release_lock(handle) -> None:
@@ -278,6 +282,15 @@ def release_lock(handle) -> None:
     elif msvcrt is not None:
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+def same_file(handle, path: Path) -> bool:
+    """Whether this open handle still refers to what `path` names now."""
+    try:
+        opened, current = os.fstat(handle.fileno()), os.stat(path)
+    except OSError:
+        return False
+    return (opened.st_ino, opened.st_dev) == (current.st_ino, current.st_dev)
 
 
 @contextlib.contextmanager
@@ -289,16 +302,26 @@ def locked_index(index_path: Path):
     second write drops the first's row — losing the very record numbering is
     derived from. Reads elsewhere take no lock, so they cannot deadlock here.
 
-    The lock is held on the index as it stands on entry, and the update's last
-    act is an atomic replace, so a run that opens the file after that replace
-    reads content already committed rather than a half-written state.
+    Holding the lock is not enough on its own, because the update replaces the
+    index rather than writing through it. A waiter that opened the file before
+    that replace holds the *old* inode: it would take the lock on a file no
+    longer at this path, read the pre-update contents, and commit them over the
+    row just written. So after acquiring, check the handle still refers to the
+    path's current file, and start again on the new one if it does not.
     """
-    with index_path.open("r+", encoding="utf-8") as handle:
+    while True:
+        handle = index_path.open("r+", encoding="utf-8")
         acquire_lock(handle)
-        try:
-            yield handle
-        finally:
-            release_lock(handle)
+        if same_file(handle, index_path):
+            break
+        # Replaced while we waited: this lock guards a file nobody will read.
+        release_lock(handle)
+        handle.close()
+    try:
+        yield handle
+    finally:
+        release_lock(handle)
+        handle.close()
 
 
 def replace_index(index_path: Path, text: str) -> None:
@@ -320,6 +343,10 @@ def replace_index(index_path: Path, text: str) -> None:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
+        # A temp file is created 0600. Carrying the destination's mode across
+        # keeps a world-readable index readable after the first `new` runs.
+        with contextlib.suppress(OSError):
+            os.chmod(temp_path, stat.S_IMODE(os.stat(index_path).st_mode))
         os.replace(temp_path, index_path)
     except OSError:
         temp_path.unlink(missing_ok=True)

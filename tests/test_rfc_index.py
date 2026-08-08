@@ -252,8 +252,35 @@ class RfcCollectionTest(unittest.TestCase):
             (self.rfcs / "INDEX.md").read_text(encoding="utf-8"), index_text,
             "a failed update must leave the index exactly as it was",
         )
+    def test_a_failed_atomic_write_leaves_no_temp_file(self):
+        # The real path, not a stub: the previous assertion sat in the test
+        # that replaces replace_index wholesale, so it could never have seen a
+        # temp file whether or not one was cleaned up.
+        index_path = self.rfcs / "INDEX.md"
+        before = index_path.read_text(encoding="utf-8")
+        original_replace = script.os.replace
+
+        def failing_replace(*_args):
+            raise OSError("No space left on device")
+
+        script.os.replace = failing_replace
+        try:
+            with self.assertRaises(OSError):
+                script.replace_index(index_path, "# never lands\n")
+        finally:
+            script.os.replace = original_replace
+
+        self.assertEqual(index_path.read_text(encoding="utf-8"), before)
         leftovers = [p.name for p in self.rfcs.iterdir() if p.name.endswith(".tmp")]
         self.assertEqual(leftovers, [], "no temp file may survive a failed replace")
+
+    def test_index_keeps_its_mode_across_a_replace(self):
+        # Regression: the temp file is created 0600, so an index that was
+        # world-readable stopped being so after the first `new`.
+        index_path = self.rfcs / "INDEX.md"
+        index_path.chmod(0o644)
+        script.replace_index(index_path, "# replaced\n")
+        self.assertEqual(index_path.stat().st_mode & 0o777, 0o644)
 
     def test_index_replace_is_atomic_and_leaves_no_temp_file(self):
         # Rewriting in place truncated the old contents before the new ones
@@ -276,6 +303,34 @@ class RfcCollectionTest(unittest.TestCase):
         bare = re.sub(r"\\.", "", row)
         self.assertEqual(bare.count("|"), 5, f"exactly five delimiters: {row}")
         self.assertEqual(self.check(), 0, "the collection must stay consistent")
+
+    @unittest.skipIf(script.fcntl is None, "no fcntl on this platform")
+    def test_a_replaced_index_is_relocked_before_use(self):
+        # Regression: the lock was held on the inode that os.replace unlinks,
+        # so a waiter that opened the file first would acquire the lock on a
+        # file no longer at this path, read the pre-update contents, and commit
+        # them over the row just written. The waiter must notice and start
+        # again on the file that is actually there now.
+        index_path = self.rfcs / "INDEX.md"
+        read_by_waiter: list[str] = []
+
+        def waiter():
+            with script.locked_index(index_path) as handle:
+                read_by_waiter.append(handle.read())
+
+        with script.locked_index(index_path):
+            thread = threading.Thread(target=waiter, daemon=True)
+            thread.start()
+            # The waiter is now blocked on the inode we hold. Replace the file
+            # underneath it, exactly as cmd_new does.
+            script.replace_index(index_path, "# committed by the first writer\n")
+
+        thread.join(timeout=10)
+        self.assertEqual(len(read_by_waiter), 1, "the waiter must have run")
+        self.assertIn(
+            "committed by the first writer", read_by_waiter[0],
+            "the waiter read the replaced inode and would have clobbered the update",
+        )
 
     @unittest.skipIf(script.fcntl is None, "no fcntl on this platform")
     def test_index_lock_excludes_a_concurrent_writer(self):
