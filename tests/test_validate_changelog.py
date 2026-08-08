@@ -188,6 +188,20 @@ class ChangelogTest(unittest.TestCase):
         text = text.replace("[1.0.0]: https://x/releases/tag/v1.0.0", "  [nonsense]: https://x/y")
         self.assert_flags(text, "S7")
 
+    def test_prerelease_ranks_below_its_own_release(self):
+        # Regression: comparing only the numeric core made 1.0.0-rc.1 and
+        # 1.0.0 equal, so a prerelease listed above its release passed S4.
+        text = GOOD.replace("## [1.1.0] - 2026-02-01", "## [1.0.0-rc.1] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.0.0-rc.1]: https")
+        self.assert_flags(text, "S4")
+
+    def test_release_above_its_prerelease_is_correct_order(self):
+        text = GOOD.replace("## [1.0.0] - 2026-01-01 [YANKED]", "## [1.0.0-rc.1] - 2026-01-01")
+        text = text.replace("[1.0.0]: https", "[1.0.0-rc.1]: https")
+        text = text.replace("## [1.1.0] - 2026-02-01", "## [1.0.0] - 2026-02-01")
+        text = text.replace("[1.1.0]: https", "[1.0.0]: https")
+        self.assertEqual([p for p in self.check(text) if p.startswith("S4")], [])
+
     def test_duplicate_version_across_a_v_prefix(self):
         # Regression: keying on the raw heading made [1.0.0] and [v1.0.0] look
         # like different releases.

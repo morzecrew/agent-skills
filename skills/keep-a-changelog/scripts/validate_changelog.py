@@ -95,9 +95,28 @@ def outside_fences(lines: list[str], start: int, end: int) -> list[int]:
     return kept
 
 
-def core_version(version: str) -> tuple[int, int, int] | None:
-    match = SEMVER_CORE.match(version.strip().lstrip("vV"))
-    return (int(match.group(1)), int(match.group(2)), int(match.group(3))) if match else None
+def core_version(version: str) -> tuple | None:
+    """A SemVer precedence key, prerelease included.
+
+    Comparing on the numeric core alone made 1.0.0-rc.1 and 1.0.0 equal, so a
+    prerelease listed above its own release passed the latest-first check.
+    SemVer ranks a release above any of its prereleases, and among prereleases
+    ranks numeric identifiers below alphanumeric ones.
+    """
+    text = version.strip().lstrip("vV")
+    match = SEMVER_CORE.match(text)
+    if not match:
+        return None
+    core = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    remainder = text[match.end():]
+    if not remainder.startswith("-"):
+        return core + (1, ())
+    prerelease = remainder[1:].split("+", 1)[0]
+    identifiers = tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part)
+        for part in prerelease.split(".")
+    )
+    return core + (0, identifiers)
 
 
 def entry_texts(lines: list[str], live: list[int]) -> list[tuple[int, str]]:
