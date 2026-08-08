@@ -166,6 +166,34 @@ class VerifiedRedTest(unittest.TestCase):
         chained = "1 passed in 0.01s\nModuleNotFoundError: No module named 'helper'\n"
         self.assertTrue(script.looks_like_setup_failure(chained))
 
+    def test_stream_order_survives_a_split_across_stdout_and_stderr(self):
+        # Regression: stdout and stderr were captured separately and joined
+        # afterwards, so an early summary on stderr looked later than a
+        # subsequent failure on stdout, and the run was certified. Merging at
+        # the source keeps the order the command produced.
+        self.apply_fix()
+        (self.root / "t.py").write_text(
+            "import sys\n"
+            "print('1 passed in 0.01s', file=sys.stderr)\n"        # earlier, on stderr
+            "print('ModuleNotFoundError: No module named \\'x\\'')\n"  # later, on stdout
+            "sys.exit(1)\n"
+        )
+        result = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], None, False)
+        self.assertTrue(result["redFailedBeforeTesting"], result["redTail"])
+        self.assertFalse(result["certified"])
+
+    def test_a_setup_failure_is_named_even_with_a_mismatched_expected_exit(self):
+        # Regression: the check was gated on the exit code matching
+        # --expect-red-exit, so an import failure exiting 1 against an expected
+        # 3 was reported as "the test passed without the fix". It never ran.
+        self.apply_fix()
+        (self.root / "helper_mod.py").write_text("VALUE = 1\n")  # never committed
+        (self.root / "t.py").write_text("import helper_mod\n" + DISCRIMINATING_TEST)
+        result = script.certify(self.root, "HEAD", "python3 t.py", [Path("t.py")], 3, False)
+        self.assertTrue(result["redFailedBeforeTesting"], result["redTail"])
+        self.assertIn("--test-file", result["verdict"])
+        self.assertNotIn("passed without the fix", result["verdict"])
+
     def test_a_summary_after_the_error_means_the_tests_ran(self):
         recovered = "ImportError: mentioned in a fixture\n1 failed in 0.02s\n"
         self.assertFalse(script.looks_like_setup_failure(recovered))

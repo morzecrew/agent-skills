@@ -156,13 +156,18 @@ def run_test(
     # diverge from the other.
     # Its own session, so a timeout can take the entire process tree with it.
     # (Keep the nosec bare: bandit parses whatever trails it as further test ids.)
+    # One stream, not two: the setup-failure check weighs which signal came
+    # last, and concatenating separate pipes afterwards can reverse them — a
+    # summary written to stderr would look later than a collection failure
+    # written to stdout. Merging at the source keeps the order the command
+    # actually produced.
     proc = subprocess.Popen(  # nosec B602
         command, shell=True, cwd=str(cwd), stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, text=True, start_new_session=True,
+        stderr=subprocess.STDOUT, text=True, start_new_session=True,
     )
     timed_out = False
     try:
-        stdout, stderr = proc.communicate(timeout=timeout_s)
+        merged, _ = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired:
         timed_out = True
         kill_tree(proc)
@@ -171,7 +176,7 @@ def run_test(
             # leaves a grandchild holding the pipe open, and an unbounded
             # second communicate() would then hang forever — the very failure
             # the timeout exists to prevent.
-            stdout, stderr = proc.communicate(timeout=GRACE_S)
+            merged, _ = proc.communicate(timeout=GRACE_S)
         except subprocess.TimeoutExpired:
             # Try the group once more, then stop waiting either way. A child
             # that called setsid is in its own session and outside this group,
@@ -181,13 +186,13 @@ def run_test(
             # never reads a timeout as red — so say plainly what may survive
             # rather than let the operator assume it was cleaned up.
             kill_tree(proc)
-            stdout, stderr = "", (
+            merged = (
                 "[output unavailable: something held the pipes open past the kill. "
                 "A process that detached into its own session may still be running — "
                 "check for strays before trusting the next run.]"
             )
-            print(f"warning: {stderr}", file=sys.stderr)
-    output = ((stdout or "") + (stderr or "")).strip()
+            print(f"warning: {merged}", file=sys.stderr)
+    output = (merged or "").strip()
     if timed_out:
         output = f"{output}\n[timed out after {timeout_s}s]".strip()
     if verbose and output:
@@ -263,7 +268,11 @@ def certify(
     red_ok = (red_code != 0) if expect_red_exit is None else (red_code == expect_red_exit)
     # A red run that never got as far as running the test is not a reproduction,
     # however non-zero it exited.
-    unrelated = red_ok and not allow_red_error and looks_like_setup_failure(red_output)
+    # Not gated on red_ok: with --expect-red-exit 3, an import failure exiting 1
+    # made red_ok false and the verdict then claimed the test *passed* without
+    # the fix. It never ran at all, which is a different fault and a different
+    # remedy, so the run has to be able to say so whatever the exit code was.
+    unrelated = not allow_red_error and looks_like_setup_failure(red_output)
     timed_out = red_timed_out or green_timed_out
     green_ok = green_code == 0
     result["redFailedAsRequired"] = red_ok and not unrelated and not red_timed_out
