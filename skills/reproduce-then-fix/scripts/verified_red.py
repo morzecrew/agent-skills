@@ -102,6 +102,24 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     return proc
 
 
+def looks_like_setup_failure(output: str) -> bool:
+    """Whether the run died before it tested anything.
+
+    Evidence is weighed by order, not by mere presence. A chained command
+    (`pytest unit && pytest integration`) prints its own "1 passed" summary
+    before a later stage fails to import, so "some test ran at some point" is
+    not proof that *this* reproduction ran — what matters is which signal came
+    last. Streams are concatenated stdout-then-stderr, so the ordering is
+    approximate across them; it is the best evidence available without
+    parsing a specific runner's output format.
+    """
+    setup = [match.end() for match in INFRASTRUCTURE_RED.finditer(output)]
+    if not setup:
+        return False
+    ran = [match.end() for match in TESTS_RAN.finditer(output)]
+    return not ran or max(setup) > max(ran)
+
+
 def kill_tree(proc: subprocess.Popen) -> None:
     """Kill the whole process group, falling back to the process itself.
 
@@ -152,7 +170,10 @@ def run_test(
             # the timeout exists to prevent.
             stdout, stderr = proc.communicate(timeout=GRACE_S)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            # The group again, not just the direct child: a command that made
+            # its own session is precisely the case that got us here, and
+            # killing the shell alone leaves it running after we return.
+            kill_tree(proc)
             stdout, stderr = "", "[output unavailable: a detached process kept the pipes open]"
     output = ((stdout or "") + (stderr or "")).strip()
     if timed_out:
@@ -230,12 +251,7 @@ def certify(
     red_ok = (red_code != 0) if expect_red_exit is None else (red_code == expect_red_exit)
     # A red run that never got as far as running the test is not a reproduction,
     # however non-zero it exited.
-    unrelated = (
-        red_ok
-        and not allow_red_error
-        and bool(INFRASTRUCTURE_RED.search(red_output))
-        and not TESTS_RAN.search(red_output)
-    )
+    unrelated = red_ok and not allow_red_error and looks_like_setup_failure(red_output)
     timed_out = red_timed_out or green_timed_out
     green_ok = green_code == 0
     result["redFailedAsRequired"] = red_ok and not unrelated and not red_timed_out

@@ -159,6 +159,17 @@ class VerifiedRedTest(unittest.TestCase):
         self.assertTrue(result["certified"], result)
         self.assertFalse(result["redFailedBeforeTesting"])
 
+    def test_an_earlier_stages_summary_is_not_proof_this_test_ran(self):
+        # Regression: any "1 passed" anywhere suppressed the setup-failure
+        # verdict, so a chained command whose *later* stage failed to import
+        # was certified. Order decides: the setup error came last here.
+        chained = "1 passed in 0.01s\nModuleNotFoundError: No module named 'helper'\n"
+        self.assertTrue(script.looks_like_setup_failure(chained))
+
+    def test_a_summary_after_the_error_means_the_tests_ran(self):
+        recovered = "ImportError: mentioned in a fixture\n1 failed in 0.02s\n"
+        self.assertFalse(script.looks_like_setup_failure(recovered))
+
     def test_kill_falls_back_when_the_group_kill_fails(self):
         # Regression: a PermissionError from killpg returned with nothing
         # signalled, leaving the run unbounded after its timeout.
