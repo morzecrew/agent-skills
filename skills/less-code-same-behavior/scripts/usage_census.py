@@ -48,6 +48,13 @@ MAX_BYTES = 2_000_000
 # A complete character literal: 'x', '\n', '\x41', '\u{1F600}'. Anything else
 # beginning with an apostrophe is a lifetime, a label, or a prime in a name.
 CHAR_LITERAL = re.compile(r"'(?:\\(?:u\{[0-9A-Fa-f]+\}|x[0-9A-Fa-f]{2}|.)|[^\\'])'")
+# Languages where an apostrophe opens a character literal rather than a string.
+# Everywhere else it quotes an ordinary string, and the two cannot share a rule:
+# one reading loses code after a lifetime, the other loses code after a string.
+APOSTROPHE_IS_CHAR = {
+    ".rs", ".c", ".h", ".cc", ".cpp", ".hpp", ".go", ".java",
+    ".cs", ".swift", ".kt", ".scala",
+}
 
 
 def tracked_files(root: Path) -> list[Path]:
@@ -180,7 +187,8 @@ BLOCK_COMMENTS = {
 
 
 def strip_comments(
-    line: str, markers: tuple[str, ...], block: tuple[str, str] | None, inside: bool
+    line: str, markers: tuple[str, ...], block: tuple[str, str] | None, inside: bool,
+    apostrophe_is_char: bool = False,
 ) -> tuple[str, bool]:
     """Strip line and block comments in one left-to-right pass.
 
@@ -216,12 +224,14 @@ def strip_comments(
             out.append(char)
             index += 1
             continue
-        if char == "'":
-            # Rust lifetimes and loop labels (`&'a str`, `'outer:`) open an
-            # apostrophe that never closes. Treating one as a string ran the
-            # "inside a string" state to the end of the line, so a block
-            # comment after it went unstripped and its mentions counted as
-            # live usage. Only a complete character literal is a string.
+        if char == "'" and apostrophe_is_char:
+            # Only where the language says so. In Rust, C and Go an apostrophe
+            # opens a character literal — or, in `&'a str` and `'outer:`, no
+            # literal at all. Treating those as strings ran the "inside a
+            # string" state to the end of the line and left a block comment
+            # unstripped. Elsewhere — Python, JavaScript, PHP, shell — `'`
+            # quotes an ordinary string, and refusing to open one there let a
+            # `#` *inside* a string truncate the line and drop live code.
             literal = CHAR_LITERAL.match(line, index)
             if literal:
                 out.append(literal.group(0))
@@ -230,7 +240,7 @@ def strip_comments(
                 out.append(char)
                 index += 1
             continue
-        if char in "\"`":
+        if char in "\"`" or char == "'":
             quote = char
             out.append(char)
             index += 1
@@ -286,7 +296,9 @@ def census(root: Path, symbol: str, internal_prefixes: list[str]) -> dict:
             stripped = line.strip()
             # Comment stripping comes first: a line inside a block comment must
             # not drive the import-block state either.
-            code, in_block_comment = strip_comments(line, markers, block, in_block_comment)
+            code, in_block_comment = strip_comments(
+                line, markers, block, in_block_comment, suffix in APOSTROPHE_IS_CHAR
+            )
             if re.match(r"^\s*(?:from|import)\b.*\($", code):
                 in_import_block = True
             elif in_import_block and code.strip().startswith(")"):

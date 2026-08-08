@@ -208,6 +208,25 @@ class CensusTest(unittest.TestCase):
         kinds = self.census("helper")["counts"]["byKind"]
         self.assertGreaterEqual(kinds.get("call", 0), 1, kinds)
 
+    def test_single_quoted_string_protects_a_comment_marker(self):
+        # Regression: the lifetime fix made `'` never open a string, but
+        # Python, JavaScript and PHP quote ordinary strings with it — so a `#`
+        # or `//` *inside* one truncated the line and dropped the live call
+        # after it, which is the same false-dead verdict from the other side.
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", "value = call('#nope') or helper()\n")
+        self.write("src/pkg/c.js", "const s = '// nope'; helper();\n")
+        kinds = self.census("helper")["counts"]["byKind"]
+        self.assertGreaterEqual(kinds.get("call", 0), 2, kinds)
+
+    def test_a_python_comment_is_still_stripped(self):
+        # The control for the above: `'` opening strings must not stop real
+        # line comments being removed.
+        self.write("src/pkg/a.py", "def helper():\n    return 1\n")
+        self.write("src/pkg/b.py", "x = 1  # helper is dead, remove it\n")
+        counts = self.census("helper")["counts"]
+        self.assertEqual(counts["internalUsage"] + counts["externalUsage"], 0, counts)
+
     def test_rust_lifetimes_do_not_suppress_comment_stripping(self):
         # Regression: `'a` opened a quote that never closed, so the rest of
         # the line counted as string content and a block comment after it went
