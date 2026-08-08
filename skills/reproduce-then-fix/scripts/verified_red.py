@@ -25,7 +25,10 @@ strand your work; the worktree is removed in a finally block either way.
                     only base plus --test-file, so a conftest or helper missing
                     from both fails the run without testing anything
   --timeout-seconds kill either run after this long (default 900); a hung
-                    reproduction is not a red result
+                    reproduction is not a red result. The kill covers the
+                    command's process group; a test command that deliberately
+                    detaches into its own session is outside it and may survive,
+                    which the run says on stderr when it happens
 
 `--test-cmd` runs through your shell, so it takes the command lines you would
 type — pipes, `&&`, redirection. It therefore runs with your privileges: pass a
@@ -170,11 +173,20 @@ def run_test(
             # the timeout exists to prevent.
             stdout, stderr = proc.communicate(timeout=GRACE_S)
         except subprocess.TimeoutExpired:
-            # The group again, not just the direct child: a command that made
-            # its own session is precisely the case that got us here, and
-            # killing the shell alone leaves it running after we return.
+            # Try the group once more, then stop waiting either way. A child
+            # that called setsid is in its own session and outside this group,
+            # so nothing here can reach it: terminating an arbitrary job needs
+            # cgroups or a Windows job object, which is beyond a stdlib script.
+            # What this guarantees is bounded — the certifier stops waiting and
+            # never reads a timeout as red — so say plainly what may survive
+            # rather than let the operator assume it was cleaned up.
             kill_tree(proc)
-            stdout, stderr = "", "[output unavailable: a detached process kept the pipes open]"
+            stdout, stderr = "", (
+                "[output unavailable: something held the pipes open past the kill. "
+                "A process that detached into its own session may still be running — "
+                "check for strays before trusting the next run.]"
+            )
+            print(f"warning: {stderr}", file=sys.stderr)
     output = ((stdout or "") + (stderr or "")).strip()
     if timed_out:
         output = f"{output}\n[timed out after {timeout_s}s]".strip()
