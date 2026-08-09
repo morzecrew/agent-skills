@@ -179,7 +179,7 @@ def check_readme(all_names: set[str]) -> None:
     if not m:
         err("E11", "README.md: no '## Available Skills' section")
         return
-    listed = {h.strip() for h in re.findall(r"^###\s+(.+)$", m.group(1), re.M)}
+    listed = set(re.findall(r"\]\(skills/([^/)]+)/\)", m.group(1)))
     for name in sorted(all_names - listed):
         err("E11", f"README.md: skill {name!r} has no Available Skills entry")
     for name in sorted(listed - all_names):

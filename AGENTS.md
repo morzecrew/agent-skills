@@ -48,6 +48,6 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 1. Create `skills/<skill-name>/SKILL.md`.
 2. Include YAML frontmatter with `name` and `description`.
 3. Document when the skill applies ("Use when") and what it covers ("Categories covered").
-4. Add the skill to README.md under "Available Skills".
+4. Add the skill to README.md under "Available Skills" — one table row, `| [<name>](skills/<name>/) | one-line summary |`, in the theme group it belongs to.
 5. Run `python3 scripts/validate_skills.py` — it enforces 1-4.
 6. If the skill bundles `scripts/`, mention each script in `SKILL.md` (the validator requires it) and add tests under `tests/`.
