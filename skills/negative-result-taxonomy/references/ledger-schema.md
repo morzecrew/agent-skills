@@ -1,9 +1,9 @@
 # Kill-ledger schema
 
 The file `scripts/kill_ledger.py` validates. One JSON document, one array of entries,
-one entry per negative result. Append-mostly: a class may be **escalated**
-(`DESIGN_DEAD` → `FAMILY_DEAD` once ceiling evidence exists) but never silently
-downgraded, and every change carries its evidence path.
+one entry per negative result. Mostly additive: a label may be **raised** (`DESIGN_DEAD` → `FAMILY_DEAD` once a
+ceiling measurement exists) but never quietly lowered, and each change records
+where its evidence lives.
 
 The example below is invented, and deliberately mundane — the schema is
 domain-agnostic, and the fields matter more than what they happen to describe.
@@ -54,10 +54,11 @@ domain-agnostic, and the fields matter more than what they happen to describe.
 | `ticket` | **iff `DESIGN_DEAD`** | the redesign ticket. |
 | `power_plan` | **iff `UNDECIDABLE`** | the priced way out. |
 
-Any field expected to carry prose is read as **absent** unless it is a non-empty
-string. `null`, `false`, `0`, `[]`, `{}` and `"   "` are all absent — deliberately,
-because `str(None)` is `"None"`, which is truthy, and that one detail once turned
-"no value yet" into a recorded decision.
+A field expected to carry text counts as **absent** unless it holds a non-empty
+string. `null`, `false`, `0`, `[]`, `{}` and whitespace are all absent, on
+purpose: converting None to text yields the string "None", which reads as
+present, and that single detail once turned "nothing here yet" into a recorded
+decision.
 
 ## `kill_class`
 
@@ -80,22 +81,23 @@ difference is what to do next: fix the instrument, or buy resolution.
 | `failing_prong` | yes on `DESIGN_DEAD` | the bar that failed, with the measured number and the bar. |
 | `measured_cause` | yes on `DESIGN_DEAD` | the mechanism of failure, measured. |
 | `candidate_fix` | yes on `DESIGN_DEAD` | the change, and its precedent if it has one. |
-| `cheapest_test` | yes on `DESIGN_DEAD` | the test that settles it, with its cost. |
+| `cheapest_test` | yes on `DESIGN_DEAD` | the smallest thing that would settle it, and what running it costs. |
 | `prediction` | no | the call, made before the test runs. |
 | `owner_ruling` | **iff `FUNDED` or `RETIRED_BY_OWNER`** | a **path to a file outside this ledger**, recording the decision. The file must exist. |
 | `opened_utc` | no | `YYYY-MM-DD`; feeds the opened-vs-attempted meter. |
 | `closed_utc` | no | `YYYY-MM-DD`; feeds the meter. |
 | `note` | no | append-only. New status first, `PRIOR DIAGNOSIS:` and the original text after. |
 
-**Buckets.** `OWED` = {`OPEN`, `FUNDED`} — listed on every run. `CLOSED` =
-{`ATTEMPTED`, `RETIRED_BY_OWNER`} — silent. Widening the vocabulary means adding
+**Groups.** `OUTSTANDING` = {`OPEN`, `FUNDED`} — reported on every run.
+`SETTLED` = {`ATTEMPTED`, `RETIRED_BY_OWNER`} — silent. Widening the vocabulary means adding
 to a bucket, never to the accept set; the two must partition the valid statuses,
 and a test should assert that they do.
 
 **Why `owner_ruling` names a file.** A non-empty field inside the same JSON the
 agent is writing is bookkeeping in the costume of authentication — the same
 keystroke writes both. A separate artifact can be read and repudiated by the
-person it names. It is still forgeable, so it is a speed bump, not a lock.
+person it names. It remains forgeable, so it adds friction rather than
+prevention.
 
 ## `power_plan`
 
@@ -110,8 +112,9 @@ All six fields required, all non-empty:
 | `cheaper_alternative` | the smaller question that could be answered instead |
 | `recommendation` | run it, shrink it, or park it |
 
-A plan that recommends PARK is the stall written down, not the cure for it — the
-point is that parking becomes a choice against a number.
+One recommending that the work be shelved records the delay rather than
+resolving it; the point is that shelving becomes a decision weighed against a
+figure.
 
 ## Verdicts
 

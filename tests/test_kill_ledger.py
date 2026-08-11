@@ -1,8 +1,8 @@
 """Tests for negative-result-taxonomy/scripts/kill_ledger.py.
 
-The ledger is itself a gate, so these follow the rule the sibling skill states:
-every check must be provably able to REFUSE and provably able to PASS, and each
-scar that produced a clause has a test that fails if the clause is removed.
+This validator is itself a check, so it follows the rule the sibling skill
+sets out: show it turning something away, show it letting something through,
+and give every clause a test that goes red when the clause is deleted.
 """
 
 from __future__ import annotations
@@ -57,8 +57,9 @@ class TestFamilyDeath(LedgerCase):
         self.assertEqual(r["verdict"], "OK", r)
 
     def test_a_falsy_ceiling_is_not_a_ceiling(self):
-        """`str(None)` is "None", which is truthy. The naive form accepted the
-        ledger's own idiom for "no value yet" as measured evidence."""
+        """Converting None to text yields "None", which reads as present, so
+        the obvious form counted the ordinary way of writing "nothing here yet"
+        as a measurement."""
         for junk in (None, False, 0, [], {}, "", "   "):
             r = self.audit([{"candidate": "x-v1", "kill_class": "FAMILY_DEAD",
                              "ceiling_evidence": junk}])
@@ -107,12 +108,12 @@ class TestRedesignTicket(LedgerCase):
             self.assertBlocks(r, "is invalid")
 
     def test_a_non_string_status_blocks_and_never_raises(self):
-        """A set membership test hashes its operand; the tuple `in` it replaced
-        did not. One raise inside a gate reported every check clean."""
+        """Set membership hashes its operand where the tuple form compared by
+        equality. A single throw inside a check reported the whole run clean."""
         for junk in ([{"a": 1}], {"a": 1}, 7, True):
             r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
                              "ticket": dict(TICKET, status=junk)}])
-            self.assertBlocks(r, "must be a string")
+            self.assertBlocks(r, "has to be text")
 
     def test_a_ticket_that_is_not_an_object_blocks(self):
         r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
@@ -142,9 +143,10 @@ class TestFunding(LedgerCase):
     FUNDED = dict(TICKET, status="FUNDED", owner_ruling="rulings/2026-08-07.md")
 
     def test_funded_is_owed_and_stays_owed_even_when_it_is_a_defect(self):
-        """FUNDED means the test was paid for and has not run. A state that let
-        a line read as settled by promising to pay would be a way to clear debt
-        by intending to — so it is owed whether or not its ruling checks out."""
+        """FUNDED means the work was authorised and has not happened. A state
+        letting an item read as finished on the strength of an undertaking would
+        discharge the obligation by intending to meet it, so it stays
+        outstanding whether or not its supporting artifact checks out."""
         r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
                          "ticket": dict(self.FUNDED)}])
         self.assertEqual(r["verdict"], "LOOP_DEBT")     # the ruling file is absent
@@ -225,9 +227,9 @@ class TestFunding(LedgerCase):
 class TestVisibility(LedgerCase):
 
     def test_owed_tickets_stay_visible_when_the_ledger_is_red(self):
-        """"Listed on every run" means every run. Parked in the pass branch,
-        one unrelated defect hid every owed ticket behind it — the debt
-        disappearing exactly when the ledger was in its worst shape."""
+        """"Every run" means every run. Kept inside the success branch, a
+        single unrelated defect concealed every outstanding item behind it,
+        so obligations vanished precisely when the record was worst."""
         r = self.audit([
             {"candidate": "x-v1", "kill_class": "DESIGN_DEAD", "ticket": dict(TICKET)},
             {"candidate": "broken-v1", "kill_class": "FAMILY_DEAD"},
@@ -250,7 +252,7 @@ class TestVisibility(LedgerCase):
                          "base": {"artifact": "champ.tar.gz"}}])
         rendered = kl.render(r)
         self.assertIn("WARNINGS", rendered)
-        self.assertIn("stronger", rendered)
+        self.assertIn("is ahead", rendered)
 
 
 class TestAntiZombie(LedgerCase):
@@ -262,7 +264,7 @@ class TestAntiZombie(LedgerCase):
 
     def test_two_deaths_on_the_same_prong_and_cause_block(self):
         r = self.audit(self.twice())
-        self.assertBlocks(r, "CEILING test, never a third variant")
+        self.assertBlocks(r, "CEILING measurement, not a third variant")
 
     def test_a_ceiling_measurement_anywhere_in_the_family_clears_it(self):
         entries = self.twice()
@@ -277,7 +279,7 @@ class TestAntiZombie(LedgerCase):
         to prove."""
         r = self.audit(self.twice(
             ceiling_evidence="an oracle planner clears the bar easily"))
-        self.assertBlocks(r, "CEILING test, never a third variant")
+        self.assertBlocks(r, "CEILING measurement, not a third variant")
 
     def test_ceiling_evidence_outside_family_dead_is_itself_a_defect(self):
         """Ignoring it silently would hide the misclassification."""
@@ -294,7 +296,7 @@ class TestAntiZombie(LedgerCase):
         ticket = dict(TICKET, failing_prong=noisy,
                       measured_cause=TICKET["measured_cause"].upper())
         r = self.audit(self.twice(ticket=ticket))
-        self.assertBlocks(r, "same prong")
+        self.assertBlocks(r, "one threshold for one reason")
 
     def test_a_different_cause_is_a_different_death(self):
         r = self.audit(self.twice(
@@ -416,7 +418,7 @@ class TestBase(LedgerCase):
         r = self.audit([{"candidate": "x-v1", "kill_class": "INSTRUMENT_VOID",
                          "base": {"artifact": "champ.tar.gz", "sha256": "ab"}}])
         self.assertEqual(r["verdict"], "OK", r)
-        self.assertTrue(any("stronger" in w for w in r["warnings"]))
+        self.assertTrue(any("is ahead" in w for w in r["warnings"]))
 
     def test_a_base_with_evidence_is_quiet(self):
         r = self.audit([{"candidate": "x-v1", "kill_class": "INSTRUMENT_VOID",
@@ -426,7 +428,7 @@ class TestBase(LedgerCase):
 
 
 class TestMalformedInput(unittest.TestCase):
-    """A gate that cannot read its input must rule on nothing, loudly."""
+    """A validator that cannot read its input says so instead of answering."""
 
     def audit_text(self, text, name="KILL_LEDGER.json"):
         with tempfile.TemporaryDirectory() as tmp:

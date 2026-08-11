@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Scan a diff for a check being widened rather than satisfied.
 
-The tell is exact: a check you wrote fails on your own change, and the fix
-begins "but in this case it's fine." It may well be fine. The check's value was
-never about this case — a scan that returns clean AFTER subtracting a list of
-declared exceptions proves only that whoever added the last exception remembered
-to declare it.
+The signature is unmistakable: a check fails on its own author's change, and
+the remedy opens with some version of "this instance is harmless." It probably
+is. That was never where the check's worth lay — an empty result computed after
+removing everything on an exemption list establishes only that the most recent
+exemption was filed correctly.
 
 Three shapes, all read off the diff:
 

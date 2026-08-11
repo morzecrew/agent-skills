@@ -24,7 +24,9 @@ BOILER = re.compile(
     r"path write text|re import sys|args parser parse args|else 0 if name|"
     r"json loads path read text|read text encoding utf 8|int m group|"
     r"str set str return|re compile r a za z0 9|verdict if name main|"
-    r"parent mkdir parents true exist ok)")
+    r"parent mkdir parents true exist ok|subprocess import sys from pathlib|"
+    r"return 0 if name main|r for r in rows if r|"
+    r"self assertequal|self assertin|self asserttrue|def test )")
 def norm(t): return re.sub(r"\s+"," ", re.sub(r"[^a-z0-9 ]+"," ", t.lower())).strip()
 ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawDescriptionHelpFormatter)

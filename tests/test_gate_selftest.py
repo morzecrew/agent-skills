@@ -219,7 +219,8 @@ class TestRubberStamp(AuditCase):
 class TestStrandedEntrypoint(AuditCase):
 
     def test_an_entrypoint_above_later_classes_is_flagged(self):
-        """One such file ran 12 tests, printed OK, and skipped 13."""
+        """One such file ran the first half of its suite, announced success,
+        and never reached the classes below the entrypoint."""
         findings = self.audit_tests('''
             import unittest
 
