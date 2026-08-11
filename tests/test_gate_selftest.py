@@ -142,6 +142,59 @@ class TestRubberStamp(AuditCase):
         ''')
         self.assertEqual(findings, [])
 
+    def test_a_bare_negative_assertion_is_not_a_refusal(self):
+        """`assertNotEqual(len(rows), 0)` says nothing about a gate refusing.
+        Counting the three negative assertions unconditionally let a suite with
+        no refusal coverage satisfy the requirement."""
+        findings = self.audit_tests('''
+            import unittest
+
+            class T(unittest.TestCase):
+                def test_a(self):
+                    self.assertEqual(gate()["verdict"], "OK")
+
+                def test_b(self):
+                    self.assertNotEqual(len(gate()["rows"]), 0)
+        ''')
+        self.assertIn("rubber-stamp", self.checks(findings))
+
+    def test_a_negative_assertion_on_an_exit_code_still_counts(self):
+        self.assertEqual(self.audit_tests('''
+            import unittest
+
+            class T(unittest.TestCase):
+                def test_a(self):
+                    self.assertEqual(gate()["verdict"], "OK")
+
+                def test_b(self):
+                    self.assertNotEqual(run().returncode, 0)
+        '''), [])
+
+    def test_a_failure_message_is_not_verdict_evidence(self):
+        """The msg argument describes the test, not the value the gate
+        produced — so prose in it must not satisfy the refusal requirement."""
+        findings = self.audit_tests('''
+            import unittest
+
+            class T(unittest.TestCase):
+                def test_a(self):
+                    self.assertEqual(gate()["verdict"], "OK",
+                                     "REFUSE was not expected here")
+        ''')
+        self.assertIn("rubber-stamp", self.checks(findings))
+
+    def test_a_real_verdict_operand_beside_a_message_still_counts(self):
+        self.assertEqual(self.audit_tests('''
+            import unittest
+
+            class T(unittest.TestCase):
+                def test_a(self):
+                    self.assertEqual(gate()["verdict"], "OK")
+
+                def test_b(self):
+                    self.assertEqual(gate()["verdict"], "REFUSE", "should refuse")
+        '''), [])
+
     def test_a_bare_number_is_not_an_exit_code(self):
         """`assertEqual(len(rows), 1)` must not read as a proof of refusal."""
         findings = self.audit_tests('''
@@ -255,6 +308,31 @@ class TestSwallowedFailure(AuditCase):
                     raise RuntimeError(path) from exc
         '''), [])
 
+    def test_a_handler_that_only_logs_the_failure_is_still_swallowing(self):
+        """Matching a blocking word anywhere in the handler let a log line
+        suppress the finding, while the caller still got a clean-looking {}."""
+        findings = self.audit_gate('''
+            def gate(path):
+                try:
+                    return load(path)
+                except Exception as exc:
+                    log.error("ERROR while parsing %s", exc)
+                    return {}
+        ''')
+        self.assertIn("swallowed-failure", self.checks(findings))
+
+    def test_appending_the_failure_to_a_findings_list_is_recording_it(self):
+        self.assertEqual(self.audit_gate('''
+            def gate(paths):
+                problems = []
+                for path in paths:
+                    try:
+                        load(path)
+                    except Exception:
+                        problems.append("REFUSE: unreadable input")
+                return problems
+        '''), [])
+
     def test_recording_a_failing_verdict_is_not_swallowing(self):
         self.assertEqual(self.audit_gate('''
             def gate(path):
@@ -320,6 +398,52 @@ class TestUnwiredVerdict(AuditCase):
 
             if __name__ == "__main__":
                 sys.exit(main())
+        '''), [])
+
+    def test_an_unrelated_literal_elsewhere_is_not_wiring(self):
+        """The check walked the whole return expression, so any non-zero
+        literal anywhere in any return in the file — including a dead helper's
+        — satisfied it. The check then reported clean and protected nothing."""
+        findings = self.audit_gate('''
+            import sys
+
+            def budget():
+                return {"limit": 5}
+
+            def main():
+                print(verdict())
+                return 0
+
+            if __name__ == "__main__":
+                sys.exit(main())
+        ''')
+        self.assertIn("unwired-verdict", self.checks(findings))
+
+    def test_a_literal_inside_a_call_is_not_wiring(self):
+        findings = self.audit_gate('''
+            import sys
+
+            def main():
+                return compute(retries=3)
+
+            if __name__ == "__main__":
+                sys.exit(main())
+        ''')
+        self.assertIn("unwired-verdict", self.checks(findings))
+
+    def test_a_named_dispatch_table_is_wiring(self):
+        """A module-level exit-code table is the same shape as an inline one,
+        and flagging it would be a false positive on correct code."""
+        self.assertEqual(self.audit_gate('''
+            import sys
+
+            EXIT = {"GO": 0, "HOLD": 1, "REFUSE": 2}
+
+            def main():
+                sys.exit(EXIT[verdict()])
+
+            if __name__ == "__main__":
+                main()
         '''), [])
 
     def test_a_dispatch_table_of_exit_codes_is_wiring(self):

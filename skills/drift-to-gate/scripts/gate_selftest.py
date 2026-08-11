@@ -51,6 +51,29 @@ PASSING_WORDS = {
 EXIT_HINT = re.compile(r"return_?code|exit_?code|exit_?status|\bstatus\b|verdict",
                        re.IGNORECASE)
 RAISES = {"assertRaises", "assertRaisesRegex", "raises"}
+# Negative assertions are weak evidence on their own: `assertNotEqual(len(rows),
+# 0)` says nothing about a gate refusing. They count only alongside something
+# exit- or verdict-shaped.
+NEGATIVE = {"assertFalse", "assertNotEqual", "assertNotIn"}
+# Where unittest puts the optional `msg` argument. A failure message is prose
+# about the test, not a value the gate produced — counting it let
+# `assertEqual(x, y, "REFUSE was not expected")` read as proof of a refusal.
+MSG_INDEX = {
+    **{name: 1 for name in ("assertTrue", "assertFalse", "assertIsNone",
+                            "assertIsNotNone")},
+    **{name: 2 for name in ("assertEqual", "assertNotEqual", "assertIn",
+                            "assertNotIn", "assertIs", "assertIsNot",
+                            "assertGreater", "assertGreaterEqual", "assertLess",
+                            "assertLessEqual", "assertAlmostEqual",
+                            "assertNotAlmostEqual", "assertListEqual",
+                            "assertDictEqual", "assertSetEqual",
+                            "assertTupleEqual", "assertCountEqual",
+                            "assertRegex", "assertNotRegex", "assertIsInstance",
+                            "assertNotIsInstance")},
+}
+# Calls that RECORD a failure, as opposed to merely mentioning one. A handler
+# that logs "ERROR ..." and returns {} has still swallowed the failure.
+RECORDING_CALLS = {"append", "add", "extend", "insert", "update", "setdefault"}
 WORD = re.compile(r"[^A-Za-z0-9]+")
 
 
@@ -101,17 +124,39 @@ def _assertion_nodes(func: ast.AST):
                     yield item.context_expr
 
 
+def _asserted_operands(node: ast.AST):
+    """The parts of an assertion that carry a value the gate produced.
+
+    Everything except the failure message. `assertEqual(x, y, "REFUSE was not
+    expected")` describes the test, not the verdict, and counting its message
+    let prose satisfy the refusal requirement.
+    """
+    if isinstance(node, ast.Assert):
+        return [node.test]
+    if not isinstance(node, ast.Call):
+        return [node]
+    args = list(node.args)
+    cut = MSG_INDEX.get(_call_name(node))
+    if cut is not None:
+        args = args[:cut]
+    return args + [kw.value for kw in node.keywords if kw.arg != "msg"]
+
+
 def classify_test(func: ast.AST, blocking: set[str], passing: set[str]) -> set[str]:
     """{'blocking'} / {'passing'} / both / neither, for one test function."""
     found: set[str] = set()
     for node in _assertion_nodes(func):
         name = _call_name(node)
-        if name in RAISES or name in ("assertFalse", "assertNotEqual", "assertNotIn"):
+        operands = _asserted_operands(node)
+        exit_shaped = bool(EXIT_HINT.search(" ".join(_names_in(a) for a in operands)))
+        if name in RAISES:
+            # An expected exception IS the refusal, whatever it is raised over.
+            found.add("blocking")
+        elif name in NEGATIVE and exit_shaped:
             found.add("blocking")
         elif name == "assertTrue":
             found.add("passing")
-        exit_shaped = bool(EXIT_HINT.search(_names_in(node)))
-        for child in ast.walk(node):
+        for child in (c for operand in operands for c in ast.walk(operand)):
             if not isinstance(child, ast.Constant):
                 continue
             value = child.value
@@ -184,6 +229,32 @@ def _broad(handler: ast.ExceptHandler) -> bool:
                for t in types)
 
 
+def _has_blocking(node: ast.AST | None, blocking: set[str]) -> bool:
+    return node is not None and any(
+        isinstance(n, ast.Constant) and isinstance(n.value, str)
+        and _words(n.value) & blocking for n in ast.walk(node))
+
+
+def _records_failure(body: ast.Module, blocking: set[str]) -> bool:
+    """Does this handler put the failure somewhere the caller can see it?
+
+    Returning it, assigning it, or appending it to a findings list all count.
+    Merely MENTIONING it does not: `log.error("ERROR while parsing")` beside a
+    `return {}` still hands back a clean-looking result, and matching arbitrary
+    text let exactly that shape suppress the finding.
+    """
+    for node in ast.walk(body):
+        if isinstance(node, ast.Return) and _has_blocking(node.value, blocking):
+            return True
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)) \
+                and _has_blocking(node.value, blocking):
+            return True
+        if isinstance(node, ast.Call) and _call_name(node) in RECORDING_CALLS \
+                and any(_has_blocking(arg, blocking) for arg in node.args):
+            return True
+    return False
+
+
 def _swallow_shape(handler: ast.ExceptHandler) -> str:
     """What the handler does instead, in the reader's terms."""
     last = handler.body[-1] if handler.body else None
@@ -206,8 +277,7 @@ def audit_gate(path: Path, tree: ast.Module, blocking: set[str]) -> list[dict]:
             body = ast.Module(body=handler.body, type_ignores=[])
             if any(isinstance(n, ast.Raise) for n in ast.walk(body)):
                 continue
-            if any(isinstance(n, ast.Constant) and isinstance(n.value, str)
-                   and _words(n.value) & blocking for n in ast.walk(body)):
+            if _records_failure(body, blocking):
                 continue
             findings.append({
                 "check": "swallowed-failure", "file": str(path),
@@ -222,17 +292,52 @@ def audit_gate(path: Path, tree: ast.Module, blocking: set[str]) -> list[dict]:
     return findings
 
 
-def _nonzero_int(node: ast.AST | None) -> bool:
-    """A non-zero integer literal anywhere under `node`.
+def _exit_values(node: ast.AST | None, tables: dict[str, ast.Dict]):
+    """The expressions a `return` or `exit(...)` can actually yield.
 
-    Covers `return 1`, `sys.exit(2)`, `return 1 if broken else 0`, and the
-    dispatch form `sys.exit({"GO": 0, "HOLD": 1}[verdict])` — all the ways a
-    refusal actually reaches an exit code.
+    Walking the whole expression instead let ANY non-zero literal anywhere in
+    ANY return in the file satisfy the check — `return {"limit": 5}`,
+    `return compute(retries=3)`, `return [1]` — so the finding stopped firing
+    on most real modules while the check went on reporting clean.
+
+    Expanded here: conditional and boolean branches, and a subscripted dispatch
+    table (`sys.exit({"GO": 0, "HOLD": 1}[verdict])`, inline or by name), which
+    is how a verdict genuinely reaches an exit code. Calls, comprehensions and
+    plain collections are not expanded — those are values, not exit paths.
     """
-    return node is not None and any(
-        isinstance(n, ast.Constant) and isinstance(n.value, int)
-        and not isinstance(n.value, bool) and n.value != 0
-        for n in ast.walk(node))
+    if node is None:
+        return
+    if isinstance(node, ast.IfExp):
+        yield from _exit_values(node.body, tables)
+        yield from _exit_values(node.orelse, tables)
+    elif isinstance(node, ast.BoolOp):
+        for value in node.values:
+            yield from _exit_values(value, tables)
+    elif isinstance(node, ast.Subscript):
+        table = node.value if isinstance(node.value, ast.Dict) else (
+            tables.get(node.value.id) if isinstance(node.value, ast.Name) else None)
+        if table is not None:
+            for value in table.values:
+                yield from _exit_values(value, tables)
+        else:
+            yield node
+    else:
+        yield node
+
+
+def _nonzero_exit(node: ast.AST | None, tables: dict[str, ast.Dict]) -> bool:
+    """A non-zero integer the entrypoint can actually exit with."""
+    return any(isinstance(value, ast.Constant) and isinstance(value.value, int)
+               and not isinstance(value.value, bool) and value.value != 0
+               for value in _exit_values(node, tables))
+
+
+def _dispatch_tables(tree: ast.Module) -> dict[str, ast.Dict]:
+    """Module-level `NAME = {...}` bindings, so a named exit-code table resolves."""
+    return {target.id: node.value
+            for node in tree.body if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Dict)
+            for target in node.targets if isinstance(target, ast.Name)}
 
 
 def _unwired(path: Path, tree: ast.Module) -> list[dict]:
@@ -241,16 +346,17 @@ def _unwired(path: Path, tree: ast.Module) -> list[dict]:
                          for n in tree.body)
     if not has_entrypoint:
         return []
+    tables = _dispatch_tables(tree)
     defined = {n.name for n in ast.walk(tree)
                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Return) and _nonzero_int(node.value):
+        if isinstance(node, ast.Return) and _nonzero_exit(node.value, tables):
             return []
         if isinstance(node, ast.Raise) and _call_name(node.exc or node) == "SystemExit":
             return []
         if not (isinstance(node, ast.Call) and _call_name(node) in ("exit", "_exit")):
             continue
-        if any(_nonzero_int(a) for a in node.args):
+        if any(_nonzero_exit(a, tables) for a in node.args):
             return []
         # `sys.exit(main())` where `main` is imported: the verdicts live in
         # another file, so this one cannot be judged. Stay quiet rather than
