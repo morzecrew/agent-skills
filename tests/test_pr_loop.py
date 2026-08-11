@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import time
 import unittest
+from datetime import datetime, timezone
 
 from support import load_script
 
@@ -189,6 +190,67 @@ class SurfaceDigestTest(unittest.TestCase):
         items = self.items(5)
         self.assertEqual(
             script.surface_digest(items), script.surface_digest(list(reversed(items)))
+        )
+
+
+class QuietCreditTest(unittest.TestCase):
+    """Arriving after the noise stopped should not cost a settle window."""
+
+    def test_quiet_is_measured_from_the_last_write(self):
+        now = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+        self.assertAlmostEqual(
+            script.quiet_seconds("2026-08-09T11:58:00Z", now), 120.0, places=1
+        )
+
+    def test_a_future_timestamp_credits_nothing_rather_than_negative(self):
+        # Clock skew must not hand out negative quiet, which would push the
+        # settle window further out than observing honestly would.
+        now = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+        self.assertEqual(script.quiet_seconds("2026-08-09T12:05:00Z", now), 0.0)
+
+    def test_unknown_or_unparseable_timestamps_credit_nothing(self):
+        now = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+        self.assertEqual(script.quiet_seconds("", now), 0.0)
+        self.assertEqual(script.quiet_seconds("not a date", now), 0.0)
+
+    def test_latest_activity_prefers_the_newest_across_fields(self):
+        items = [
+            {"updated_at": "2026-08-09T10:00:00Z"},
+            {"submitted_at": "2026-08-09T11:00:00Z"},
+            {"created_at": "2026-08-09T09:00:00Z"},
+        ]
+        self.assertEqual(script.latest_activity(items), "2026-08-09T11:00:00Z")
+
+    def test_latest_activity_of_nothing_is_empty(self):
+        self.assertEqual(script.latest_activity([]), "")
+
+    def test_credited_quiet_reaches_the_done_verdict_immediately(self):
+        # A PR whose last comment landed well over a settle window ago is
+        # already settled; the state machine should say so on the first poll
+        # rather than watching for another 90 seconds to confirm it.
+        settle, now = 90, 1000.0
+        stable_since = now - script.quiet_seconds(
+            "2026-08-09T11:00:00Z", datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+        )
+        fingerprint = (1, 0, 0, (), (), ())
+        state, _ = script.wait_verdict(
+            {"pending": [], "clean": ["ci"], "attention": []},
+            fingerprint, fingerprint, min(stable_since, now - settle), now, settle,
+        )
+        self.assertEqual(state, "done")
+
+
+class SpeakersTest(unittest.TestCase):
+    def test_logins_are_normalized_the_way_expect_bot_spells_them(self):
+        items = [
+            {"user": {"login": "CodeRabbitAI[bot]"}},
+            {"user": {"login": "cubic-dev-ai[bot]"}},
+            {"user": {"login": "Misery7100"}},
+            {"user": None},
+            {},
+        ]
+        self.assertEqual(
+            script.speakers(items), {"coderabbitai", "cubic-dev-ai", "misery7100"}
         )
 
 
