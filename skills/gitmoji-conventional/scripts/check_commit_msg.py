@@ -215,12 +215,14 @@ def prose_body(lines: list[str]) -> list[tuple[int, str]]:
     start = last_paragraph_start(lines)
     if start is not None:
         paragraph = [line for line in lines[start:] if line.strip()]
-        # Git reads trailers from the LAST paragraph only, so a paragraph that
-        # is entirely trailers (plus their indented continuations) is footers.
-        # A prose paragraph that merely ends the message is not, and dropping it
-        # would exempt exactly the prose these caps exist to catch.
-        if paragraph and all(FOOTER_TOKEN.match(line) or line.startswith((" ", "\t"))
-                             for line in paragraph):
+        # Git reads trailers from the LAST paragraph only, and a trailer block
+        # OPENS with a token — the indent rule applies to continuation lines,
+        # not to the first. Accepting any all-indented paragraph meant a body of
+        # prose indented by one space was read as footers and escaped the caps
+        # entirely, which is the exemption doing the opposite of its job.
+        if (paragraph and FOOTER_TOKEN.match(paragraph[0])
+                and all(FOOTER_TOKEN.match(line) or line.startswith((" ", "\t"))
+                        for line in paragraph[1:])):
             body = [row for row in body if row[0] <= start]
 
     out, fenced = [], False
@@ -252,8 +254,10 @@ def check_body_length(lines: list[str]) -> list[tuple[str, str]]:
             f"Check that every line is about the change rather than the work."))
     for number, text in body:
         # A long unbroken token — a URL, a path, a hash — cannot be wrapped, so
-        # flagging it would just teach people to ignore C10.
-        if len(text) > BODY_WIDTH_CAP and " " in text.strip():
+        # flagging it would just teach people to ignore C10. Any internal
+        # whitespace is a wrap opportunity, not only a literal space: checking
+        # for " " alone let a tab-separated line through.
+        if len(text) > BODY_WIDTH_CAP and any(ch.isspace() for ch in text.strip()):
             findings.append((
                 "warn",
                 f"C10 line {number}: {len(text)} characters (wrap at "

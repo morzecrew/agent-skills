@@ -230,6 +230,24 @@ class BodyLengthTest(unittest.TestCase):
         lines += ["", "One more closing thought that is not a trailer."]
         self.assertTrue(any(text.startswith("C8") for text in errors(body(*lines))))
 
+    def test_an_indented_prose_paragraph_is_not_treated_as_footers(self):
+        """A trailer block OPENS with a token; the indent rule governs its
+        continuation lines. Accepting any all-indented paragraph let a whole
+        body indented by one space escape every cap."""
+        lines = [f" indented prose line {n}" for n in range(script.BODY_HARD_CAP + 1)]
+        self.assertTrue(any(text.startswith("C8") for text in errors(body(*lines))))
+
+    def test_a_folded_trailer_value_is_still_exempt(self):
+        """The shape the indent rule exists for: a multi-line trailer value."""
+        lines = [f"line {n}" for n in range(script.BODY_HARD_CAP)]
+        lines += ["", "BREAKING CHANGE: endpoints now require OAuth2;",
+                  " API-key access is removed.", " Migrate before the next release."]
+        self.assertEqual([e for e in errors(body(*lines)) if e.startswith("C8")], [])
+
+    def test_a_tab_separated_long_line_warns(self):
+        message = body("word\t" * 30)
+        self.assertTrue(any(text.startswith("C10") for text in warnings(message)))
+
     def test_fenced_blocks_are_exempt(self):
         """The declared way to carry evidence a commit genuinely needs."""
         lines = ["why this changed", "", "```"]
@@ -237,7 +255,7 @@ class BodyLengthTest(unittest.TestCase):
         lines += ["```"]
         self.assertEqual(errors(body(*lines)), [])
 
-    def test_an_unclosed_fence_does_not_swallow_the_rest_of_the_body(self):
+    def test_an_unclosed_fence_exempts_the_rest_of_the_body(self):
         lines = ["```", "evidence"] + [f"line {n}" for n in range(30)]
         self.assertEqual(errors(body(*lines)), [],
                          "an unclosed fence exempts what follows — a known,"
