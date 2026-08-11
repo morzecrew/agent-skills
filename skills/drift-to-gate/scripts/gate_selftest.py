@@ -217,8 +217,9 @@ def _stranded(path: Path, tree: ast.Module) -> list[dict]:
                             f"{len(later)} later definition(s) (first: "
                             f"{later[0].name!r}, line {later[0].lineno}). Running "
                             f"this file directly executes only what is defined "
-                            f"above it, announces success, and passes over the "
-                            f"rest without saying so."),
+                            f"above it and passes over the rest without saying "
+                            f"so — reporting on part of the suite in the "
+                            f"language of all of it."),
             }]
     return []
 
