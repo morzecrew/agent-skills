@@ -123,6 +123,8 @@ style is fine if the workstreams are named in §5.>
   as dated notes in the status line or the affected section. The decision
   table is append-only — a reversed decision gets a new row citing the row it
   reverses, not an edit. History someone relied on stays readable.
-- **Index row:** written at the same time as the RFC. The one-liner must be
-  self-contained — a reader scanning the index should not need to open the
-  file to know what it decided.
+- **Index row:** written at the same time as the RFC. The one-liner is a
+  routing description, not a summary — one sentence saying which design this
+  is, so a reader knows whether to open the file. What it decided belongs in
+  §1 and §11, and the index never carries history. Target 200 characters,
+  ceiling 300.

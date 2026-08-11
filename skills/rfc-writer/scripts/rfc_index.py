@@ -50,7 +50,11 @@ STATUS_LINE = re.compile(r"^-\s+\*\*Status:\*\*\s*(\S+)", re.M)
 # Cells may contain an escaped pipe, so a cell is "anything but a delimiter,
 # where a backslash escapes the next character". Reading with plain [^|]* ended
 # the title cell at the escape and shifted every column after it.
-CELL = r"(?:[^|\\]|\\.)*"
+# No newlines: a table cell is one line, and letting it span them meant a row
+# missing its trailing pipe swallowed the row beneath it — the parser then
+# reported the wrong row as absent and could insert a new RFC in the wrong
+# place. `\\.` is likewise stopped from crossing a line break.
+CELL = r"(?:[^|\\\n]|\\[^\n])*"
 INDEX_ROW = re.compile(
     rf"^\|\s*\[(\d{{4}})\]\(([^)]+)\)\s*\|({CELL})\|({CELL})\|(?:({CELL})\|)?", re.M
 )
@@ -440,7 +444,7 @@ def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = No
         # first time instead of discovering it from `check` afterwards.
         row = (
             f"| [{number:04d}]({path.name}) | {escape_cell(title)} | 📝 Draft "
-            f"| TODO: one sentence, <= {ONE_LINER_TARGET} chars — which design this is, not what it decided |"
+            f"| TODO: one sentence, ~{ONE_LINER_TARGET} chars (max {ONE_LINER_CEILING}) — which design this is, not what it decided |"
         )
 
         lines = index_text.splitlines()
@@ -477,7 +481,7 @@ def cmd_new(rfc_dir: Path, title: str, script_dir: Path, number: int | None = No
 
     print(f"created {path}")
     print(f"updated {index_path} (row added, next free number -> {next_free:04d})")
-    print("next: fill the Scope paragraph and the one-line index summary")
+    print("next: fill the Scope paragraph and the one-line routing description")
     return 0
 
 

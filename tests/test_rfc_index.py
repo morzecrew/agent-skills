@@ -207,6 +207,25 @@ class RfcCollectionTest(unittest.TestCase):
         rows = script.index_rows((self.rfcs / "INDEX.md").read_text(encoding="utf-8"))
         self.assertEqual(rows[1]["oneLiner"], "first")
 
+    def test_a_row_without_a_one_liner_still_parses(self):
+        # The column is optional so existing indexes keep working; a legacy
+        # three-cell row reads as an empty one-liner, not as a missing row.
+        rows = script.index_rows("| [0005](0005-x.md) | X | 📝 Draft |\n")
+        self.assertEqual(rows[5]["oneLiner"], "")
+        self.assertEqual(rows[5]["title"], "X")
+
+    def test_a_row_missing_its_pipe_does_not_swallow_the_next(self):
+        # Regression: cells could span newlines, so the optional one-liner
+        # group ran past a malformed row and consumed the row beneath it. The
+        # parser then reported the wrong row as absent, and the insertion
+        # position for a new RFC was computed from a table it had misread.
+        rows = script.index_rows(
+            "| [0001](0001-a.md) | Alpha | 📝 Draft | first\n"
+            "| [0002](0002-b.md) | Beta | ✅ Complete | second |\n"
+        )
+        self.assertIn(2, rows, "the well-formed row below must survive")
+        self.assertEqual(rows[2]["oneLiner"], "second")
+
     def test_an_overlong_one_liner_warns_without_failing(self):
         # The index is re-read on every lookup, so a cell that grows into a
         # summary is charged to every consultation. It is a cost, not a broken
