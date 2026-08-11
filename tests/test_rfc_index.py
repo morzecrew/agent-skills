@@ -192,6 +192,77 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertIn("RFC NNNN — <Title>", real.read_text(encoding="utf-8"),
                       "the tracked template must never be touched by a test")
 
+    def one_liner_row(self, text: str) -> None:
+        """Rewrite RFC 0001's index row to carry `text` as its one-liner."""
+        index = self.rfcs / "INDEX.md"
+        index.write_text(
+            index.read_text(encoding="utf-8").replace(
+                "| [0001](0001-alpha.md) | Alpha | 📝 Draft | first |",
+                f"| [0001](0001-alpha.md) | Alpha | 📝 Draft | {text} |",
+            ),
+            encoding="utf-8",
+        )
+
+    def test_index_rows_expose_the_one_liner(self):
+        rows = script.index_rows((self.rfcs / "INDEX.md").read_text(encoding="utf-8"))
+        self.assertEqual(rows[1]["oneLiner"], "first")
+
+    def test_a_row_without_a_one_liner_still_parses(self):
+        # The column is optional so existing indexes keep working; a legacy
+        # three-cell row reads as an empty one-liner, not as a missing row.
+        rows = script.index_rows("| [0005](0005-x.md) | X | 📝 Draft |\n")
+        self.assertEqual(rows[5]["oneLiner"], "")
+        self.assertEqual(rows[5]["title"], "X")
+
+    def test_a_row_missing_its_pipe_does_not_swallow_the_next(self):
+        # Regression: cells could span newlines, so the optional one-liner
+        # group ran past a malformed row and consumed the row beneath it. The
+        # parser then reported the wrong row as absent, and the insertion
+        # position for a new RFC was computed from a table it had misread.
+        rows = script.index_rows(
+            "| [0001](0001-a.md) | Alpha | 📝 Draft | first\n"
+            "| [0002](0002-b.md) | Beta | ✅ Complete | second |\n"
+        )
+        self.assertIn(2, rows, "the well-formed row below must survive")
+        self.assertEqual(rows[2]["oneLiner"], "second")
+
+    def test_an_overlong_one_liner_warns_without_failing(self):
+        # The index is re-read on every lookup, so a cell that grows into a
+        # summary is charged to every consultation. It is a cost, not a broken
+        # collection: the writer judges whether this design needs the words.
+        self.one_liner_row("x " * 200)
+        result = run_script("rfc-writer", "rfc_index.py", "check", "--root", str(self.root))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("ceiling", result.stdout)
+        self.assertIn("move the detail into the RFC", result.stdout)
+
+    def test_a_one_liner_past_the_target_warns_more_gently(self):
+        self.one_liner_row("y " * 120)  # 240 chars: over target, under ceiling
+        result = run_script("rfc-writer", "rfc_index.py", "check", "--root", str(self.root))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(f"target {script.ONE_LINER_TARGET}", result.stdout)
+        self.assertNotIn("ceiling", result.stdout)
+
+    def test_a_routing_one_liner_is_silent(self):
+        self.one_liner_row("Get a backup off the machine that took it")
+        result = run_script("rfc-writer", "rfc_index.py", "check", "--root", str(self.root))
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("WARN", result.stdout)
+
+    def test_the_new_placeholder_states_the_constraint(self):
+        # A writer who never runs `check` should still meet the rule, so the
+        # placeholder carries it rather than leaving it to be discovered.
+        run_script("rfc-writer", "rfc_index.py", "new", "Gamma", cwd=self.root)
+        row = next(
+            line for line in (self.rfcs / "INDEX.md").read_text(encoding="utf-8").splitlines()
+            if "0003" in line
+        )
+        self.assertIn(str(script.ONE_LINER_TARGET), row)
+        # The ceiling too: naming only the target tells authors that 201-300
+        # is invalid, when the checker merely warns there.
+        self.assertIn(str(script.ONE_LINER_CEILING), row)
+        self.assertIn("one sentence", row)
+
     def test_duplicate_numbers_are_a_check_finding_not_a_usage_error(self):
         # Regression: failing hard inside rfc_files exited 1, the code reserved
         # for a usage or IO error, so a broken collection was indistinguishable

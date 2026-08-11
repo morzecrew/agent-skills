@@ -8,8 +8,11 @@ would test the fake, not the tool.
 from __future__ import annotations
 
 import contextlib
+import json
 import time
 import unittest
+from datetime import datetime, timezone
+from typing import ClassVar
 
 from support import load_script
 
@@ -189,6 +192,180 @@ class SurfaceDigestTest(unittest.TestCase):
         items = self.items(5)
         self.assertEqual(
             script.surface_digest(items), script.surface_digest(list(reversed(items)))
+        )
+
+
+class QuietCreditTest(unittest.TestCase):
+    """Arriving after the noise stopped should not cost a settle window."""
+
+    def test_quiet_is_measured_from_the_last_write(self):
+        now = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+        self.assertAlmostEqual(
+            script.quiet_seconds("2026-08-09T11:58:00Z", now), 120.0, places=1
+        )
+
+    def test_a_future_timestamp_credits_nothing_rather_than_negative(self):
+        # Clock skew must not hand out negative quiet, which would push the
+        # settle window further out than observing honestly would.
+        now = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+        self.assertEqual(script.quiet_seconds("2026-08-09T12:05:00Z", now), 0.0)
+
+    def test_unknown_or_unparseable_timestamps_credit_nothing(self):
+        now = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+        self.assertEqual(script.quiet_seconds("", now), 0.0)
+        self.assertEqual(script.quiet_seconds("not a date", now), 0.0)
+
+    def test_latest_activity_prefers_the_newest_across_fields(self):
+        items = [
+            {"updated_at": "2026-08-09T10:00:00Z"},
+            {"submitted_at": "2026-08-09T11:00:00Z"},
+            {"created_at": "2026-08-09T09:00:00Z"},
+        ]
+        self.assertEqual(script.latest_activity(items), "2026-08-09T11:00:00Z")
+
+    def test_latest_activity_of_nothing_is_empty(self):
+        self.assertEqual(script.latest_activity([]), "")
+
+    def test_credited_quiet_reaches_the_done_verdict_immediately(self):
+        # A PR whose last comment landed well over a settle window ago is
+        # already settled; the state machine should say so on the first poll
+        # rather than watching for another 90 seconds to confirm it.
+        settle, now = 90, 1000.0
+        stable_since = now - script.quiet_seconds(
+            "2026-08-09T11:00:00Z", datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
+        )
+        fingerprint = (1, 0, 0, (), (), ())
+        state, _ = script.wait_verdict(
+            {"pending": [], "clean": ["ci"], "attention": []},
+            fingerprint, fingerprint, min(stable_since, now - settle), now, settle,
+        )
+        self.assertEqual(state, "done")
+
+
+class CleanCheckIdentityTest(unittest.TestCase):
+    """A reviewer that ran and found nothing is finished, not missing."""
+
+    ROLLUP: ClassVar[dict] = {
+        "repository": {"pullRequest": {"commits": {"nodes": [{"commit": {
+            "statusCheckRollup": {"contexts": {"pageInfo": {"hasNextPage": False}, "nodes": [
+                {"__typename": "CheckRun", "conclusion": "SUCCESS",
+                 "checkSuite": {"app": {"slug": "github-actions"}}},
+                # cubic posts "cubic · AI code reviewer" — nothing a name match
+                # would tie back to the login `--expect-bot` is given.
+                {"__typename": "CheckRun", "conclusion": "NEUTRAL",
+                 "checkSuite": {"app": {"slug": "cubic-dev-ai"}}},
+                {"__typename": "StatusContext", "state": "SUCCESS",
+                 "creator": {"login": "CodeRabbitAI"}},
+                {"__typename": "CheckRun", "conclusion": "FAILURE",
+                 "checkSuite": {"app": {"slug": "flaky-app"}}},
+            ]}},
+        }}]}}}
+    }
+
+    def setUp(self):
+        self.original = script.graphql
+        script.graphql = lambda *a, **k: self.ROLLUP
+
+    def tearDown(self):
+        script.graphql = self.original
+
+    def test_clean_apps_are_identified_by_slug_not_by_check_name(self):
+        self.assertEqual(
+            script.cleanly_checked_apps("o", "r", 1),
+            {"github-actions", "cubic-dev-ai", "coderabbitai"},
+        )
+
+    def test_a_failing_check_leaves_its_app_unsatisfied(self):
+        self.assertNotIn("flaky-app", script.cleanly_checked_apps("o", "r", 1))
+
+    def test_one_dirty_check_outweighs_a_clean_one_from_the_same_app(self):
+        # The failing run goes *first*, so a last-one-wins reduction would
+        # conclude clean. Appending it instead would pass either way.
+        mixed = json.loads(json.dumps(self.ROLLUP))
+        contexts = (mixed["repository"]["pullRequest"]["commits"]["nodes"][0]
+                    ["commit"]["statusCheckRollup"]["contexts"])
+        contexts["nodes"].insert(0, {
+            "__typename": "CheckRun", "conclusion": "FAILURE",
+            "checkSuite": {"app": {"slug": "cubic-dev-ai"}},
+        })
+        script.graphql = lambda *a, **k: mixed
+        self.assertNotIn("cubic-dev-ai", script.cleanly_checked_apps("o", "r", 1))
+
+
+class UnsatisfiedBotsTest(unittest.TestCase):
+    """The rule that a green check settles a silent reviewer, wired up.
+
+    `cleanly_checked_apps` being correct proved nothing about `wait` using it —
+    the first sabotage of that wiring passed, because no test covered it.
+    """
+
+    def test_a_bot_that_commented_is_satisfied(self):
+        self.assertEqual(
+            script.unsatisfied_bots(["coderabbitai"], {"coderabbitai"}, set()), []
+        )
+
+    def test_a_silent_bot_with_a_clean_check_is_satisfied(self):
+        self.assertEqual(
+            script.unsatisfied_bots(["cubic-dev-ai"], set(), {"cubic-dev-ai"}), []
+        )
+
+    def test_a_silent_bot_with_no_clean_check_is_still_missing(self):
+        self.assertEqual(
+            script.unsatisfied_bots(["cubic-dev-ai"], set(), {"other"}), ["cubic-dev-ai"]
+        )
+
+    def test_the_bot_suffix_is_ignored_on_either_side(self):
+        self.assertEqual(
+            script.unsatisfied_bots(["CodeRabbitAI[bot]"], {"coderabbitai"}, set()), []
+        )
+
+    def test_a_dirty_check_on_a_later_page_is_not_missed(self):
+        # Regression: contexts were read one page deep and treated as the whole
+        # rollup, so a failing check beyond the first 100 could not be seen —
+        # and the app would be credited as finished on its other checks, which
+        # is the early return this function exists to prevent.
+        def page(nodes, has_next, cursor=None):
+            return {"repository": {"pullRequest": {"commits": {"nodes": [{"commit": {
+                "statusCheckRollup": {"contexts": {
+                    "pageInfo": {"hasNextPage": has_next, "endCursor": cursor},
+                    "nodes": nodes,
+                }},
+            }}]}}}}
+
+        pages = [
+            page([{"__typename": "CheckRun", "conclusion": "SUCCESS",
+                   "checkSuite": {"app": {"slug": "cubic-dev-ai"}}}], True, "CUR"),
+            page([{"__typename": "CheckRun", "conclusion": "FAILURE",
+                   "checkSuite": {"app": {"slug": "cubic-dev-ai"}}}], False),
+        ]
+        seen: list[str | None] = []
+
+        def paged(_query, str_vars, _int_vars):
+            seen.append(str_vars.get("after"))
+            return pages[len(seen) - 1]
+
+        script.graphql = paged
+        self.assertNotIn("cubic-dev-ai", script.cleanly_checked_apps("o", "r", 1))
+        self.assertEqual(seen, [None, "CUR"], "the cursor must be followed")
+
+    def test_no_commits_is_not_a_crash(self):
+        script.graphql = lambda *a, **k: {
+            "repository": {"pullRequest": {"commits": {"nodes": []}}}
+        }
+        self.assertEqual(script.cleanly_checked_apps("o", "r", 1), set())
+
+
+class SpeakersTest(unittest.TestCase):
+    def test_logins_are_normalized_the_way_expect_bot_spells_them(self):
+        items = [
+            {"user": {"login": "CodeRabbitAI[bot]"}},
+            {"user": {"login": "cubic-dev-ai[bot]"}},
+            {"user": {"login": "Misery7100"}},
+            {"user": None},
+            {},
+        ]
+        self.assertEqual(
+            script.speakers(items), {"coderabbitai", "cubic-dev-ai", "misery7100"}
         )
 
 
