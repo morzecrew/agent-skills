@@ -5,32 +5,35 @@ one entry per negative result. Append-mostly: a class may be **escalated**
 (`DESIGN_DEAD` → `FAMILY_DEAD` once ceiling evidence exists) but never silently
 downgraded, and every change carries its evidence path.
 
+The example below is invented, and deliberately mundane — the schema is
+domain-agnostic, and the fields matter more than what they happen to describe.
+
 ```json
 {
   "schema_version": 1,
   "entries": [
     {
-      "candidate": "root-scout-v1",
-      "family": "root-scout",
+      "candidate": "prefetch-planner-v1",
+      "family": "prefetch-planner",
       "kill_class": "DESIGN_DEAD",
-      "verdict_artifact": "eval/root-scout-v1/REPORT.json",
+      "verdict_artifact": "eval/prefetch-planner-v1/REPORT.json",
       "ceiling_evidence": null,
       "base": {
-        "artifact": "champion/2026-07-17.tar.gz",
+        "artifact": "baseline/2024-03-11.tar.gz",
         "sha256": "d3f7ee67…",
-        "evidence": "banked read 724.1 over 51 games"
+        "evidence": "benchmarked at p99 118ms over 40k requests — the current baseline"
       },
       "ticket": {
         "status": "OPEN",
-        "failing_prong": "ladder read never resolved: 9 games in 6h vs a 50-game bar",
-        "measured_cause": "the behaviour band throttled it to 0.4 games/h — measured, not inferred",
-        "candidate_fix": "re-run without the band, which the owner lifted 2026-08-06; precedent: prize-racer's gated rebuild",
-        "cheapest_test": "one ladder slot + a ~50-game read, ~6h wall clock, 0 compute cost",
-        "prediction": "reaches a readable 50 games; direction unknown",
-        "opened_utc": "2026-08-06",
+        "failing_prong": "p99 latency 240ms against a 150ms bar",
+        "measured_cause": "the planner issues prefetches serially behind the first miss — measured in the trace, not inferred from the design",
+        "candidate_fix": "batch the prefetch window; precedent: the same fix on the metadata reader last quarter",
+        "cheapest_test": "replay the existing 40k-request trace against the batched planner, ~20 minutes, no new data needed",
+        "prediction": "p99 lands under 150ms; throughput unchanged",
+        "opened_utc": "2024-04-02",
         "closed_utc": null,
         "owner_ruling": null,
-        "note": "trained to 47.00% of a 47.11% oracle ceiling and never read"
+        "note": "hit rate met its bar comfortably; only latency failed"
       },
       "power_plan": null
     }

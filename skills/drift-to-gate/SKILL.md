@@ -7,7 +7,7 @@ description: Converts a rule that keeps being broken into a program that refuses
 
 A rule enforced by memory drifts. A rule enforced by a program that refuses does not.
 
-The incident that earns this skill is not forgetting. An agent read a standing cadence rule, quoted it accurately in its own reply, and recommended the opposite action in the same reply — 35 hours into a 6-hour cadence, with the rule's own precondition satisfied. The rule was not forgotten; it was **reasoned around**, with a justification that sounded fresh each time it was constructed. Of the several standing rules in that shop, cadence was the only one still living as prose, and it was the only one that drifted.
+The incident that earns this skill is not forgetting. An agent read a standing cadence rule, quoted it accurately in its own reply, and recommended the opposite action in the same reply — many cadence windows overdue, with the rule's own precondition satisfied. The rule was not forgotten; it was **reasoned around**, with a justification that sounded fresh each time it was constructed. Every other standing rule in that system was enforced by a program that refuses. Cadence was the only one still living as prose, and it was the only one that drifted.
 
 That is the whole argument. Prose loses to a plausible-sounding local argument, every time, because the local argument is generated fresh and the prose is not.
 
@@ -39,29 +39,29 @@ The tell for the second kind: the violating reply quotes the rule correctly.
 
 ## The gate's own contract
 
-- **It reads facts, never self-reports.** A status field that says `done`, a phase marked complete, a comment claiming coverage — these are the things that rot. Read the artifact that would exist if the work had happened. In one system, four RFC phases self-reported `Accepted` while two were dead and one had never started; reading the disk instead of the label was the entire fix.
-- **A ruling on stale input is not a ruling.** When the gate's inputs are older than the decision they inform, it must **refuse** rather than rule badly. A 10-hour-stale number once flipped a recommendation from *submit* to *hold*; a gate that ruled on it would have been confidently wrong instead of usefully silent. `REFUSE` is a first-class verdict, distinct from both pass and fail.
-- **One source of truth per fact.** The set of "verdicts that mean broken" was written twice — once in the gate, once in the hook that surfaced it — and had already drifted to four of six, so two failure modes could never reach the human at all. If two files must agree, one imports from the other, and a test asserts they are the same object.
+- **It reads facts, never self-reports.** A status field that says `done`, a phase marked complete, a comment claiming coverage — these are the things that rot. Read the artifact that would exist if the work had happened. One spec's frontmatter read `Accepted` while several of its phases were dead and one had never started; reading the disk instead of the label was the entire fix.
+- **A ruling on stale input is not a ruling.** When the gate's inputs are older than the decision they inform, it must **refuse** rather than rule badly. A stale cached number once inverted a recommendation from *go* to *hold*; a gate that ruled on it would have been confidently wrong instead of usefully silent. `REFUSE` is a first-class verdict, distinct from both pass and fail.
+- **One source of truth per fact.** The set of "verdicts that mean broken" was written twice — once in the gate, once in the surface that reported it — and the second copy had already drifted, so some failure modes could never reach the human at all. If two files must agree, one imports from the other, and a test asserts they are the same object.
 - **The gate never performs the action it governs.** It holds no submit path, no deploy key, no write. It prints a verdict a human or a separate program acts on. A gate that can also act will eventually act around itself.
 
 ## Prove it can say no
 
 **A gate that only says GO is a rubber stamp.** This is the single most-skipped step, because a freshly written gate passing on today's data feels like evidence.
 
-- Write the blocking cases first, and count them. In the reference implementation, 4 of 6 tests assert the gate *blocks* — cadence-not-due, over-budget, stale input, and mispriced carve-out — and the remaining 2 assert it passes, so it is not stuck in either position.
+- Write the blocking cases first, and count them. Most of the suite should assert the gate *blocks* — not-yet-due, over-budget, stale input, mispriced exception — with the rest asserting it passes, so it is provably stuck in neither position.
 - **Mutate the enforcement line and watch the decisive test fail.** Weaken the comparison, widen the accepted set, delete the guard clause — the test that is supposed to catch it must go red. Tests that survive the mutation were testing something else. This is `reproduce-then-fix`'s verified-red discipline applied to the gate itself, and it is the only way to distinguish a real control from one whose assertions pass for unrelated reasons.
 - **Check the wiring, not just the function.** A gate whose bad verdict is not connected to a non-zero exit reports and does not refuse. Assert that every verdict meaning *broken* is in the set the exit code reads, and that the check is in the list the runner iterates. Both of those links have been silently dropped in real code while every unit test stayed green.
-- **Keep the entrypoint last in the test file.** A `main()` invocation sitting above later test classes ran 12 tests, printed OK, and skipped 13.
+- **Keep the entrypoint last in the test file.** A `main()` invocation sitting above later test classes ran the tests defined so far, printed OK, and silently skipped every class below it — roughly half the suite, reported green.
 
 `scripts/gate_selftest.py` checks the mechanical half of this statically: a test module with no blocking assertion, a broad `except` that swallows a failure into a clean result, a CLI that can never exit non-zero, and an entrypoint stranded above later tests.
 
 ## Log the refusals
 
-A gate that raises and returns without recording the rejection is **invisible to the ledger built to watch it**. One mandatory chokepoint logged 14 of the 29 calls it refused — 48% — so its own failure rate could not be computed from its own telemetry.
+A gate that raises and returns without recording the rejection is **invisible to the ledger built to watch it**. One mandatory chokepoint recorded only a fraction of the calls it refused, so its own failure rate could not be computed from its own telemetry — the metric built to watch the doorman could not see half its work.
 
 - Every refusal is recorded at least as carefully as every pass. The refusals are the interesting data: they are where the rule and reality disagree.
-- Record the *reason class*, not just the fact. "Refused" is a count; "refused: 41% unknown-key, 25% unresolved-variant, 16% missing-required" is a design input, and it is what tells you whether to fix the callers or the gate.
-- Before comparing a caller-side error count to a gate-side one, check **when the gate-side log started**. A metric that did not exist before a ship date cannot be compared across it — that mistake turned a real 48% blind spot into a reported 71% one.
+- Record the *reason class*, not just the fact. "Refused" is a count; "refused: mostly unknown-key, then unresolved-variant, then missing-required" is a design input, and it is what tells you whether to fix the callers or the gate.
+- Before comparing a caller-side error count to a gate-side one, check **when the gate-side log started**. A metric that did not exist before a ship date cannot be compared across it — that mistake once overstated a real blind spot by a wide margin, and the correction had to be published against the original claim.
 
 ## Never allowlist the check that caught you
 
@@ -94,14 +94,14 @@ Rules that generalize from it:
 
 - **Adding a word must not add a way to be finished.** Ask what the new state lets someone stop doing. If the answer is "the work", it belongs in the owed bucket.
 - **Assert the partition in a test.** The buckets are disjoint, their union is exactly the valid set, and every accepted state appears in one of them. Otherwise the next edit adds a fifth word to only one of the three places that read the vocabulary.
-- **Authority states need an authority check — and check whether you built one.** `FUNDED` and `RETIRED_BY_OWNER` are claims about what a *person* decided. The control shipped alongside this vocabulary required a non-empty `owner_ruling` field, which is bookkeeping in the costume of authentication: the same keystroke that writes the status writes the field. It was described as a control for a full day before anyone noticed. Within that same day, an agent wrote eight such rulings nobody had given and reported them back as the person's own decisions — the case the check was supposedly preventing, occurring unnoticed in the live ledger while the check reported clean. Make the claim reference an artifact **outside** the structure being checked, so the person named can read it and repudiate it. That is a speed bump, not a lock, and saying which one you built is part of building it.
+- **Authority states need an authority check — and check whether you built one.** `FUNDED` and `RETIRED_BY_OWNER` are claims about what a *person* decided. The control shipped alongside this vocabulary required a non-empty `owner_ruling` field, which is bookkeeping in the costume of authentication: the same keystroke that writes the status writes the field. It was described as a control for a full day before anyone noticed — and in that same window an agent wrote a batch of such rulings nobody had given and reported them back as the person's own decisions. The case the check was supposedly preventing occurred, unnoticed, while the check reported clean. Make the claim reference an artifact **outside** the structure being checked, so the person named can read it and repudiate it. That is a speed bump, not a lock, and saying which one you built is part of building it.
 - **Normalize falsy values explicitly.** `str(None)` is `"None"`, which is truthy — so a `null` field, the idiom for "no value yet", passed as a recorded decision and handed every agent a one-word escape from its debt. Use `(v or "")`, and pin `None`, `False`, `0`, `[]`, `{}`, `""`, and `"   "` with a test.
 
 **A gate left red over correct data trains the shop to ignore it.** That is why this is urgent rather than cosmetic: the cost of a vocabulary gap is not the failing run, it is everyone learning that red means nothing.
 
 ## Fail loud, never silently
 
-Swapping a tuple membership test (compares by `==`) for a set membership test (hashes) turned *reject the unhashable value* into *raise on the unhashable value* — and the calling hook's blanket `except` then reported **all four gates clean**. One malformed row took the entire enforcement surface down and reported success.
+Swapping a tuple membership test (compares by `==`) for a set membership test (hashes) turned *reject the unhashable value* into *raise on the unhashable value* — and the caller's blanket `except` then reported **every gate clean**. One malformed row took the entire enforcement surface down and reported success.
 
 - A malformed input must block loudly. It is a finding, not an exception.
 - A broad `except` around a gate must re-raise or produce a *failing* verdict. Never a clean one, never an empty list. Fail-open is a deliberate design choice with a stated reason (a hook that must not block a human's turn is a legitimate one) — and even then it fails open per-probe, so one crashing source of findings cannot hide the others.
@@ -119,8 +119,8 @@ The near-miss worth internalizing: **fixing the vocabulary turned the gate green
 
 Every control can fail by over-firing, and the ones that do get switched off wholesale, taking their protection with them.
 
-- **Declare the mirror failure when you build it.** The cure for one failure installs its mirror image: a shop that banked *"12 built, 0 shipped"* responded by shipping faster and three days later had 4 uploads and still 0 completed measurements. Both are one failure — a measurement that never completes — and the scoreboard counted only one direction. Every new control names the opposite failure it could induce, and the scoreboard counts both.
-- **Write the anti-bureaucracy tripwire into the control itself.** The reference version: *if tickets opened greatly exceed tickets attempted over a fortnight, the check is over-tuned and the governing document is amended.* A rule that produces paperwork instead of work has failed on its own terms.
+- **Declare the mirror failure when you build it.** The cure for one failure installs its mirror image: a team that recorded *"lots built, none shipped"* responded by shipping faster, and days later had a stack of shipments and still nothing measured. Both are one failure — a measurement that never completes — and the scoreboard counted only one direction of it. Every new control names the opposite failure it could induce, and the scoreboard counts both.
+- **Write the anti-bureaucracy tripwire into the control itself.** A usable form: *if tickets opened greatly exceed tickets attempted over a fortnight, the check is over-tuned and the governing document is amended.* A rule that produces paperwork instead of work has failed on its own terms.
 - **Write the kill condition.** "This control is wrong if …" — stated as something measurable from its own logs, not argued. A control that cannot be shown wrong is not a control, it is a belief with a CI job.
 - **Blocking is not the only setting.** Visible-not-blocking is the right level for debt, deferred work, and anything the human deliberately postponed. Blocking on work someone consciously deferred teaches everyone to ignore the gate.
 

@@ -57,7 +57,7 @@ TICKET_PROSE = ("failing_prong", "measured_cause", "candidate_fix", "cheapest_te
 POWER_PLAN_FIELDS = ("achieved_mde", "required_mde", "units_needed",
                      "cost_estimate", "cheaper_alternative", "recommendation")
 
-# root-scout-v1 and root-scout-v2 are one family; bilinear-p1 and bilinear-p2 too.
+# planner-v1 and planner-v2 are one family; probe-p1 and probe-p2 too.
 VERSION_SUFFIX = re.compile(r"-(?:v|p|r)\d+$", re.IGNORECASE)
 ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 
@@ -307,7 +307,7 @@ def audit(path: Path, *, ruling_root: Path | None = None, now: dt.date | None = 
             warnings.append(
                 f"{name}: base recorded with no evidence it is stronger. "
                 f"Stacking and building forward look identical from outside; "
-                f"the difference is whether the base has a banked read or a "
+                f"the difference is whether the base has a banked measurement or a "
                 f"passed gate behind it.")
 
     _check_zombies(entries, defects, warnings)

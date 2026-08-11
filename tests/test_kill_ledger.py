@@ -18,10 +18,10 @@ kl = load_script("negative-result-taxonomy", "kill_ledger.py")
 
 TICKET = {
     "status": "OPEN",
-    "failing_prong": "closure 41% vs a 60% bar",
-    "measured_cause": "END leaves priced at zero, measured over 3,627 decisions",
-    "candidate_fix": "price the leaf; precedent: the gated rebuild",
-    "cheapest_test": "re-run the 200-decision replay, 20 minutes",
+    "failing_prong": "p99 latency 240ms against a 150ms bar",
+    "measured_cause": "prefetches issued serially behind the first miss, seen in the trace",
+    "candidate_fix": "batch the prefetch window; precedent: the metadata reader",
+    "cheapest_test": "replay the existing 40k-request trace, 20 minutes",
 }
 
 
@@ -47,13 +47,13 @@ class LedgerCase(unittest.TestCase):
 class TestFamilyDeath(LedgerCase):
 
     def test_family_dead_without_ceiling_blocks(self):
-        r = self.audit([{"candidate": "cardsight-v1", "kill_class": "FAMILY_DEAD"}])
+        r = self.audit([{"candidate": "ranker-v1", "kill_class": "FAMILY_DEAD"}])
         self.assertBlocks(r, "EARNED")
 
     def test_family_dead_with_a_measured_ceiling_passes(self):
-        r = self.audit([{"candidate": "cardsight-v1", "kill_class": "FAMILY_DEAD",
-                         "ceiling_evidence": "10x oracle 7.0% [lo95 4.9%] vs a "
-                                             "3.5% floor, bar 10.5%"}])
+        r = self.audit([{"candidate": "ranker-v1", "kill_class": "FAMILY_DEAD",
+                         "ceiling_evidence": "a 10x-budget oracle changed 7% of "
+                                             "decisions [lo95 4.9%] against a 10.5% bar"}])
         self.assertEqual(r["verdict"], "OK", r)
 
     def test_a_falsy_ceiling_is_not_a_ceiling(self):
@@ -186,12 +186,12 @@ class TestFunding(LedgerCase):
     def test_a_ticket_is_read_on_every_class_not_only_where_required(self):
         """A funded ticket on a class that owes none was previously invisible:
         neither a defect nor a debt, the one state a ledger must not have."""
-        r = self.audit([{"candidate": "bilinear-p1", "kill_class": "INSTRUMENT_VOID",
+        r = self.audit([{"candidate": "residual-p1", "kill_class": "INSTRUMENT_VOID",
                          "ticket": dict(self.FUNDED, owner_ruling="ruling.md")}],
                        files=["ruling.md"])
         self.assertEqual(r["verdict"], "OK", r)
         self.assertEqual(len(r["owed"]), 1)
-        self.assertIn("bilinear-p1", r["owed"][0])
+        self.assertIn("residual-p1", r["owed"][0])
 
 
 class TestVisibility(LedgerCase):
@@ -229,8 +229,8 @@ class TestAntiZombie(LedgerCase):
 
     def twice(self, **overrides):
         base = {"kill_class": "DESIGN_DEAD", "ticket": dict(TICKET)}
-        return [dict(base, candidate="turn-planner-v1"),
-                dict(base, candidate="turn-planner-v2", **overrides)]
+        return [dict(base, candidate="prefetch-planner-v1"),
+                dict(base, candidate="prefetch-planner-v2", **overrides)]
 
     def test_two_deaths_on_the_same_prong_and_cause_block(self):
         r = self.audit(self.twice())
@@ -238,24 +238,27 @@ class TestAntiZombie(LedgerCase):
 
     def test_a_ceiling_measurement_anywhere_in_the_family_clears_it(self):
         entries = self.twice()
-        entries.append({"candidate": "turn-planner-v3", "kill_class": "FAMILY_DEAD",
-                        "ceiling_evidence": "oracle 6.1% [lo95 4.0%] vs a 9% bar"})
+        entries.append({"candidate": "prefetch-planner-v3", "kill_class": "FAMILY_DEAD",
+                        "ceiling_evidence": "an oracle planner misses the bar at its lower bound"})
         self.assertEqual(self.audit(entries)["verdict"], "OK")
 
     def test_the_comparison_ignores_case_and_whitespace(self):
-        ticket = dict(TICKET,
-                      failing_prong="  CLOSURE 41%   vs a 60% BAR ",
+        # Derived from TICKET, never retyped: a hand-copied variant silently
+        # stops being the same prong the moment the fixture is edited, and the
+        # test then passes for the wrong reason.
+        noisy = f"  {TICKET['failing_prong'].upper().replace(' ', '   ')} "
+        ticket = dict(TICKET, failing_prong=noisy,
                       measured_cause=TICKET["measured_cause"].upper())
         r = self.audit(self.twice(ticket=ticket))
         self.assertBlocks(r, "same prong")
 
     def test_a_different_cause_is_a_different_death(self):
         r = self.audit(self.twice(
-            ticket=dict(TICKET, measured_cause="the pool, measured at 5.5x")))
+            ticket=dict(TICKET, measured_cause="lock contention in the writer, measured at 5.5x")))
         self.assertEqual(r["verdict"], "OK", r)
 
     def test_three_deaths_without_a_ceiling_warn_without_blocking(self):
-        entries = [{"candidate": f"outcome-train-v{n}", "kill_class": "DESIGN_DEAD",
+        entries = [{"candidate": f"warm-cache-v{n}", "kill_class": "DESIGN_DEAD",
                     "ticket": dict(TICKET, measured_cause=f"cause {n}")}
                    for n in (1, 2, 3)]
         r = self.audit(entries)
@@ -263,14 +266,14 @@ class TestAntiZombie(LedgerCase):
         self.assertTrue(any("no ceiling measurement" in w for w in r["warnings"]))
 
     def test_the_family_defaults_from_the_version_suffix(self):
-        self.assertEqual(kl.family_of({"candidate": "root-scout-v12"}), "root-scout")
-        self.assertEqual(kl.family_of({"candidate": "bilinear-p1"}), "bilinear")
-        self.assertEqual(kl.family_of({"candidate": "closer"}), "closer")
+        self.assertEqual(kl.family_of({"candidate": "prefetch-planner-v12"}), "prefetch-planner")
+        self.assertEqual(kl.family_of({"candidate": "residual-p1"}), "residual")
+        self.assertEqual(kl.family_of({"candidate": "compactor"}), "compactor")
 
     def test_an_explicit_family_wins(self):
         self.assertEqual(
-            kl.family_of({"candidate": "alpha-v1", "family": "outcome-training"}),
-            "outcome-training")
+            kl.family_of({"candidate": "alpha-v1", "family": "warm-cache"}),
+            "warm-cache")
         r = self.audit([dict(candidate="alpha-v1", family="one",
                              kill_class="DESIGN_DEAD", ticket=dict(TICKET)),
                         dict(candidate="alpha-v2", family="two",
@@ -359,7 +362,7 @@ class TestBase(LedgerCase):
     def test_a_base_with_evidence_is_quiet(self):
         r = self.audit([{"candidate": "x-v1", "kill_class": "INSTRUMENT_VOID",
                          "base": {"artifact": "champ.tar.gz", "sha256": "ab",
-                                  "evidence": "banked read 724.1 over 51 games"}}])
+                                  "evidence": "p99 118ms over 40k requests"}}])
         self.assertEqual(r["warnings"], [])
 
 

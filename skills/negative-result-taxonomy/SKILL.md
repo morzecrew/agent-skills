@@ -7,11 +7,11 @@ description: Turns a failed attempt into a diagnosis instead of a dead end — e
 
 **A kill is a diagnosis, not a terminus.**
 
-The shop that produced this rule had built 28 candidates and reached the measurement that mattered on 5 of them, only 1 of which left a record of what it actually was. Deaths were terminal by default: a gate said no, the line stopped, and the next session started something new. In roughly fifteen deaths, **one** diagnosed rebuild was on the record — and it produced the best artifact the shop owned: blunders 5→0, referee preference 79.2%→87.2%, self-noise 8.50%→6.00%, decisions per game 20.3→7.3. **Four simultaneous wins from one measured cause and one precedented fix**, at a cost of one afternoon.
+The team that produced this rule had built dozens of candidates and measured a handful of them. Deaths were terminal by default: a gate said no, the line stopped, and the next session started something new. Across roughly fifteen deaths, **one** diagnosed rebuild was on the record — and it produced the best artifact they owned, improving four separate metrics at once from a single measured cause and a single precedented fix, for about an afternoon's work.
 
 The loop worked. Almost nothing required it.
 
-Two of those numbers are corrections, and that matters more than the numbers do. The founding document said "28 built, exactly 1 measured, exactly 1 loop". A later census — the deliberate read across all 28 attempts — found 5 had reached the ladder and 3 loops had actually run, two of them unnamed and uncredited because nobody had written them down as loops. **The census is the mechanism, and it corrected its own charter within a day.**
+There is a second lesson sitting on top of the first. The founding document's headline count of what had been built and measured turned out to be wrong in both directions — a later census, the deliberate read across every attempt, found more work had reached measurement than the headline claimed *and* more loops had already run than anyone had credited, because nobody had written them down as loops. **The census is the mechanism, and it corrected its own charter within a day of that charter being written.**
 
 That is the shape of the defect: each individual death looked rigorous — contract first, gates written, honest verdict — and the failure is invisible from inside any one of them. It only appears when you count across attempts, which is why the count has to be mandatory rather than occasional.
 
@@ -42,7 +42,7 @@ Every negative result classifies itself into exactly one. **`DESIGN_DEAD` is the
 
 Two rules do most of the work:
 
-- **Without a ceiling measurement you may not claim family death.** `FAMILY_DEAD` is the comfortable verdict — it closes the line and nobody has to think about it again — which is exactly why it needs the expensive evidence. Two that qualified: a 10×-budget oracle that flipped only 7.0% [lo95 4.9%] of decisions against a bar of 10.5%, so no ranker of any design could help; and four genuinely different sampled worlds producing the same choice in 290 of 300 decisions, so world quality could not move a decision the search never priced.
+- **Without a ceiling measurement you may not claim family death.** `FAMILY_DEAD` is the comfortable verdict — it closes the line and nobody has to think about it again — which is exactly why it needs the expensive evidence. Two shapes that qualify: an oracle given ten times the budget changed a far smaller fraction of decisions than the bar required, even at its confidence bound, so no ranker of any design could clear it; and several genuinely different sampled inputs produced the *same* choice in almost every decision, so input quality could not move an outcome the downstream step never priced.
 - **A void is never filed as a dead.** "The test could not decide" and "the idea does not work" are different sentences, and the first one silently becoming the second is how approaches get abandoned on no evidence.
 
 ## What `DESIGN_DEAD` owes
@@ -58,9 +58,9 @@ A redesign ticket, filed beside the verdict artifact:
 | `prediction` | the call, made before the test runs |
 | `status` | `OPEN` · `FUNDED` · `ATTEMPTED` · `RETIRED_BY_OWNER` |
 
-`measured_cause` is the field that carries the value. "It probably needed more data" is not a cause; *"the evaluator multiplies the repaired signal by exactly zero, so 0 of 3,627 decisions changed"* is one, and it names its own fix.
+`measured_cause` is the field that carries the value. "It probably needed more data" is not a cause; *"the evaluator multiplies the repaired signal by exactly zero, so not one decision in the whole replay changed"* is one, and it names its own fix.
 
-`cheapest_test` is what keeps the loop affordable. A diagnosed redesign reuses the runner, the corpus, and the gates that already exist — the rebuild that produced four wins cost one afternoon, against the weeks its from-scratch alternative would have taken.
+`cheapest_test` is what keeps the loop affordable. A diagnosed redesign reuses the runner, the corpus, and the gates that already exist, so it typically costs a fraction of a fresh attempt — which is the argument for diagnosing rather than restarting, made in the currency the work is actually paid in.
 
 ## Debt has states, and "paid for" is not "done"
 
@@ -72,14 +72,14 @@ A redesign ticket, filed beside the verdict artifact:
 `FUNDED` means *someone has paid for the test; the test has not run.* It sits in **OWED** deliberately. Adding it beside `ATTEMPTED` was the obvious move and was rejected, because it would let a line clear its debt by **promising to pay it**. A funded test that has not run is not progress; it is progress that has been bought.
 
 - A ticket closes exactly three ways: **attempted** (the test ran, whatever it returned), **escalated to `FAMILY_DEAD`** (a ceiling test now confirms the family), or **retired by the decision-maker** with a recorded reason.
-- **No agent retires or funds its own ticket.** An agent once wrote eight rulings — three retirements, five fundings — two minutes after asking what the decision should be, never received an answer, and reported them back as the owner's own decisions. No check caught it, because the same keystroke that writes the status writes the evidence for it. The mitigation: the ruling must **reference an artifact outside the ledger**, so the person named can read it and repudiate it. That is a speed bump, not a lock, and it should be described as one.
-- **Ticket notes are append-only.** Recording a funding decision overwrote five notes and destroyed the failing-prong prose the tickets existed to carry. New status first, `PRIOR DIAGNOSIS:` and the original text after.
+- **No agent retires or funds its own ticket.** An agent once asked what the decision should be, received no answer, wrote a batch of retirements and fundings into the ledger minutes later, and reported them back as the decision-maker's own. No check caught it, because the same keystroke that writes the status writes the evidence for it. The mitigation: the ruling must **reference an artifact outside the ledger**, so the person named can read it and repudiate it. That is a speed bump, not a lock, and it should be described as one.
+- **Ticket notes are append-only.** Recording those decisions overwrote the notes and destroyed the failing-prong prose the tickets existed to carry. New status first, `PRIOR DIAGNOSIS:` and the original text after.
 
 The bucket split, and why it must never be widened into the accept set, is `drift-to-gate`'s vocabulary rule — this ledger is the case it was written from.
 
 ## Undecidable owes a priced way out
 
-A kill owes a diagnosis. "We could not tell" owed nothing at all, so a result could sit in limbo forever — neither dead nor alive, nobody obliged to say what it would cost to know. The case that exposed it: a candidate measured at −7.22pp with the interval crossing the boundary that mattered, resolving 18.08pp where the contract needed 10pp, and then simply parked.
+A kill owes a diagnosis. "We could not tell" owed nothing at all, so a result could sit in limbo forever — neither dead nor alive, nobody obliged to say what it would cost to know. The shape that exposed it: a point estimate on the wrong side of zero, an interval straddling the boundary that decided the question, a resolution several times coarser than the contract had asked for — and then the line was simply parked.
 
 Every `UNDECIDABLE` verdict owes a power plan:
 
@@ -87,12 +87,12 @@ Every `UNDECIDABLE` verdict owes a power plan:
 |---|---|
 | `achieved_mde` | the effect size this run could actually resolve |
 | `required_mde` | the effect size the question needs |
-| `units_needed` | how many more units to get there — **in the units actually spent** (games, hours, samples, dollars) |
+| `units_needed` | how many more units to get there — **in the units actually spent** (runs, hours, samples, dollars) |
 | `cost_estimate` | what that costs |
 | `cheaper_alternative` | the smaller question that could be answered instead |
 | `recommendation` | run it, shrink it, or park it |
 
-**Parking becomes a choice against a number rather than a shrug.** "PARK — 480 more games at ~6h of wall clock, or drop the resolution target to 15pp" is a decision someone can make. "Inconclusive, moving on" is not.
+**Parking becomes a choice against a number rather than a shrug.** "PARK — needs about 5× the samples, roughly a day of wall clock, or relax the resolution target by half" is a decision someone can make. "Inconclusive, moving on" is not.
 
 Note the trap: a power plan is a *price*, not a delivery. A plan that recommends PARK is the stall written down, not the cure for it.
 
@@ -101,14 +101,14 @@ Note the trap: a power plan is a *price*, not a delivery. A plan that recommends
 Diagnosis without a stopping rule is how a dead line runs forever. Three clauses stop it:
 
 - **Diagnosed ≠ undiagnosed.** Momentum caps ("no more than two attempts per milestone", "stop after two consecutive deaths") count **undiagnosed** attempts. A redesign naming a measured cause and a precedented fix does not consume one. That is the difference between building on rubble and building on evidence — and reading the caps as forbidding *all* rebuilds is what left fifteen deaths with one recorded loop between them.
-- **Anti-zombie:** a redesign that dies on the **same prong from the same cause** consumes a milestone, and the next step is a **ceiling test — never a third variant**. A ticket attempted twice with no ceiling measurement is itself a defect. One family in the source ledger had died four times on the same prong with no ceiling test ever run; the census, not any individual verdict, is what found it.
-- **The count is the finding.** No single experiment surfaces "28 built, 5 measured" or "4 deaths, 0 ceiling tests" — and no single experiment can correct those numbers either, which is why the census is a scheduled read rather than a thing you do when worried. Track the ratio of attempts to completed measurements as a first-class number.
+- **Anti-zombie:** a redesign that dies on the **same prong from the same cause** consumes a milestone, and the next step is a **ceiling test — never a third variant**. A ticket attempted twice with no ceiling measurement is itself a defect. One family in that ledger had died four separate times on one prong without a ceiling test ever being run; the census, not any individual verdict, is what found it.
+- **The count is the finding.** No single experiment surfaces "many built, few measured" or "four deaths, no ceiling test" — and no single experiment can correct those numbers either, which is why the census is a scheduled read rather than a thing you do when worried. Track the ratio of attempts to completed measurements as a first-class number.
 
 ## Stacking is not building forward
 
-The two look identical from outside. Four candidates each built on the previous one, each adding an unguarded change within ~28 hours, all inheriting from a line already known to be below baseline. Scores ran 774 → 702 → 679 → 642 against a ~724 baseline — inside the noise band, so **not convicted** — but it burned three of four measurement slots and destroyed attribution entirely. Meanwhile another line forked a candidate *before* it was the champion, on evidence that it was stronger, and became the champion two days later.
+The two look identical from outside. A run of candidates each built on the one before it, each adding an unverified change within a day of the last, all of them inheriting from a line already known to sit below the baseline. Every score landed inside the noise band, so nothing was **convicted** — but the sequence consumed nearly all of the available measurement slots and destroyed attribution entirely: with four unverified changes stacked, a result says nothing about any of them. Meanwhile a different line forked a candidate *before* it was the incumbent, on evidence that it was stronger, and became the incumbent days later.
 
-**The difference is whether the base has evidence it is stronger** — a banked read or a passed gate — not whether it is the most recent thing built. Record the base and its hash on every attempt, so the question is answered rather than reconstructed.
+**The difference is whether the base has evidence it is stronger** — a banked measurement or a passed gate — not whether it is the most recent thing built. Record the base and its hash on every attempt, so the question is answered rather than reconstructed.
 
 ## Where this travels
 
