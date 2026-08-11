@@ -258,6 +258,9 @@ class RfcCollectionTest(unittest.TestCase):
             if "0003" in line
         )
         self.assertIn(str(script.ONE_LINER_TARGET), row)
+        # The ceiling too: naming only the target tells authors that 201-300
+        # is invalid, when the checker merely warns there.
+        self.assertIn(str(script.ONE_LINER_CEILING), row)
         self.assertIn("one sentence", row)
 
     def test_duplicate_numbers_are_a_check_finding_not_a_usage_error(self):
