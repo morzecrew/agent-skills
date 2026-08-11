@@ -87,6 +87,22 @@ query($id: ID!) {
 }
 """
 
+CHECK_IDENTITY_QUERY = """
+query($owner: String!, $repo: String!, $pr: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+        nodes {
+          __typename
+          ... on CheckRun { conclusion checkSuite { app { slug } } }
+          ... on StatusContext { state creator { login } }
+        }
+      } } } } }
+    }
+  }
+}
+"""
+
 RESOLVE_MUTATION = """
 mutation($thread: ID!) {
   resolveReviewThread(input: { threadId: $thread }) { thread { id isResolved } }
@@ -379,6 +395,51 @@ def speakers(items: list[dict]) -> set[str]:
     return found
 
 
+def cleanly_checked_apps(owner: str, repo: str, pr: int) -> set[str]:
+    """Apps whose checks on this PR all concluded clean, by exact identity.
+
+    A reviewer that ran and found nothing says so with a green check and no
+    comments — SKILL.md calls that a clean verdict, not a reason to keep
+    waiting. Matching a bot login to a check by name would be guesswork
+    ("cubic-dev-ai" posts "cubic · AI code reviewer"), so identity comes from
+    the API: a CheckRun carries its suite's app slug, and a StatusContext
+    carries its creator's login.
+    """
+    data = graphql(CHECK_IDENTITY_QUERY, {"owner": owner, "repo": repo}, {"pr": pr})
+    commits = data["repository"]["pullRequest"]["commits"]["nodes"]
+    if not commits:
+        return set()
+    rollup = commits[0]["commit"].get("statusCheckRollup") or {}
+    verdicts: dict[str, bool] = {}
+    for node in (rollup.get("contexts") or {}).get("nodes") or []:
+        if node.get("__typename") == "CheckRun":
+            who = (((node.get("checkSuite") or {}).get("app") or {}).get("slug") or "")
+            state = node.get("conclusion")
+        else:
+            who = ((node.get("creator") or {}).get("login") or "")
+            state = node.get("state")
+        if not who:
+            continue
+        name = who.lower().removesuffix("[bot]")
+        # One dirty check is enough to keep an app unsatisfied.
+        verdicts[name] = verdicts.get(name, True) and (state or "").upper() in CLEAN_CONCLUSIONS
+    return {name for name, clean in verdicts.items() if clean}
+
+
+def unsatisfied_bots(expect: list[str], spoke: set[str], checked_clean: set[str]) -> list[str]:
+    """Expected reviewers that have neither commented nor checked out clean.
+
+    Pure, so the rule that a green check settles a silent reviewer is testable
+    without a live PR — the wiring is where this went wrong before, not the
+    identity lookup.
+    """
+    return [
+        bot for bot in expect
+        if (name := bot.lower().removesuffix("[bot]")) not in spoke
+        and name not in checked_clean
+    ]
+
+
 def poll_comments(owner: str, repo: str, pr: int) -> dict:
     """One read of every comment surface: fingerprint, who spoke, when last.
 
@@ -452,10 +513,14 @@ def cmd_wait(
                     poll = poll_comments(owner, repo, pr)
                     fingerprint = poll["fingerprint"]
                     spoke = poll["speakers"]
-                    missing = [
-                        bot for bot in expect_bots
-                        if bot.lower().removesuffix("[bot]") not in spoke
-                    ]
+                    # A reviewer that ran and found nothing is finished, not
+                    # missing. Only pay for the identity lookup when someone
+                    # still looks absent from the comment surfaces.
+                    silent = unsatisfied_bots(expect_bots, spoke, set())
+                    missing = unsatisfied_bots(
+                        expect_bots, spoke,
+                        cleanly_checked_apps(owner, repo, pr) if silent else set(),
+                    )
                     if first_poll:
                         # Credit the quiet GitHub already recorded. Without
                         # this, arriving after every reviewer has finished
@@ -478,10 +543,21 @@ def cmd_wait(
                     state = "settling"
         except GhUnavailable as stalled:
             # The wait's own contract wins over the individual call's failure:
-            # report what we were waiting on, in the documented shape.
-            last_snapshot["timedOutWaitingFor"] = f"github ({stalled})"
+            # report what we were waiting on, in the documented shape. Running
+            # out of budget is usually the deadline arriving, not a stall, so
+            # name the thing that held the wait open rather than the call that
+            # happened to be in flight when time ran out.
+            last_snapshot["timedOutWaitingFor"] = (
+                "reviewers: " + ", ".join(missing) if missing
+                else "checks" if last_snapshot.get("pending")
+                else f"github ({stalled})"
+            )
             print(json.dumps(last_snapshot, indent=2))
-            print(f"gave up after {timeout_s}s: {stalled}", file=sys.stderr)
+            print(
+                f"gave up after {timeout_s}s waiting on "
+                f"{last_snapshot['timedOutWaitingFor']} ({stalled})",
+                file=sys.stderr,
+            )
             return 3
 
         if state == "done":

@@ -8,6 +8,7 @@ would test the fake, not the tool.
 from __future__ import annotations
 
 import contextlib
+import json
 import time
 import unittest
 from datetime import datetime, timezone
@@ -238,6 +239,90 @@ class QuietCreditTest(unittest.TestCase):
             fingerprint, fingerprint, min(stable_since, now - settle), now, settle,
         )
         self.assertEqual(state, "done")
+
+
+class CleanCheckIdentityTest(unittest.TestCase):
+    """A reviewer that ran and found nothing is finished, not missing."""
+
+    ROLLUP = {
+        "repository": {"pullRequest": {"commits": {"nodes": [{"commit": {
+            "statusCheckRollup": {"contexts": {"nodes": [
+                {"__typename": "CheckRun", "conclusion": "SUCCESS",
+                 "checkSuite": {"app": {"slug": "github-actions"}}},
+                # cubic posts "cubic · AI code reviewer" — nothing a name match
+                # would tie back to the login `--expect-bot` is given.
+                {"__typename": "CheckRun", "conclusion": "NEUTRAL",
+                 "checkSuite": {"app": {"slug": "cubic-dev-ai"}}},
+                {"__typename": "StatusContext", "state": "SUCCESS",
+                 "creator": {"login": "CodeRabbitAI"}},
+                {"__typename": "CheckRun", "conclusion": "FAILURE",
+                 "checkSuite": {"app": {"slug": "flaky-app"}}},
+            ]}},
+        }}]}}}
+    }
+
+    def setUp(self):
+        self.original = script.graphql
+        script.graphql = lambda *a, **k: self.ROLLUP
+
+    def tearDown(self):
+        script.graphql = self.original
+
+    def test_clean_apps_are_identified_by_slug_not_by_check_name(self):
+        self.assertEqual(
+            script.cleanly_checked_apps("o", "r", 1),
+            {"github-actions", "cubic-dev-ai", "coderabbitai"},
+        )
+
+    def test_a_failing_check_leaves_its_app_unsatisfied(self):
+        self.assertNotIn("flaky-app", script.cleanly_checked_apps("o", "r", 1))
+
+    def test_one_dirty_check_outweighs_a_clean_one_from_the_same_app(self):
+        # The failing run goes *first*, so a last-one-wins reduction would
+        # conclude clean. Appending it instead would pass either way.
+        mixed = json.loads(json.dumps(self.ROLLUP))
+        contexts = (mixed["repository"]["pullRequest"]["commits"]["nodes"][0]
+                    ["commit"]["statusCheckRollup"]["contexts"])
+        contexts["nodes"].insert(0, {
+            "__typename": "CheckRun", "conclusion": "FAILURE",
+            "checkSuite": {"app": {"slug": "cubic-dev-ai"}},
+        })
+        script.graphql = lambda *a, **k: mixed
+        self.assertNotIn("cubic-dev-ai", script.cleanly_checked_apps("o", "r", 1))
+
+
+class UnsatisfiedBotsTest(unittest.TestCase):
+    """The rule that a green check settles a silent reviewer, wired up.
+
+    `cleanly_checked_apps` being correct proved nothing about `wait` using it —
+    the first sabotage of that wiring passed, because no test covered it.
+    """
+
+    def test_a_bot_that_commented_is_satisfied(self):
+        self.assertEqual(
+            script.unsatisfied_bots(["coderabbitai"], {"coderabbitai"}, set()), []
+        )
+
+    def test_a_silent_bot_with_a_clean_check_is_satisfied(self):
+        self.assertEqual(
+            script.unsatisfied_bots(["cubic-dev-ai"], set(), {"cubic-dev-ai"}), []
+        )
+
+    def test_a_silent_bot_with_no_clean_check_is_still_missing(self):
+        self.assertEqual(
+            script.unsatisfied_bots(["cubic-dev-ai"], set(), {"other"}), ["cubic-dev-ai"]
+        )
+
+    def test_the_bot_suffix_is_ignored_on_either_side(self):
+        self.assertEqual(
+            script.unsatisfied_bots(["CodeRabbitAI[bot]"], {"coderabbitai"}, set()), []
+        )
+
+    def test_no_commits_is_not_a_crash(self):
+        script.graphql = lambda *a, **k: {
+            "repository": {"pullRequest": {"commits": {"nodes": []}}}
+        }
+        self.assertEqual(script.cleanly_checked_apps("o", "r", 1), set())
 
 
 class SpeakersTest(unittest.TestCase):
