@@ -1,114 +1,114 @@
 ---
 name: decide-before-you-look
-description: Pre-registers what a run will decide before the data exists — a six-line call block with a predicted number, an 80% interval that must be narrower than the decision band, a probability of surviving, the likeliest reason to be wrong, and the artifact already on disk that could answer it without running anything. Covers frozen bars and append-only amendments, the goalpost-move prohibition, pre-committing a null as a result, reporting a leaning and the deciding arm together, never overriding mid-run, and where an ambition multiplier belongs. Use before any experiment, benchmark, A/B, spike, or evaluation; when a threshold is being changed after results are visible; when a run is producing an inconvenient answer; or when someone asks for "N times better".
+description: Pre-registers what a run will decide before the data exists — a six-line call block with a predicted number, an 80% interval required to be tighter than the range the decision turns on, a probability of surviving, the likeliest reason to be wrong, and the artifact already on hand that could answer it without running anything. Covers frozen thresholds and append-only amendments, refusing to lower a bar after seeing results, pre-committing where a null sends the effort, reporting a leaning alongside the deciding measurement, never adjusting a run in flight, and where a stakeholder's multiplier belongs. Use before any experiment, benchmark, A/B, spike, or evaluation; when a threshold is being changed after results are visible; when a run is producing an inconvenient answer; or when someone asks for "N times better".
 ---
 
 # Decide Before You Look
 
-Goalposts move after you see the data, and the person moving them experiences it as improved understanding. That is not a character flaw to resist harder — it is what looking at results does to the person who wanted a particular one. The only reliable fix is to write the decision down while the answer is still unknown, somewhere that cannot be quietly edited afterward.
+Thresholds move after the results arrive, and whoever moves them experiences it as having understood the problem better. That is not weakness to be resisted harder — it is what seeing an outcome does to someone who was hoping for a particular one. The only dependable remedy is to write the decision down while the answer is still unknown, somewhere that cannot be quietly revised.
 
-The discipline has a cheap core and an expensive-to-skip periphery. The core is one artifact.
+The core is one short artifact. Everything else here is what it costs to skip it.
 
 ## Use this skill when
 
 - Designing any experiment, benchmark, A/B test, spike, kill-test, or evaluation
-- Any threshold, bar, or success criterion is being set — or changed after results are visible
+- Any threshold or success criterion is being set — or changed once results are visible
 - A run is underway and producing an inconvenient answer
 - A stakeholder asks for "3× better", "half the latency", or any multiplier on an outcome
-- Reporting a partial result while the deciding measurement is still running
-- Reviewing whether a completed evaluation actually decided anything
+- Reporting a partial result while the measurement that decides is still running
+- Reviewing whether a finished evaluation actually settled anything
 
 ## Do not use this skill when
 
-- The work has no decision attached — exploratory reading, a spike whose only deliverable is a description of the landscape. Say so explicitly; an exploration relabelled as a test after it produces a nice number is the exact failure this prevents.
-- The measurement is free and instantly repeatable, so the cost of being wrong is another five seconds
+- The work carries no decision — exploratory reading, or a spike whose only output is a description of the terrain. Say so explicitly: an exploration relabelled as a test once it produces a pleasing number is the precise failure this prevents.
+- The measurement is free and instantly repeatable, so being wrong costs another few seconds
 
 ## The call block
 
-Six lines, written and committed **before the run starts**. It fits on half a page and is the highest-value artifact here.
+Six lines, written and committed **before the run begins**. It fits on half a page.
 
 | # | Line | Why |
 |---|---|---|
-| 1 | **The metric, with units** | Names what will be read, so the reading cannot be swapped afterward |
+| 1 | **The metric, with units** | Fixes what will be read, so the reading cannot be swapped later |
 | 2 | **The predicted number** | A point estimate. Being wrong is fine; being unfalsifiable is not |
-| 3 | **An 80% interval** | **Must be narrower than the decision band.** If it is not, the run cannot resolve anything and should not be run |
-| 4 | **P(survives)** | Your own odds, stated. Calibration is only learnable if predictions are recorded |
-| 5 | **The most likely reason I am wrong** | Names the failure mode you would otherwise discover as a surprise and rationalize |
-| 6 | **The artifact already on disk that could answer this without running anything** | The line that pays for the whole block |
+| 3 | **An 80% interval** | **Tighter than the band the decision turns on.** Otherwise the run settles nothing |
+| 4 | **P(survives)** | Your own odds, on the record. Calibration is unlearnable without them |
+| 5 | **The likeliest reason I am wrong** | Names the failure you would otherwise meet as a surprise and explain away |
+| 6 | **The artifact already on hand that could answer this without running anything** | The line that pays for the rest |
 
-Line 3 is the one people skip, and it is arithmetic, not judgment: if your own predictive interval is wider than the gap between "alive" and "dead", then either answer is consistent with your prior and the run buys nothing. Check it before spending the machine time.
+Line 3 is arithmetic, not judgement, and it is the one people skip. If your own interval is wider than the distance between "keep going" and "stop", both outcomes sit comfortably inside what you already believe, and the run buys nothing. Check it before committing the machine time.
 
-**Line 6 is the one that pays.** It was minted from a measured audit of graded machine time: **two thirds of it bought facts that were already on disk.** One multi-hour hold learned what a sixty-row lookup would have answered. Answering line 6 honestly — including "none, and here is why" — is the cheapest step in this entire skill and the one that most often cancels the run.
+**Line 6 earns the whole practice.** It came out of an audit of how graded machine time was actually spent: a clear majority of it produced facts that were already sitting in existing files. One long hold answered a question a short lookup would have settled. Answering line 6 honestly — "none, and here is why" is a complete answer — is the cheapest step here and the one that most often calls the run off.
 
-`scripts/call_block.py` validates the block, including the line-3 arithmetic.
+`scripts/call_block.py` validates the block, arithmetic included.
 
 ## Pre-registration mechanics
 
-- **Bars live in a validated artifact, not in prose.** A number in a paragraph is a number that can be reread charitably. A number in a schema-checked contract has to be edited, and the edit shows up in a diff.
-- **Commit before the data exists.** The git timestamp is the evidence. A pre-registration written after the first arm reports is a post-registration, whatever it is called.
-- **Amendments are append-only and reference the frozen base.** A change lands as a new document naming the base commit or hash it amends; the base is never silently edited. This is what makes "we changed the bar" a visible act rather than an invisible one.
-- **Declare the decision band, not just the bar** — what counts as alive, what counts as dead, and what counts as *the instrument failed*, which is a third outcome and not a synonym for either.
+- **Thresholds live in a validated artifact, not in prose.** A number in a paragraph can be reread generously. A number in a schema-checked file has to be edited, and the edit appears in a diff.
+- **Commit before the data exists.** The commit history is the evidence. A registration written after the first measurement arrives is a description, whatever it is called.
+- **Amendments are additive and name what they amend.** A change lands as a new document referencing the commit or hash of the version it revises; the original is never edited in place. That is what turns "we changed the threshold" into a visible act.
+- **Declare the whole band, not just the bar** — what counts as continue, what counts as stop, and what counts as *the instrument failed*, which is a third outcome rather than a synonym for either.
 
-## The goalpost-move prohibition
+## Do not lower a bar to fit the result
 
-**When a result reveals that the bar was set against a mis-measured quantity, kill the build; do not amend the bar down to fit what you found.**
+**When results reveal the threshold was set against a badly measured quantity, stop the work; do not adjust the threshold to match what turned up.**
 
-The case: a probe's pre-registered bar was set against an opportunity counted at one decision point. The measurement turned out to be counted at the wrong point, and the honest opportunity was a small fraction of it — far below the bar. The build was killed rather than amended, because *moving the bar after seeing the result is the goalpost move the gates exist to prevent*, and it stays the goalpost move even when the original number was genuinely wrong.
+The case behind this: a probe's threshold had been set against an opportunity counted at the wrong point in the process. Re-counted correctly, the real opportunity was a small fraction of it — far under the bar. The work was stopped rather than re-scoped, because lowering a threshold once the result is visible is the exact move pre-registration exists to prevent, and it stays that move even when the original figure was genuinely mistaken.
 
-The distinction that keeps this workable: **re-gating after seeing a result is defensible only when all three hold** — the criterion was pre-declared, the data it uses is pre-treatment (a baseline or headroom measurement, not an outcome), and the look order is disclosed in the same breath as the number. Anything else is a new experiment, and it starts with a new call block.
+The distinction that keeps this usable: **revisiting a criterion after seeing results is defensible only when all three hold** — the criterion was declared in advance, the data it relies on is pre-treatment (a baseline or a headroom measurement rather than an outcome), and the order in which things were looked at is disclosed alongside the number. Anything else is a new experiment, and it starts with a new call block.
 
-## Naming a defect is not removing it
+## Documenting a flaw does not remove it
 
-A pre-registration once recorded, in writing, that one arm was capped and could not express the effect being measured — *"IN, but capped: it cannot show more than 10pp"* — and then included it in the primary metric anyway. That arm averaged a real, large effect down by half and returned FAIL. Every control passed: it was a true reading of a badly built metric.
+One registration recorded, in writing, that a particular arm was capped and could not express the effect being measured — and then included that arm in the headline number anyway. It dragged a real, substantial effect down by roughly half and produced a failing verdict. Every control passed: it was an accurate reading of a badly constructed measure.
 
-**Writing the caveat felt like diligence and functioned as an alibi.** If a written note is the only thing standing between a known-invalid input and the computed result, the note loses — because the metric is what gets computed, and prose is not. Remove the arm, or keep it in a secondary that is not ceiling-bound.
+**Writing the caveat felt like rigour and worked as an excuse.** When a written note is all that stands between a known-invalid input and the computed result, the note loses, because the computation is what happens and prose is not. Remove the arm, or move it to a secondary reading where its ceiling does not matter.
 
-The sibling rule: **gate on an estimate precise enough to decide the gate.** The bad arm entered on a small pilot whose confidence interval spanned the entire decision. Size the gating probe to the gate it is gating.
+The companion rule: **the estimate that admits something to a measure must be precise enough to make that call.** The bad arm was admitted on a small pilot whose interval spanned the entire question. Size that pilot to the decision it is making.
 
-## A null is a result, and it is pre-committed
+## A null is a result, decided in advance
 
-Before the run, write down **where the effort goes if the answer is null.** Name the next item on the ranked list of causes.
+Before the run, write down **where the effort goes if the answer is null** — name the next item on the ranked list of suspected causes.
 
-This removes the incentive that quietly corrupts every kill test: the wish for an expensive run to have been worth it. **A test in which only one outcome counts as success will be read until it produces that outcome.** And if you cannot name what a null would redirect you to, the test is not decision-relevant and should not be built.
+This removes the pressure that quietly corrupts every kill test: wanting an expensive run to have been worthwhile. **A test where only one outcome counts as success gets re-read until it produces that outcome.** And when nothing can be named as the destination for a null, the run has no bearing on any decision, and building it is the mistake.
 
-## Say which way it leans, and refuse to call it
+## Report the leaning and the decider together
 
-While a run is live, report both halves in the same breath, every time:
+While a run is live, give both halves in the same breath, every time:
 
-1. **Which way the evidence leans right now**, and
-2. **Which arm has the power to decide, and whether it has reported.**
+1. **Which way the evidence currently points**, and
+2. **Which measurement has the power to decide, and whether it has reported.**
 
-The first without the second is how a run gets stopped early on whichever arm landed first — and the first arm to land is usually the fastest one, which is frequently also the least informative. The second without the first hides the state of the evidence and makes the eventual verdict look like it arrived from nowhere.
+The first without the second is how a run gets stopped on whichever arm finished first — and the first to finish is usually the quickest, which is often the least informative. The second without the first conceals the state of the evidence and makes the final verdict look like it appeared from nowhere.
 
-Before the run, name which arms *cannot* decide: ceiling-bound, underpowered, wrong distribution. Never let an arm that was not pre-named as the decider end the run.
+Before starting, name the arms that *cannot* decide: ceiling-bound, underpowered, wrong population. Never let an arm that was not designated as the decider end the run.
 
-## Never override mid-run
+## Do not adjust a run in flight
 
-A run that is touched mid-flight — one arm edited, a parameter nudged, a step finished by hand — is an anecdote, not an experiment. **Stop it, log the override as an event, and either re-register or discard.** A sometimes-overridden process cannot be studied, because you can no longer say what produced the number.
+A run that is touched while running — an arm edited, a parameter nudged, a step completed by hand — is a story, not an experiment. **Stop it, record the intervention as an event, and either re-register or discard.** A process that is sometimes intervened in cannot be studied, because nobody can say what produced the number.
 
-## Where an ambition multiplier goes
+## Where a stakeholder's multiplier goes
 
-When a stakeholder asks for "3× better", the work is arithmetic before it is design:
+When someone asks for "3× better", the first work is arithmetic, not design:
 
-1. **Enumerate every reading of the multiplier against the measured opportunity, and kill the impossible ones in writing.** Most readings of a bold multiplier exceed the entire available headroom; a bar above the whole opportunity produces paperwork, not candidates.
-2. **Put the multiplier where a number already exists** — verdicts resolved per cycle, the strength required to call a mechanism alive — not on the outcome. Those are usually free.
-3. **The ship gate never carries the ambition.** Tightening what may reach the real judge is how a team ends up with a shelf of careful, unmeasured work.
-4. **Retro-verify any new threshold before adopting it:** replay it against every past verdict. If it rewrites history, it is a new instrument rather than a raised bar, and it needs its own validation.
+1. **List what the multiplier could mean, price each reading against the room that actually exists, and rule out the impossible ones on paper.** Most readings of a bold multiplier exceed the entire available room; a target above the whole opportunity yields documentation, not candidates.
+2. **Attach the multiplier to a quantity that already has a number** — decisions settled per cycle, the margin required before calling something real — rather than to the outcome. Those are usually free.
+3. **The shipping threshold never carries the ambition.** Restricting what may reach the real measurement is how a team accumulates a shelf of careful, unmeasured work.
+4. **Replay any new threshold against past verdicts before adopting it.** If it rewrites history, it is a different instrument rather than a higher bar, and it needs validating on its own.
 
 ## Failure modes
 
-- **The retrospective hypothesis.** A finding written up as though it had been predicted. If it was not in the call block, say it was exploratory.
-- **The un-resolvable run.** Interval wider than the decision band, launched anyway. Line 3 exists to catch this before the spend.
-- **The alibi caveat.** A known defect documented in the pre-registration and included in the metric regardless.
-- **The stopped-early run.** The convenient arm reports, the verdict is announced, the deciding arm never finishes.
-- **Silent amendment.** The bar edited in place. If the base document can be changed without a diff someone reads, there is no pre-registration.
-- **Success-only design.** No pre-committed destination for a null. The run will be re-read until it produces the wanted answer.
+- **The retrospective hypothesis.** A finding written up as though predicted. If it was not in the call block, label it exploratory.
+- **The unresolvable run.** Interval wider than the band, launched regardless. Line 3 exists to catch this before the spend.
+- **The alibi caveat.** A known flaw documented in the registration and included in the result anyway.
+- **The run stopped early.** The convenient arm reports, the verdict is announced, the deciding arm never finishes.
+- **The quiet amendment.** A threshold edited in place. If the original can change without a diff somebody reads, nothing was registered.
+- **Success-only design.** No pre-committed destination for a null, so the run gets re-read until it agrees.
 
 ## Related skills
 
 - `negative-result-taxonomy` — what a null owes once it lands, and how an undecidable result gets priced
-- `measure-before-optimizing` — instrument resolution and honest benchmarking; the source of the numbers a call block predicts
-- `authority-dissociation` — the fitting metric must not be the killing metric, and who may declare a run finished
-- `drift-to-gate` — putting the frozen bar somewhere that refuses, rather than somewhere that is remembered
-- `rfc-writer` — append-only amendment discipline, applied to design decisions rather than thresholds
+- `measure-before-optimizing` — instrument resolution and honest benchmarking; where the numbers a call block predicts come from
+- `authority-dissociation` — the tuning measure must not be the rejecting measure, and who may declare a run finished
+- `drift-to-gate` — putting the frozen threshold somewhere that refuses rather than somewhere that is remembered
+- `rfc-writer` — additive amendment discipline, applied to design decisions rather than thresholds
 - `distill-the-rule` — a surprising call-block miss is a calibration finding worth keeping

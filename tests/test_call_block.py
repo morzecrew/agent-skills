@@ -24,9 +24,9 @@ COMPLETE = """\
 2. **Predicted number:** 140
 3. **80% interval:** [120, 165]
 4. **P(survives):** 0.6
-5. **Most likely reason I am wrong:** the batching window collides with the
+5. **Likeliest reason this prediction is wrong:** the batching window collides with the
    existing readahead, so the two prefetchers queue behind each other
-6. **Artifact already on disk that could answer this without the run:** none —
+6. **Artifact on disk that could answer this without the run:** none —
    the traces record hit rate but never per-request latency
 
 ## Decision band
@@ -75,7 +75,7 @@ class TestPresence(unittest.TestCase):
 
     def test_each_missing_line_is_reported(self):
         for label in ("Metric, with units", "Predicted number", "80% interval",
-                      "P(survives)", "Most likely reason", "Artifact already",
+                      "P(survives)", "Likeliest reason", "Artifact on disk",
                       "Band:"):
             findings = cb.check(self.drop(label))
             self.assertIn("C1", codes(findings), label)

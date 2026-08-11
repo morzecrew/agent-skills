@@ -40,7 +40,10 @@ FIELDS = (
     ("prediction", "the predicted number", (r"predict", r"point estimate")),
     ("interval", "the 80% interval", (r"80\s*%\s*interval", r"\binterval\b")),
     ("probability", "P(survives)", (r"p\s*\(\s*surviv", r"probability of surviv")),
-    ("wrong", "the most likely reason I am wrong", (r"reason.*wrong", r"wrong.*reason")),
+    # Both spellings parse: a document written to the older label must not
+    # stop validating because this template changed its wording.
+    ("wrong", "the likeliest reason this prediction is wrong",
+     (r"reason.*wrong", r"wrong.*reason")),
     ("artifact", "the artifact that could answer this without the run",
      (r"artifact", r"already on disk", r"without (?:the )?(?:run|machine)")),
     ("band", "the decision band", (r"decision band", r"\bband\b")),
@@ -217,8 +220,8 @@ Committed BEFORE the run.
 2. **Predicted number:** <point estimate>
 3. **80% interval:** [<low>, <high>]
 4. **P(survives):** <0.0 - 1.0>
-5. **Most likely reason I am wrong:** <the failure mode you would otherwise
-   discover as a surprise and then rationalise>
+5. **Likeliest reason this prediction is wrong:** <the failure you would
+   otherwise meet as a surprise and then explain away>
 6. **Artifact on disk that could answer this without the run:** <path, or
    "none, because ...">
 
@@ -231,7 +234,7 @@ Committed BEFORE the run.
 
 ## If it comes back null
 
-<the next cause on the ranked list that this effort moves to>
+<where this effort goes instead — the next suspected cause down the list>
 """
 
 
