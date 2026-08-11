@@ -213,6 +213,17 @@ class TestVisibility(LedgerCase):
                          "ticket": dict(TICKET)}])
         self.assertIn("do not report these lines closed", kl.render(r))
 
+    def test_the_rendered_report_carries_the_warnings(self):
+        """A detection branch: it only runs when there is something to warn
+        about, which is exactly the code that must not be dead. The coverage
+        pass found it untested — warnings are this ledger's whole non-blocking
+        visibility channel."""
+        r = self.audit([{"candidate": "x-v1", "kill_class": "INSTRUMENT_VOID",
+                         "base": {"artifact": "champ.tar.gz"}}])
+        rendered = kl.render(r)
+        self.assertIn("WARNINGS", rendered)
+        self.assertIn("stronger", rendered)
+
 
 class TestAntiZombie(LedgerCase):
 
@@ -285,6 +296,15 @@ class TestMeter(LedgerCase):
                             owner_ruling=None)} for i in range(2)]
         r = self.audit(entries, now=kl._date("2026-08-11"))
         self.assertFalse(r["meter"]["over_tuned"], r["meter"])
+
+    def test_an_impossible_date_is_ignored_rather_than_crashing(self):
+        """`2026-13-45` matches the shape and is not a date. A meter that
+        raises here takes the whole ledger check down with it."""
+        self.assertIsNone(kl._date("2026-13-45"))
+        r = self.audit(self.opened(4, when="2026-02-31"),
+                       now=kl._date("2026-08-11"))
+        self.assertEqual(r["verdict"], "OK", r)
+        self.assertEqual(r["meter"]["opened"], 0)
 
     def test_tickets_outside_the_window_do_not_count(self):
         r = self.audit(self.opened(4, when="2026-01-01"),

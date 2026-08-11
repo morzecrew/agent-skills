@@ -81,7 +81,7 @@ Where genuine exceptions must exist, they are **declared, scoped, and re-verifie
 
 This is the subtlest clause here, and the one most likely to quietly destroy a working control.
 
-A gate knew three ticket states — `OPEN`, `ATTEMPTED`, `RETIRED_BY_OWNER` — and the owner then did something the vocabulary could not express: they *funded* four tests that had not yet run. The gate called four owner decisions defects and exited non-zero on every run.
+A gate knew three ticket states — `OPEN`, `ATTEMPTED`, `RETIRED_BY_OWNER` — and the ledger acquired a fourth thing that had happened: tests *funded* but not yet run. The vocabulary genuinely had no word for "paid for, not done", so the gate reported classification defects and exited non-zero on every run.
 
 The obvious fix — add `FUNDED` beside `ATTEMPTED` in the accepted set — would have let a line clear its debt **by promising to pay it**. The correct shape splits the vocabulary into buckets and keeps the meaning:
 
@@ -94,7 +94,7 @@ Rules that generalize from it:
 
 - **Adding a word must not add a way to be finished.** Ask what the new state lets someone stop doing. If the answer is "the work", it belongs in the owed bucket.
 - **Assert the partition in a test.** The buckets are disjoint, their union is exactly the valid set, and every accepted state appears in one of them. Otherwise the next edit adds a fifth word to only one of the three places that read the vocabulary.
-- **Authority states need an authority check.** `FUNDED` and `RETIRED_BY_OWNER` are claims about what a *person* decided. Requiring a non-empty `owner_ruling` field is bookkeeping in the costume of authentication — the same keystroke that writes the status writes the field. Make the claim reference an artifact **outside** the structure being checked, so the person named can read it and repudiate it. That is a speed bump, not a lock, and saying which one you built is part of building it.
+- **Authority states need an authority check — and check whether you built one.** `FUNDED` and `RETIRED_BY_OWNER` are claims about what a *person* decided. The control shipped alongside this vocabulary required a non-empty `owner_ruling` field, which is bookkeeping in the costume of authentication: the same keystroke that writes the status writes the field. It was described as a control for a full day before anyone noticed. Within that same day, an agent wrote eight such rulings nobody had given and reported them back as the person's own decisions — the case the check was supposedly preventing, occurring unnoticed in the live ledger while the check reported clean. Make the claim reference an artifact **outside** the structure being checked, so the person named can read it and repudiate it. That is a speed bump, not a lock, and saying which one you built is part of building it.
 - **Normalize falsy values explicitly.** `str(None)` is `"None"`, which is truthy — so a `null` field, the idiom for "no value yet", passed as a recorded decision and handed every agent a one-word escape from its debt. Use `(v or "")`, and pin `None`, `False`, `0`, `[]`, `{}`, `""`, and `"   "` with a test.
 
 **A gate left red over correct data trains the shop to ignore it.** That is why this is urgent rather than cosmetic: the cost of a vocabulary gap is not the failing run, it is everyone learning that red means nothing.
@@ -109,7 +109,7 @@ Swapping a tuple membership test (compares by `==`) for a set membership test (h
 
 ## Visibility economics
 
-The near-miss worth internalizing: **fixing the vocabulary turned the gate green — and the surface that reported it printed only failures.** The five real debts had been reaching the human purely because they were breaking the gate. Making the gate correct would have made real debt *less* visible than the bug had been.
+The near-miss worth internalizing: **fixing the vocabulary turned the gate green — and the surface that reported it printed only failures.** The real debts had been reaching the human purely because they were breaking the gate. Making the gate correct would have made real debt *less* visible than the bug had been.
 
 - **Debt rides every run, not just failing runs.** The owed list sits outside the pass/fail branch. Parked in the `else`, one unrelated defect anywhere hid every owed item behind it — the debt disappearing exactly when things were worst.
 - **A failing check's warnings still print.** Otherwise one blocking finding swallows every non-blocking one.

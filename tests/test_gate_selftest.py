@@ -123,6 +123,25 @@ class TestRubberStamp(AuditCase):
         ''')
         self.assertEqual(findings, [])
 
+    def test_assert_true_counts_as_a_pass(self):
+        """Documented behaviour with no test until the coverage pass found it:
+        `assertTrue` was the only pass-evidence some suites had.
+
+        The subscript key matters — `gate()["ok"]` made this vacuous, because
+        the literal "ok" is itself pass-evidence and the assertTrue branch was
+        never what carried the test."""
+        findings = self.audit_tests('''
+            import unittest
+
+            class T(unittest.TestCase):
+                def test_a(self):
+                    self.assertTrue(gate()["decided"])
+
+                def test_b(self):
+                    self.assertEqual(gate()["verdict"], "REFUSE")
+        ''')
+        self.assertEqual(findings, [])
+
     def test_a_bare_number_is_not_an_exit_code(self):
         """`assertEqual(len(rows), 1)` must not read as a proof of refusal."""
         findings = self.audit_tests('''
@@ -201,6 +220,21 @@ class TestSwallowedFailure(AuditCase):
                     return {}
         ''')
         self.assertIn("cannot tell from a clean result", findings[0]["message"])
+
+    def test_a_handler_that_neither_returns_nor_skips_is_still_flagged(self):
+        """The third shape: it logs and falls through, so the caller receives a
+        result that silently omits whatever failed."""
+        findings = self.audit_gate('''
+            def gate(path):
+                data = {}
+                try:
+                    data = load(path)
+                except Exception as exc:
+                    log.info("skipping %s: %s", path, exc)
+                return data
+        ''')
+        self.assertIn("swallowed-failure", self.checks(findings))
+        self.assertIn("leaves no trace", findings[0]["message"])
 
     def test_a_bare_except_is_flagged(self):
         findings = self.audit_gate('''
@@ -294,6 +328,16 @@ class TestUnwiredVerdict(AuditCase):
 
             def main():
                 sys.exit({"GO": 0, "HOLD": 1, "REFUSE": 2}[verdict()])
+
+            if __name__ == "__main__":
+                main()
+        '''), [])
+
+    def test_raising_system_exit_is_wiring(self):
+        self.assertEqual(self.audit_gate('''
+            def main():
+                if broken():
+                    raise SystemExit(verdict())
 
             if __name__ == "__main__":
                 main()

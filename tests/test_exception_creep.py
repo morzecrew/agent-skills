@@ -322,6 +322,39 @@ class TestDiffParsing(ScanCase):
     def test_render_says_so_when_clean(self):
         self.assertIn("clean", ec.render([]))
 
+    def test_an_empty_input_is_genuinely_clean(self):
+        self.assertIsNone(ec.unreadable(""))
+        self.assertIsNone(ec.unreadable("   \n"))
+
+    def test_a_readable_diff_is_not_called_unreadable(self):
+        self.assertIsNone(ec.unreadable(diff('''
+            diff --git a/a.py b/a.py
+            --- a/a.py
+            +++ b/a.py
+            @@ -1,1 +1,1 @@
+            -x
+            +y
+        ''')))
+
+    def test_a_combined_merge_diff_refuses_rather_than_reporting_clean(self):
+        """The three-column merge format parses to nothing here, and "nothing
+        found" would be indistinguishable from the good news."""
+        why = ec.unreadable(diff('''
+            diff --cc scan.py
+            index 111,222..333
+            --- a/scan.py
+            +++ b/scan.py
+            @@@ -1,2 -1,2 +1,3 @@@
+            ++ALLOWLIST = ["vendor/"]
+        '''))
+        self.assertIsNotNone(why)
+        self.assertIn("combined", why)
+
+    def test_input_that_is_not_a_diff_at_all_refuses(self):
+        why = ec.unreadable("here are my changes: I added an allowlist\n")
+        self.assertIsNotNone(why)
+        self.assertIn("file headers", why)
+
 
 class TestGitModes(unittest.TestCase):
     """The default path: read the repository, not a hand-written patch."""
@@ -364,6 +397,24 @@ class TestGitModes(unittest.TestCase):
         proc = self.run_ec("main~1..main")
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertIn("clean", proc.stdout)
+
+    def test_an_unreadable_patch_refuses_at_the_command_line(self):
+        """`unreadable()` being correct is worth nothing until the CLI acts on
+        it — a verdict not wired to an exit code reports and does not refuse.
+        Sabotage caught this: the check existed and main() ignored it."""
+        combined = diff('''
+            diff --cc scan.py
+            --- a/scan.py
+            +++ b/scan.py
+            @@@ -1,2 -1,2 +1,3 @@@
+            ++ALLOWLIST = ["vendor/"]
+        ''')
+        patch = self.root / "merge.diff"
+        patch.write_text(combined)
+        proc = self.run_ec("--patch", str(patch))
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("combined", proc.stderr)
+        self.assertNotIn("clean", proc.stdout)
 
     def test_a_bad_range_refuses_rather_than_reporting_clean(self):
         """Reporting "clean" because git failed is the worst possible answer."""

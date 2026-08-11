@@ -7,11 +7,13 @@ description: Turns a failed attempt into a diagnosis instead of a dead end — e
 
 **A kill is a diagnosis, not a terminus.**
 
-The shop that produced this rule had built 28 candidates. Exactly one had ever reached the measurement that mattered. Deaths were terminal by default: a gate said no, the line stopped, and the next session started something new. In roughly fifteen deaths, exactly **one** was diagnosed and rebuilt — and that rebuild produced the best artifact the shop owned: blunders 5→0, referee preference 79.2%→87.2%, self-noise 8.50%→6.00%, decisions per game 20.3→7.3. **Four simultaneous wins from one measured cause and one precedented fix**, at a cost of one afternoon.
+The shop that produced this rule had built 28 candidates and reached the measurement that mattered on 5 of them, only 1 of which left a record of what it actually was. Deaths were terminal by default: a gate said no, the line stopped, and the next session started something new. In roughly fifteen deaths, **one** diagnosed rebuild was on the record — and it produced the best artifact the shop owned: blunders 5→0, referee preference 79.2%→87.2%, self-noise 8.50%→6.00%, decisions per game 20.3→7.3. **Four simultaneous wins from one measured cause and one precedented fix**, at a cost of one afternoon.
 
-The loop worked. It was used once, because nothing required it.
+The loop worked. Almost nothing required it.
 
-The defect is not pessimism. Each individual death looked rigorous — contract first, gates written, honest verdict. The defect only appears when you count across attempts, and nobody was counting. What follows makes the count mandatory and the classification explicit.
+Two of those numbers are corrections, and that matters more than the numbers do. The founding document said "28 built, exactly 1 measured, exactly 1 loop". A later census — the deliberate read across all 28 attempts — found 5 had reached the ladder and 3 loops had actually run, two of them unnamed and uncredited because nobody had written them down as loops. **The census is the mechanism, and it corrected its own charter within a day.**
+
+That is the shape of the defect: each individual death looked rigorous — contract first, gates written, honest verdict — and the failure is invisible from inside any one of them. It only appears when you count across attempts, which is why the count has to be mandatory rather than occasional.
 
 ## Use this skill when
 
@@ -98,9 +100,9 @@ Note the trap: a power plan is a *price*, not a delivery. A plan that recommends
 
 Diagnosis without a stopping rule is how a dead line runs forever. Three clauses stop it:
 
-- **Diagnosed ≠ undiagnosed.** Momentum caps ("no more than two attempts per milestone", "stop after two consecutive deaths") count **undiagnosed** attempts. A redesign naming a measured cause and a precedented fix does not consume one. That is the difference between building on rubble and building on evidence — and reading the caps as forbidding *all* rebuilds is what produced the 28-to-1 record in the first place.
+- **Diagnosed ≠ undiagnosed.** Momentum caps ("no more than two attempts per milestone", "stop after two consecutive deaths") count **undiagnosed** attempts. A redesign naming a measured cause and a precedented fix does not consume one. That is the difference between building on rubble and building on evidence — and reading the caps as forbidding *all* rebuilds is what left fifteen deaths with one recorded loop between them.
 - **Anti-zombie:** a redesign that dies on the **same prong from the same cause** consumes a milestone, and the next step is a **ceiling test — never a third variant**. A ticket attempted twice with no ceiling measurement is itself a defect. One family in the source ledger had died four times on the same prong with no ceiling test ever run; the census, not any individual verdict, is what found it.
-- **The count is the finding.** No single experiment surfaces "28 built, 1 measured" or "4 deaths, 0 ceiling tests". Keep the ledger and read it across attempts, periodically. Track the ratio of attempts to completed measurements as a first-class number.
+- **The count is the finding.** No single experiment surfaces "28 built, 5 measured" or "4 deaths, 0 ceiling tests" — and no single experiment can correct those numbers either, which is why the census is a scheduled read rather than a thing you do when worried. Track the ratio of attempts to completed measurements as a first-class number.
 
 ## Stacking is not building forward
 

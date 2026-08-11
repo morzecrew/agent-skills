@@ -180,6 +180,28 @@ def scan(diff: str) -> list[dict]:
     return findings
 
 
+COMBINED = re.compile(r"^(?:@@@|diff --cc )", re.M)
+FILE_HEADER = re.compile(r"^\+\+\+ ", re.M)
+
+
+def unreadable(diff: str) -> str | None:
+    """Why this input cannot be scanned, or None.
+
+    Reporting "clean" because the parser understood nothing is the worst answer
+    a check can give — it is indistinguishable from the good news. Combined
+    diffs (`git diff --cc`, merge commits) use a three-column format this
+    parser does not read, and would otherwise come back silently empty.
+    """
+    if not diff.strip():
+        return None                      # genuinely no changes
+    if COMBINED.search(diff):
+        return ("combined (merge) diff format is not supported — scan the "
+                "merge's parents individually")
+    if not FILE_HEADER.search(diff):
+        return "no unified-diff file headers found in the input"
+    return None
+
+
 def _finding(check: str, path: str, line: int, text: str, message: str) -> dict:
     return {"check": check, "file": path, "line": line,
             "text": text.strip()[:160], "message": message}
@@ -216,6 +238,9 @@ def main(argv=None) -> int:
         diff = read_diff(args)
     except (OSError, RuntimeError) as exc:
         print(f"EXCEPTION CREEP — REFUSE: {exc}", file=sys.stderr)
+        return 2
+    if (why := unreadable(diff)):
+        print(f"EXCEPTION CREEP — REFUSE: {why}", file=sys.stderr)
         return 2
     findings = scan(diff)
     print(json.dumps(findings, indent=2) if args.json else render(findings))
