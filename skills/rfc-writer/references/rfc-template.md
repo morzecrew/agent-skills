@@ -94,9 +94,11 @@ worded carefully (e.g. migration honesty, threat-model caveats).>
 
 ## 11. Decisions
 
-| # | Decision |
-| --- | --- |
-| 1 | <One locked decision per row, self-contained, with the load-bearing rationale compressed in — and, where a decision constrains the future non-obviously, its consequence ("locks us to X; changing later means Y"). This table is the contract: pickup should require reading it, not re-deriving it.> |
+| # | Grade | Decision |
+| --- | --- | --- |
+| 1 | `LOCKED` | <One decision per row, self-contained, with the load-bearing rationale compressed in — and, where a decision constrains the future non-obviously, its consequence ("locks us to X; changing later means Y"). This table is the contract: pickup should require reading it, not re-deriving it.> |
+| 2 | `ASSUMED` | <Believed correct but not load-bearing. Execution may depart from it if building proves it wrong, and logs the departure.> |
+| 3 | `OPEN` | <Deliberately delegated to implementation. Say what the question is and what would settle it; the executor decides and logs the decision. An absent row is not `OPEN` — it is silence, and silence gets filled by whoever arrives first.> |
 
 ## 12. Phasing
 
