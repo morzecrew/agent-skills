@@ -143,7 +143,12 @@ def parse(diff: str):
         elif raw.startswith("-"):
             current.append(("-", old, raw[1:]))
             old += 1
-        elif raw.startswith(" "):
+        elif raw.startswith(" ") or raw == "":
+            # A blank context line is a single space, and editors and mail
+            # transports strip trailing whitespace, so it arrives as "". Falling
+            # through left `old` and `new` un-incremented, and every later
+            # finding in the hunk carried a line number off by one per stripped
+            # blank — reachable through --patch, where the file is supplied.
             current.append((" ", new, raw[1:]))
             old += 1
             new += 1

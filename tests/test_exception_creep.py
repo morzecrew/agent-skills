@@ -186,6 +186,22 @@ class TestDeletedAssertions(ScanCase):
         '''))
         self.assertEqual(findings, [])
 
+    def test_a_stripped_blank_context_line_still_advances_the_count(self):
+        """A blank context line is a single space; editors and mail transports
+        strip it to "". Falling through left the counters behind, so every
+        later finding in the hunk was off by one per stripped blank."""
+        findings = ec.scan(diff('''
+            diff --git a/scan.py b/scan.py
+            --- a/scan.py
+            +++ b/scan.py
+            @@ -10,4 +10,5 @@ ALLOWED_IMPORTS = [
+                 "os",
+
+                 "sys",
+            +    "bc_data",
+        '''))
+        self.assertEqual([f["line"] for f in findings], [13])
+
     def test_the_reported_line_is_the_old_file_for_a_deletion(self):
         findings = ec.scan(diff('''
             diff --git a/t.py b/t.py
