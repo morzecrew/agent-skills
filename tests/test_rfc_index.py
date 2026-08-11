@@ -192,6 +192,55 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertIn("RFC NNNN — <Title>", real.read_text(encoding="utf-8"),
                       "the tracked template must never be touched by a test")
 
+    def one_liner_row(self, text: str) -> None:
+        """Rewrite RFC 0001's index row to carry `text` as its one-liner."""
+        index = self.rfcs / "INDEX.md"
+        index.write_text(
+            index.read_text(encoding="utf-8").replace(
+                "| [0001](0001-alpha.md) | Alpha | 📝 Draft | first |",
+                f"| [0001](0001-alpha.md) | Alpha | 📝 Draft | {text} |",
+            ),
+            encoding="utf-8",
+        )
+
+    def test_index_rows_expose_the_one_liner(self):
+        rows = script.index_rows((self.rfcs / "INDEX.md").read_text(encoding="utf-8"))
+        self.assertEqual(rows[1]["oneLiner"], "first")
+
+    def test_an_overlong_one_liner_warns_without_failing(self):
+        # The index is re-read on every lookup, so a cell that grows into a
+        # summary is charged to every consultation. It is a cost, not a broken
+        # collection: the writer judges whether this design needs the words.
+        self.one_liner_row("x " * 200)
+        result = run_script("rfc-writer", "rfc_index.py", "check", "--root", str(self.root))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("ceiling", result.stdout)
+        self.assertIn("move the detail into the RFC", result.stdout)
+
+    def test_a_one_liner_past_the_target_warns_more_gently(self):
+        self.one_liner_row("y " * 120)  # 240 chars: over target, under ceiling
+        result = run_script("rfc-writer", "rfc_index.py", "check", "--root", str(self.root))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(f"target {script.ONE_LINER_TARGET}", result.stdout)
+        self.assertNotIn("ceiling", result.stdout)
+
+    def test_a_routing_one_liner_is_silent(self):
+        self.one_liner_row("Get a backup off the machine that took it")
+        result = run_script("rfc-writer", "rfc_index.py", "check", "--root", str(self.root))
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("WARN", result.stdout)
+
+    def test_the_new_placeholder_states_the_constraint(self):
+        # A writer who never runs `check` should still meet the rule, so the
+        # placeholder carries it rather than leaving it to be discovered.
+        run_script("rfc-writer", "rfc_index.py", "new", "Gamma", cwd=self.root)
+        row = next(
+            line for line in (self.rfcs / "INDEX.md").read_text(encoding="utf-8").splitlines()
+            if "0003" in line
+        )
+        self.assertIn(str(script.ONE_LINER_TARGET), row)
+        self.assertIn("one sentence", row)
+
     def test_duplicate_numbers_are_a_check_finding_not_a_usage_error(self):
         # Regression: failing hard inside rfc_files exited 1, the code reserved
         # for a usage or IO error, so a broken collection was indistinguishable

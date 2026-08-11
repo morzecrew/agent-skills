@@ -88,7 +88,20 @@ Read `references/rfc-template.md` before writing a new RFC and start from it. Th
 - **Record decisions with their why — and their cost.** The decision table is the contract; the body carries the reasoning. Rejected alternatives get a sentence saying why they lost (an alternative recorded with its trade-off stays rejected; one recorded as merely "rejected" gets re-proposed). A decision that closes a door later says so in its row.
 - **Timely beats polished.** A rough RFC that exists beats a perfect one that doesn't (Oxide's RFD rule: "timely rather than polished"). Draft prose may be rough; the Scope paragraph and the decision table may not.
 - **Be honest about limits.** If a mechanism is deferred, gated, or known-incomplete, say so in the RFC rather than letting the reader discover it. Fail-closed wording ("refused", "raises", "deliberately unscheduled") beats optimistic vagueness.
-- **Dense beats long.** Prefer one load-bearing paragraph over three thin ones. The index one-liner especially: it must be self-contained enough that a reader can skip the RFC.
+- **Dense beats long.** Prefer one load-bearing paragraph over three thin ones. This applies inside the RFC; the index entry is governed by the rule below, which is the opposite instinct.
+
+## The index one-liner: routing, not summary
+
+**The one-liner exists to tell a reader which RFC to open, not what it decided.** It has one job — discriminate this design from the others in the table — and that takes far less text than summarising it. "Get a backup off the machine that took it" is forty characters and separates its RFC from twenty others; the design, the decisions and the trade-offs belong in the file it points at.
+
+The rules:
+
+- **One sentence. Aim for 200 characters, and treat 300 as the ceiling.** A table of thirty rows is then a couple of thousand characters, which is what makes the index cheap enough to consult on every lookup.
+- **State the problem and the shape of the answer.** Not the mechanism, not the alternatives, not the numbers.
+- **The index records what an RFC *is*, never what happened to it.** No "shipped 2026-08-04", no phase-by-phase progress, no defects found, no amendment history. Status lives in the Status column; everything else lives in the RFC — its `**Status:**` annotation, its Decisions table, its execution notes. An entry that grows each time work lands has become a changelog, and the whole table is then re-read on every allocation.
+- **Write it once.** Revisit it only when the RFC's *subject* changes — not when its state does.
+
+This is the one place in the skill where completeness is the wrong target. An index entry dense enough to substitute for opening the file has stopped being an index: every future lookup pays for content that belongs to one document.
 
 ## Workflows
 
@@ -108,13 +121,13 @@ python3 scripts/rfc_index.py new "Title" --number 42   # a reserved number, or r
 1. Locate the RFC directory (`rfcs/` or `rfc/`); if none exists, run Workflow D first.
 2. Allocate the next number and instantiate the file: `rfc_index.py new "Title"` — it mints the number, writes the template, adds the index row, and bumps the next-free claim. Steps 3 and 4 stay yours: it leaves the template unfilled and writes a literal `TODO: one-line summary` in the index. By hand: read the next-free number from the index and cross-check against `ls` — numbers collide when minted in parallel.
 3. Fill the file from `references/rfc-template.md`'s shape, scaled to the design's weight. Investigate the actual code before writing "Current state" — this is most of the work.
-4. Replace the placeholder index one-liner with a dense, self-contained summary.
+4. Replace the placeholder index one-liner with one sentence that says which design this is — see the one-liner rules above. The summary the RFC deserves goes in the RFC's Summary section.
 
 ### B — Update an existing RFC
 
 1. When work ships partially or fully, update the `**Status:**` line — and annotate it with what shipped and when ("Shipped 2026-06-29: …; only P5 remains").
 2. If execution diverged from the design, record the divergence in the RFC (a status note or an amendment in the relevant section) — don't silently rewrite history; the decision log stays append-only.
-3. Mirror the status (and, if the shape changed, the one-liner) in the index table.
+3. Mirror the status in the index table. Leave the one-liner alone unless the RFC's *subject* changed — shipping, phasing and amendments are the RFC's history, not the index's.
 4. Rejected designs get ❌ and stay in the directory.
 
 ### C — Maintain the index
