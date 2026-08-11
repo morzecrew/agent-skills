@@ -30,15 +30,22 @@ That is the shape of the defect: each individual death looked rigorous — contr
 - The failure is an ordinary bug in something that is supposed to work — that is `reproduce-then-fix`
 - The attempt was explicitly a throwaway probe whose only deliverable was information, and it delivered it
 
-## The three classes
+## The classes
 
-Every negative result classifies itself into exactly one. **`DESIGN_DEAD` is the default**; the other two must be earned.
+Every negative result classifies itself into exactly one. Two of them are deaths, and **`DESIGN_DEAD` is the default** — `FAMILY_DEAD` must be earned.
 
-| Class | Meaning | Licensed by | Owes |
+| Death class | Meaning | Licensed by | Owes |
 |---|---|---|---|
 | `FAMILY_DEAD` | The ceiling was measured and it fails. No build of this mechanism can clear the bar. | A **ceiling measurement**: an oracle or perfect-information version of the mechanism, run, whose lower confidence bound fails the bar against a **same-run** floor. | Nothing. The line is closed. |
 | `DESIGN_DEAD` | The mechanism works; this build of it does not. | The default. Applies when the mechanism moved its target above its own same-run floor but failed a constraint — feasibility, budget, quality, packaging, instrument fit. | A **redesign ticket**. |
-| `INSTRUMENT_VOID` | The test could not decide. Controls failed, the floor was imported, the arm was not what its name says, power was absent. | — | A fixed instrument and a re-run. **Never counts as a death.** |
+
+The rest are not deaths, and filing one as a death is its own defect — the difference is entirely in what happens next:
+
+| Verdict | Meaning | Owes |
+|---|---|---|
+| `INSTRUMENT_VOID` | The test could not decide because the instrument was broken: controls failed, the floor was imported, the arm was not what its name says. | A fixed instrument and a re-run. |
+| `UNDECIDABLE` | The instrument was sound and underpowered — it could not resolve an effect this size. | A **power plan** pricing the way out (below). |
+| `UNCLASSIFIED_HISTORICAL` | Backfill only: the evidence to classify it no longer exists. | Nothing, so that history cannot hold the present hostage. Never valid for a fresh verdict. |
 
 Two rules do most of the work:
 

@@ -59,7 +59,7 @@ POWER_PLAN_FIELDS = ("achieved_mde", "required_mde", "units_needed",
 
 # planner-v1 and planner-v2 are one family; probe-p1 and probe-p2 too.
 VERSION_SUFFIX = re.compile(r"-(?:v|p|r)\d+$", re.IGNORECASE)
-ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+ISO_DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 
 DEFAULT_WINDOW_DAYS = 14        # a fortnight, per the anti-bureaucracy tripwire
 DEFAULT_METER_RATIO = 3.0
@@ -92,8 +92,18 @@ def _norm(value) -> str:
     return " ".join(text(value).lower().split())
 
 
-def _date(value):
-    m = ISO_DATE.match(text(value))
+def _date(value, *, exact: bool = False):
+    """The date in `value`, or None.
+
+    Ledger fields are read as a PREFIX on purpose: `opened_utc` is documented as
+    `YYYY-MM-DD`, and a full ISO timestamp is the likely deviation, so demanding
+    an exact match would silently drop real tickets out of the meter. A value
+    typed on the command line gets `exact=True`, because there the only thing a
+    trailing suffix can mean is a typo, and accepting `2026-08-11junk` as a date
+    is how a window silently ends somewhere the caller did not ask for.
+    """
+    raw = text(value)
+    m = ISO_DATE.fullmatch(raw) if exact else ISO_DATE.match(raw)
     if not m:
         return None
     try:
@@ -176,13 +186,22 @@ def _check_ruling(name: str, state: str, ticket: dict, ledger_path: Path,
             f"funds or retires a ticket, and the ruling must name a file "
             f"outside this ledger")
         return
-    path = (ruling_root / ref).resolve()
+    root = ruling_root.resolve()
+    path = (root / ref).resolve()
     if path == ledger_path.resolve():
         defects.append(f"{name}: owner_ruling points at the ledger itself — the "
                        f"ruling must live outside the file it authorises")
-    elif not path.exists():
-        defects.append(f"{name}: owner_ruling {ref!r} does not exist "
-                       f"(looked in {ruling_root})")
+    elif not path.is_relative_to(root):
+        # An absolute path or `../../elsewhere` leaves the configured ruling
+        # directory entirely, so the "artifact" can be any file on the machine.
+        # A speed bump that accepts /etc/hostname is not a speed bump.
+        defects.append(f"{name}: owner_ruling {ref!r} resolves outside "
+                       f"{root} — name a path within the ruling directory")
+    elif not path.is_file():
+        # `exists()` is true for a directory, so `owner_ruling: "."` passed.
+        reason = "is a directory, not a ruling" if path.exists() else "does not exist"
+        defects.append(f"{name}: owner_ruling {ref!r} {reason} "
+                       f"(looked in {root})")
 
 
 def _check_zombies(entries: list, defects: list, warnings: list) -> None:
@@ -199,7 +218,13 @@ def _check_zombies(entries: list, defects: list, warnings: list) -> None:
             continue
         fam = families.setdefault(family_of(entry),
                                   {"deaths": 0, "ceiling": False, "pairs": Counter()})
-        if text(entry.get("ceiling_evidence")):
+        # Only a FAMILY_DEAD entry's ceiling clears a family. Accepting it from
+        # any class handed every repeat death an escape: add `ceiling_evidence`
+        # prose to the second DESIGN_DEAD and the anti-zombie defect vanishes,
+        # which is a way to clear the debt by asserting the thing the ceiling
+        # was supposed to prove.
+        if text(entry.get("kill_class")) == "FAMILY_DEAD" \
+                and text(entry.get("ceiling_evidence")):
             fam["ceiling"] = True
         if text(entry.get("kill_class")) not in DEATH_CLASSES:
             continue
@@ -288,6 +313,14 @@ def audit(path: Path, *, ruling_root: Path | None = None, now: dt.date | None = 
                 f"{name}: FAMILY_DEAD without ceiling_evidence — family death is "
                 f"EARNED by a measured ceiling (an oracle run whose lower bound "
                 f"fails the bar against a same-run floor), never asserted")
+        if cls and cls != "FAMILY_DEAD" and text(entry.get("ceiling_evidence")):
+            # Silently ignoring it would hide the misclassification: a measured
+            # ceiling that fails its bar IS a family death, and one that passes
+            # is not ceiling evidence at all.
+            defects.append(
+                f"{name}: ceiling_evidence on a {cls} entry — the field is "
+                f"FAMILY_DEAD-only. Escalate the class with the evidence, or "
+                f"record the measurement somewhere it is not read as a ceiling.")
         if cls == "UNDECIDABLE":
             plan = _dict(entry.get("power_plan"))
             if plan is None:
@@ -429,7 +462,7 @@ def main(argv=None) -> int:
 
     now = None
     if args.now:
-        now = _date(args.now)
+        now = _date(args.now, exact=True)
         if now is None:
             parser.error(f"--now {args.now!r} is not a YYYY-MM-DD date")
 

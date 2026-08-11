@@ -175,6 +175,34 @@ class TestFunding(LedgerCase):
         self.assertEqual(r["verdict"], "OK", r)
         self.assertEqual(len(r["owed"]), 1)
 
+    def test_a_ruling_naming_a_directory_blocks(self):
+        """`exists()` is true for a directory, so `owner_ruling: "."` passed
+        with no ruling artifact anywhere."""
+        r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
+                         "ticket": dict(self.FUNDED, owner_ruling=".")}])
+        self.assertBlocks(r, "is a directory")
+
+    def test_a_ruling_escaping_the_ruling_directory_blocks(self):
+        """An absolute path or a traversal leaves the configured directory, so
+        any file on the machine could stand in for a recorded decision."""
+        for escape in ("/etc/hostname", "../../../etc/hostname"):
+            r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
+                             "ticket": dict(self.FUNDED, owner_ruling=escape)}])
+            self.assertBlocks(r, "resolves outside")
+
+    def test_a_ruling_in_a_subdirectory_is_fine(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "rulings").mkdir()
+            (root / "rulings" / "2026-08-07.md").write_text("owner ruling")
+            path = root / "KILL_LEDGER.json"
+            path.write_text(json.dumps({"entries": [
+                {"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
+                 "ticket": dict(self.FUNDED,
+                                owner_ruling="rulings/2026-08-07.md")}]}))
+            r = kl.audit(path)
+        self.assertEqual(r["verdict"], "OK", r)
+
     def test_a_ruling_pointing_at_the_ledger_itself_blocks(self):
         """The keystroke that writes the status must not also write its own
         evidence — that is bookkeeping in the costume of authentication."""
@@ -242,6 +270,22 @@ class TestAntiZombie(LedgerCase):
                         "ceiling_evidence": "an oracle planner misses the bar at its lower bound"})
         self.assertEqual(self.audit(entries)["verdict"], "OK")
 
+    def test_ceiling_evidence_on_a_repeat_death_does_not_clear_the_family(self):
+        """Accepting a ceiling from any class handed every repeat death an
+        escape: add the prose to the second DESIGN_DEAD and the defect goes
+        away, which clears the debt by asserting what the ceiling was meant
+        to prove."""
+        r = self.audit(self.twice(
+            ceiling_evidence="an oracle planner clears the bar easily"))
+        self.assertBlocks(r, "CEILING test, never a third variant")
+
+    def test_ceiling_evidence_outside_family_dead_is_itself_a_defect(self):
+        """Ignoring it silently would hide the misclassification."""
+        r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
+                         "ticket": dict(TICKET),
+                         "ceiling_evidence": "measured something"}])
+        self.assertBlocks(r, "FAMILY_DEAD-only")
+
     def test_the_comparison_ignores_case_and_whitespace(self):
         # Derived from TICKET, never retyped: a hand-copied variant silently
         # stops being the same prong the moment the fixture is edited, and the
@@ -299,6 +343,21 @@ class TestMeter(LedgerCase):
                             owner_ruling=None)} for i in range(2)]
         r = self.audit(entries, now=kl._date("2026-08-11"))
         self.assertFalse(r["meter"]["over_tuned"], r["meter"])
+
+    def test_a_command_line_date_with_trailing_junk_is_rejected(self):
+        """`2026-08-11junk` would otherwise silently end the window on the
+        11th — a typo accepted as an instruction."""
+        self.assertIsNone(kl._date("2026-08-11junk", exact=True))
+        self.assertIsNotNone(kl._date("2026-08-11", exact=True))
+
+    def test_a_ledger_timestamp_still_parses_by_prefix(self):
+        """`opened_utc` is documented as YYYY-MM-DD and a full ISO timestamp is
+        the likely deviation; rejecting it would drop real tickets out of the
+        meter rather than report anything."""
+        self.assertEqual(kl._date("2026-08-06T12:30:00Z"), kl._date("2026-08-06"))
+        r = self.audit(self.opened(4, when="2026-08-06T12:30:00Z"),
+                       now=kl._date("2026-08-11"))
+        self.assertEqual(r["meter"]["opened"], 4)
 
     def test_an_impossible_date_is_ignored_rather_than_crashing(self):
         """`2026-13-45` matches the shape and is not a date. A meter that
@@ -456,6 +515,16 @@ class TestCommandLine(unittest.TestCase):
             path = self.ledger(tmp, [])
             proc = self.run_kl(str(path), "--now", "last tuesday")
         self.assertEqual(proc.returncode, 2)
+        self.assertIn("YYYY-MM-DD", proc.stderr)
+
+    def test_a_now_with_trailing_junk_is_rejected_at_the_command_line(self):
+        """`_date(..., exact=True)` being correct is worth nothing until the
+        CLI passes `exact`. Sabotage caught this: reverting the call site broke
+        no test, because the parser was tested and its wiring was not."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.ledger(tmp, [])
+            proc = self.run_kl(str(path), "--now", "2026-08-11junk")
+        self.assertEqual(proc.returncode, 2, proc.stdout)
         self.assertIn("YYYY-MM-DD", proc.stderr)
 
     def test_a_ledger_path_is_required(self):
