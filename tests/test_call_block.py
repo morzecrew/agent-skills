@@ -111,6 +111,29 @@ class TestProbability(unittest.TestCase):
     def test_a_probability_with_no_number_is_rejected(self):
         self.assertIn("C2", codes(cb.check(self.with_p("fairly likely"))))
 
+    def test_a_second_number_outside_the_range_is_not_ignored(self):
+        """Only the first number was read, so a field stating two
+        incompatible things validated as one probability."""
+        for value in ("0.6 or 1.8", "somewhere between 0.4 and 7"):
+            self.assertIn("C2", codes(cb.check(self.with_p(value))), value)
+
+
+class TestPrediction(unittest.TestCase):
+    """The line exists to be falsifiable; presence alone does not make it so."""
+
+    def with_prediction(self, value: str) -> str:
+        return COMPLETE.replace("**Predicted number:** 140",
+                                f"**Predicted number:** {value}")
+
+    def test_a_prose_only_prediction_is_rejected(self):
+        for value in ("probably lower", "about the same as last time"):
+            self.assertIn("C1", codes(cb.check(self.with_prediction(value))), value)
+
+    def test_a_number_with_units_or_context_is_accepted(self):
+        for value in ("140 ms", "1.4e3", "140 (down from 190)", "-3.5"):
+            self.assertEqual(codes(cb.check(self.with_prediction(value)), "error"),
+                             [], value)
+
 
 class TestIntervalArithmetic(unittest.TestCase):
     """C4 — the check that decides whether the run is worth starting."""
@@ -194,6 +217,38 @@ class TestPrecedence(unittest.TestCase):
         self.add("CALL_BLOCK.md", COMPLETE)
         self.assertEqual(cb.check_precedence(self.root, Path("CALL_BLOCK.md"),
                                              Path("RESULT.json")), [])
+
+    def test_a_block_edited_after_the_result_is_a_quiet_amendment(self):
+        """Only the block's FIRST commit was consulted, so a registration could
+        be rewritten once the answer was visible — narrowing an interval until
+        the arithmetic passed — and still read as having preceded the data."""
+        self.add("CALL_BLOCK.md", COMPLETE)
+        self.add("RESULT.json")
+        self.add("CALL_BLOCK.md", COMPLETE.replace("[120, 165]", "[151, 152]"))
+        findings = cb.check_precedence(self.root, Path("CALL_BLOCK.md"),
+                                       Path("RESULT.json"))
+        self.assertIn("C7", codes(findings))
+        self.assertIn("quiet amendment", findings[0]["message"])
+
+    def test_an_uncommitted_edit_means_the_block_on_disk_is_not_the_one_registered(self):
+        self.add("CALL_BLOCK.md", COMPLETE)
+        self.add("RESULT.json")
+        (self.root / "CALL_BLOCK.md").write_text(
+            COMPLETE.replace("[120, 165]", "[151, 152]"), encoding="utf-8")
+        findings = cb.check_precedence(self.root, Path("CALL_BLOCK.md"),
+                                       Path("RESULT.json"))
+        self.assertIn("C7", codes(findings))
+        self.assertIn("uncommitted changes", findings[0]["message"])
+
+    def test_a_result_on_disk_but_uncommitted_is_reported_not_passed(self):
+        """An existing result with no history cannot be ordered against
+        anything, and "could not check" must not print as "checked"."""
+        self.add("CALL_BLOCK.md", COMPLETE)
+        (self.root / "RESULT.json").write_text("{}", encoding="utf-8")
+        findings = cb.check_precedence(self.root, Path("CALL_BLOCK.md"),
+                                       Path("RESULT.json"))
+        self.assertIn("C7", codes(findings))
+        self.assertIn("not committed", findings[0]["message"])
 
     def test_an_uncommitted_block_is_not_a_registration(self):
         self.add("RESULT.json")

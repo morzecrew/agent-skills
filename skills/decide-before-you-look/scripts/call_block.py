@@ -13,7 +13,9 @@ than presence:
       look the same
   C6  the artifact line is answered ("none, because ..." is a valid answer;
       silence is not)
-  C7  --committed-before RESULT: the block reached git before the result did
+  C7  --committed-before RESULT: the block reached git before the result did,
+      and stopped changing there — an in-place edit once the answer is visible
+      is the quiet amendment, not a registration
 
 C4 is the one that pays for the tool. If your own 80% interval is wider than
 the gap between alive and dead, both verdicts are consistent with what you
@@ -128,6 +130,16 @@ def check(text: str) -> list[dict]:
         if not fields.get(field):
             add("error", "C1", f"missing or empty: {label}")
 
+    # A point estimate is the whole point of the line: "probably lower" states
+    # something unfalsifiable, and a call block that cannot be wrong records
+    # nothing. Any number will do — "140 ms", "1.4e3", "140 (down from 190)" —
+    # because the line is a prediction, not a parsed quantity.
+    prediction = fields.get("prediction", "")
+    if prediction and not numbers(prediction):
+        add("error", "C1", f"the predicted number carries no number: "
+                           f"{prediction!r}. Being wrong is fine; being "
+                           f"unfalsifiable is not.")
+
     probability = fields.get("probability", "")
     if probability:
         values = numbers(probability)
@@ -136,8 +148,11 @@ def check(text: str) -> list[dict]:
         if not values:
             add("error", "C2", f"P(survives) carries no number: {probability!r}")
         else:
-            value = values[0] / 100 if "%" in probability else values[0]
-            if not 0.0 <= value <= 1.0:
+            # EVERY number in the field, not just the first: `0.6 or 1.8` read
+            # as 0.6 and passed, so a field stating two incompatible things
+            # validated as one probability.
+            scale = 100 if "%" in probability else 1
+            if not all(0.0 <= value / scale <= 1.0 for value in values):
                 add("error", "C2", f"P(survives) is not a probability: {probability!r}")
 
     interval = span(fields.get("interval", ""))
@@ -176,39 +191,92 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
                           capture_output=True, text=True)
 
 
-def adding_commit(repo: Path, path: Path) -> str | None:
-    """The commit that first added this path, or None if it is not in git."""
-    proc = _git(repo, "log", "--diff-filter=A", "--format=%H", "--", str(path))
+def _log(repo: Path, *args: str) -> list[str]:
+    proc = _git(repo, "log", *args)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "git log failed")
-    shas = proc.stdout.split()
+    return proc.stdout.split()
+
+
+def adding_commit(repo: Path, path: Path) -> str | None:
+    """The commit that first added this path, or None if it is not in git."""
+    shas = _log(repo, "--diff-filter=A", "--format=%H", "--", str(path))
     return shas[-1] if shas else None       # oldest add, last in log order
 
 
+def last_commit(repo: Path, path: Path) -> str | None:
+    """The most recent commit that touched this path."""
+    shas = _log(repo, "--format=%H", "--", str(path))
+    return shas[0] if shas else None
+
+
+def uncommitted(repo: Path, path: Path) -> bool:
+    """Does the working tree hold changes to this path that git has not seen?"""
+    proc = _git(repo, "status", "--porcelain", "--", str(path))
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "git status failed")
+    return bool(proc.stdout.strip())
+
+
+def _on_disk(repo: Path, path: Path) -> bool:
+    """Either reading of the path — as given, or relative to the repository."""
+    return path.exists() or (repo / path).exists()
+
+
+def _ancestor(repo: Path, earlier: str, later: str) -> bool:
+    return earlier != later and _git(
+        repo, "merge-base", "--is-ancestor", earlier, later).returncode == 0
+
+
 def check_precedence(repo: Path, block: Path, result: Path) -> list[dict]:
-    """C7 — the prediction must reach git before the data does.
+    """C7 — the prediction must reach git before the data does, and stop moving.
 
     Ancestry, not timestamps: two commits made in the same second carry the
     same epoch, so a timestamp comparison called a correctly-ordered pair a
     post-registration. Being an ancestor is exact and has no clock in it.
+
+    Four ways the order can be wrong, and the last three all used to pass:
+    the block was never committed; it was committed at or after the result;
+    it was committed first and then EDITED once the result existed — the quiet
+    amendment, which is what pre-registration exists to make visible; or the
+    file being validated is not the file that was registered, because the copy
+    on disk carries changes git has never seen.
     """
-    block_at = adding_commit(repo, block)
+    def fault(message: str) -> list[dict]:
+        return [{"level": "error", "check": "C7", "message": message}]
+
+    block_first = adding_commit(repo, block)
+    if block_first is None:
+        return fault(f"{block} is not committed. Its place in history is the "
+                     f"only evidence that the call preceded the data; an "
+                     f"uncommitted block is a note, not a registration.")
+    if uncommitted(repo, block):
+        return fault(f"{block} has uncommitted changes, so the block being "
+                     f"checked is not the block that was registered. Commit it "
+                     f"or restore it before reading anything from it.")
+
     result_at = adding_commit(repo, result)
-    if block_at is None:
-        return [{"level": "error", "check": "C7",
-                 "message": f"{block} is not committed. Its place in history is "
-                            f"the only evidence that the call preceded the data; "
-                            f"an uncommitted block is a note, not a registration."}]
     if result_at is None:
+        if _on_disk(repo, result):
+            return fault(f"{result} exists but is not committed, so nothing "
+                         f"orders it against {block}. Unchecked and checked-"
+                         f"and-fine must not look the same — commit the result "
+                         f"or point this at the file that holds it.")
         return []                       # the data does not exist yet: correct order
-    if _git(repo, "merge-base", "--is-ancestor", block_at, result_at).returncode == 0 \
-            and block_at != result_at:
-        return []
-    same = " in the same commit as" if block_at == result_at else " at or after"
-    return [{"level": "error", "check": "C7",
-             "message": f"{block} entered git{same} {result}. A prediction "
-                        f"committed once the result exists is a "
-                        f"post-registration, whatever it is called."}]
+
+    if not _ancestor(repo, block_first, result_at):
+        same = " in the same commit as" if block_first == result_at else " at or after"
+        return fault(f"{block} entered git{same} {result}. A prediction "
+                     f"committed once the result exists is a post-registration, "
+                     f"whatever it is called.")
+
+    block_last = last_commit(repo, block)
+    if block_last is not None and not _ancestor(repo, block_last, result_at):
+        return fault(f"{block} was registered before {result}, then changed "
+                     f"again in {block_last[:12]} once the result existed. "
+                     f"Amendments are additive and name what they amend; an "
+                     f"edit in place is the quiet amendment this check is for.")
+    return []
 
 
 TEMPLATE = """\

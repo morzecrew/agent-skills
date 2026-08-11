@@ -40,7 +40,7 @@ Line 3 is arithmetic, not judgement, and it is the one people skip. If your own 
 
 **Line 6 earns the whole practice.** It came out of an audit of how graded machine time was actually spent: a clear majority of it produced facts that were already sitting in existing files. One long hold answered a question a short lookup would have settled. Answering line 6 honestly — "none, and here is why" is a complete answer — is the cheapest step here and the one that most often calls the run off.
 
-`scripts/call_block.py` validates the block, arithmetic included.
+`scripts/call_block.py` validates the block, arithmetic included. Given `--committed-before RESULT` it also reads git: the block must have reached history before the result did *and stopped changing there*, since a registration edited in place once the answer is visible is the quiet amendment below rather than a prediction.
 
 ## Pre-registration mechanics
 
