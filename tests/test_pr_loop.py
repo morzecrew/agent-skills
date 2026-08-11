@@ -12,6 +12,7 @@ import json
 import time
 import unittest
 from datetime import datetime, timezone
+from typing import ClassVar
 
 from support import load_script
 
@@ -244,9 +245,9 @@ class QuietCreditTest(unittest.TestCase):
 class CleanCheckIdentityTest(unittest.TestCase):
     """A reviewer that ran and found nothing is finished, not missing."""
 
-    ROLLUP = {
+    ROLLUP: ClassVar[dict] = {
         "repository": {"pullRequest": {"commits": {"nodes": [{"commit": {
-            "statusCheckRollup": {"contexts": {"nodes": [
+            "statusCheckRollup": {"contexts": {"pageInfo": {"hasNextPage": False}, "nodes": [
                 {"__typename": "CheckRun", "conclusion": "SUCCESS",
                  "checkSuite": {"app": {"slug": "github-actions"}}},
                 # cubic posts "cubic · AI code reviewer" — nothing a name match
@@ -317,6 +318,35 @@ class UnsatisfiedBotsTest(unittest.TestCase):
         self.assertEqual(
             script.unsatisfied_bots(["CodeRabbitAI[bot]"], {"coderabbitai"}, set()), []
         )
+
+    def test_a_dirty_check_on_a_later_page_is_not_missed(self):
+        # Regression: contexts were read one page deep and treated as the whole
+        # rollup, so a failing check beyond the first 100 could not be seen —
+        # and the app would be credited as finished on its other checks, which
+        # is the early return this function exists to prevent.
+        def page(nodes, has_next, cursor=None):
+            return {"repository": {"pullRequest": {"commits": {"nodes": [{"commit": {
+                "statusCheckRollup": {"contexts": {
+                    "pageInfo": {"hasNextPage": has_next, "endCursor": cursor},
+                    "nodes": nodes,
+                }},
+            }}]}}}}
+
+        pages = [
+            page([{"__typename": "CheckRun", "conclusion": "SUCCESS",
+                   "checkSuite": {"app": {"slug": "cubic-dev-ai"}}}], True, "CUR"),
+            page([{"__typename": "CheckRun", "conclusion": "FAILURE",
+                   "checkSuite": {"app": {"slug": "cubic-dev-ai"}}}], False),
+        ]
+        seen: list[str | None] = []
+
+        def paged(_query, str_vars, _int_vars):
+            seen.append(str_vars.get("after"))
+            return pages[len(seen) - 1]
+
+        script.graphql = paged
+        self.assertNotIn("cubic-dev-ai", script.cleanly_checked_apps("o", "r", 1))
+        self.assertEqual(seen, [None, "CUR"], "the cursor must be followed")
 
     def test_no_commits_is_not_a_crash(self):
         script.graphql = lambda *a, **k: {

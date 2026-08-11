@@ -88,10 +88,11 @@ query($id: ID!) {
 """
 
 CHECK_IDENTITY_QUERY = """
-query($owner: String!, $repo: String!, $pr: Int!) {
+query($owner: String!, $repo: String!, $pr: Int!, $after: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           __typename
           ... on CheckRun { conclusion checkSuite { app { slug } } }
@@ -405,25 +406,37 @@ def cleanly_checked_apps(owner: str, repo: str, pr: int) -> set[str]:
     the API: a CheckRun carries its suite's app slug, and a StatusContext
     carries its creator's login.
     """
-    data = graphql(CHECK_IDENTITY_QUERY, {"owner": owner, "repo": repo}, {"pr": pr})
-    commits = data["repository"]["pullRequest"]["commits"]["nodes"]
-    if not commits:
-        return set()
-    rollup = commits[0]["commit"].get("statusCheckRollup") or {}
     verdicts: dict[str, bool] = {}
-    for node in (rollup.get("contexts") or {}).get("nodes") or []:
-        if node.get("__typename") == "CheckRun":
-            who = (((node.get("checkSuite") or {}).get("app") or {}).get("slug") or "")
-            state = node.get("conclusion")
-        else:
-            who = ((node.get("creator") or {}).get("login") or "")
-            state = node.get("state")
-        if not who:
-            continue
-        name = who.lower().removesuffix("[bot]")
-        # One dirty check is enough to keep an app unsatisfied.
-        verdicts[name] = verdicts.get(name, True) and (state or "").upper() in CLEAN_CONCLUSIONS
-    return {name for name, clean in verdicts.items() if clean}
+    cursor: str | None = None
+    while True:
+        str_vars = {"owner": owner, "repo": repo}
+        if cursor:
+            str_vars["after"] = cursor
+        data = graphql(CHECK_IDENTITY_QUERY, str_vars, {"pr": pr})
+        commits = data["repository"]["pullRequest"]["commits"]["nodes"]
+        if not commits:
+            return set()
+        rollup = commits[0]["commit"].get("statusCheckRollup") or {}
+        contexts = rollup.get("contexts") or {}
+        for node in contexts.get("nodes") or []:
+            if node.get("__typename") == "CheckRun":
+                who = (((node.get("checkSuite") or {}).get("app") or {}).get("slug") or "")
+                state = node.get("conclusion")
+            else:
+                who = ((node.get("creator") or {}).get("login") or "")
+                state = node.get("state")
+            if not who:
+                continue
+            name = who.lower().removesuffix("[bot]")
+            # One dirty check is enough to keep an app unsatisfied.
+            verdicts[name] = verdicts.get(name, True) and (state or "").upper() in CLEAN_CONCLUSIONS
+        # Every page, because a single unseen failing context would let a
+        # reviewer be credited as finished on the strength of its other checks —
+        # and an early return is the failure this function exists to prevent.
+        page = contexts.get("pageInfo") or {}
+        if not page.get("hasNextPage"):
+            return {name for name, clean in verdicts.items() if clean}
+        cursor = page.get("endCursor")
 
 
 def unsatisfied_bots(expect: list[str], spoke: set[str], checked_clean: set[str]) -> list[str]:
