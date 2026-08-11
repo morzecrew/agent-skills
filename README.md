@@ -51,6 +51,8 @@ Skills cross-reference each other in their "Related skills" sections. Every skil
 | [ratchet-what-you-build](skills/ratchet-what-you-build/) | Ranks every guard on an enforcement ladder; anything still sitting at "convention" is an open finding. |
 | [drift-to-gate](skills/drift-to-gate/) | Turns a rule that keeps being broken into a program that refuses — then runs that control's whole lifecycle. |
 | [negative-result-taxonomy](skills/negative-result-taxonomy/) | Classifies every failed attempt as family-dead, design-dead, or undecidable, so a kill is a diagnosis and not a dead end. |
+| [authority-dissociation](skills/authority-dissociation/) | Separates who does the work from who certifies it, so no actor writes the evidence that judges its own output. |
+| [decide-before-you-look](skills/decide-before-you-look/) | Pre-registers the call before the data exists — six lines, an interval that must be narrower than the decision band, and no moving goalposts. |
 | [distill-the-rule](skills/distill-the-rule/) | Turns hard-won findings into one-line transferable rules, filed where future work will meet them. |
 
 ### Documentation

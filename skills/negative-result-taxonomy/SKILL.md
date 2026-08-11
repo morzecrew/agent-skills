@@ -153,6 +153,8 @@ The full field-by-field schema is in [references/ledger-schema.md](references/le
 
 - `drift-to-gate` — how to make this ledger a control that refuses, and why its owed/closed buckets are shaped the way they are
 - `reproduce-then-fix` — the measured cause and the cheapest test are the same discipline applied one level up
+- `decide-before-you-look` — the bars this ledger records verdicts against are pre-registered, not chosen afterwards
+- `authority-dissociation` — why fund and retire stay out of an agent's hands
 - `measure-before-optimizing` — the ceiling measurement, in performance terms
 - `rfc-writer` — where a class definition, an amendment, or a retirement decision gets recorded
 - `distill-the-rule` — the one-line lesson each entry's `measured_cause` should yield

@@ -156,5 +156,6 @@ python3 scripts/exception_creep.py main..HEAD
 - `escape-hatch-policy` — designing the declared, re-verified waiver a gate needs when exceptions are legitimate
 - `distill-the-rule` — produces the one-line rule; this skill is what happens when that rule keeps being ignored
 - `negative-result-taxonomy` — a worked example of a vocabulary with owed/closed buckets, and the ledger `scripts/gate_selftest.py` was written against
+- `authority-dissociation` — who may assert the fact a gate reads; a gate over a self-written field checks nothing
 - `failure-path-review` — the gate's own unhappy paths
 - `self-audit` — where "what keeps this true?" belongs in a review pass
