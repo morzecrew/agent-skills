@@ -66,6 +66,7 @@ Ratchets are cheap late, so sweep deliberately: list every protective mechanism 
 
 ## Related skills
 
+- `drift-to-gate` — once you have picked a rung, that skill builds the individual control and keeps it honest: proving it can refuse, logging its refusals, and metering it so it can be retired
 - `fewer-tests-more-proof` — its enrollment ratchet is this skill applied to consolidated test suites
 - `escape-hatch-policy` — how to design the declared opt-out a rung-2 ratchet needs
 - `reproduce-then-fix` — verified-red discipline; here applied to the gate itself
