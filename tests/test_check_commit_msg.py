@@ -188,6 +188,131 @@ class InvalidMessageTest(unittest.TestCase):
         self.assert_flags("✨ feat:  \n\nbody", "C6")
 
 
+def body(*lines: str) -> str:
+    return "✨ feat(api): add a thing\n\n" + "\n".join(lines)
+
+
+class BodyLengthTest(unittest.TestCase):
+    """C8/C9/C10 — a commit body explains a change; it is not a document."""
+
+    def test_a_body_at_the_hard_cap_passes(self):
+        message = body(*[f"line {n}" for n in range(script.BODY_HARD_CAP)])
+        self.assertEqual(errors(message), [])
+
+    def test_a_body_over_the_hard_cap_fails(self):
+        message = body(*[f"line {n}" for n in range(script.BODY_HARD_CAP + 1)])
+        self.assertTrue(any(text.startswith("C8") for text in errors(message)))
+
+    def test_blank_lines_do_not_count_against_the_cap(self):
+        lines = []
+        for n in range(script.BODY_HARD_CAP):
+            lines += [f"line {n}", ""]
+        self.assertEqual(errors(body(*lines)), [])
+
+    def test_the_soft_cap_warns_without_failing(self):
+        message = body(*[f"line {n}" for n in range(script.BODY_SOFT_CAP + 1)])
+        self.assertEqual(errors(message), [])
+        self.assertTrue(any(text.startswith("C9") for text in warnings(message)))
+
+    def test_footers_are_exempt(self):
+        """A long trailer block is metadata, not prose — charging the cap for
+        it would penalise exactly the machine-readable part."""
+        lines = [f"line {n}" for n in range(script.BODY_HARD_CAP)]
+        lines += ["", "Closes #1", "Refs: abc123",
+                  "Co-Authored-By: Someone <a@b.c>",
+                  "Co-Authored-By: Another <d@e.f>"]
+        self.assertEqual(errors(body(*lines)), [])
+
+    def test_a_trailing_prose_paragraph_is_not_treated_as_footers(self):
+        """Only a paragraph that is entirely trailers is exempt. Dropping any
+        final paragraph would exempt the prose the cap exists to catch."""
+        lines = [f"line {n}" for n in range(script.BODY_HARD_CAP)]
+        lines += ["", "One more closing thought that is not a trailer."]
+        self.assertTrue(any(text.startswith("C8") for text in errors(body(*lines))))
+
+    def test_fenced_blocks_are_exempt(self):
+        """The declared way to carry evidence a commit genuinely needs."""
+        lines = ["why this changed", "", "```"]
+        lines += [f"    frame {n}" for n in range(40)]
+        lines += ["```"]
+        self.assertEqual(errors(body(*lines)), [])
+
+    def test_an_unclosed_fence_does_not_swallow_the_rest_of_the_body(self):
+        lines = ["```", "evidence"] + [f"line {n}" for n in range(30)]
+        self.assertEqual(errors(body(*lines)), [],
+                         "an unclosed fence exempts what follows — a known,"
+                         " visible hole, not a silent one")
+
+    def test_a_long_body_line_warns(self):
+        message = body("x " * 60)
+        self.assertEqual(errors(message), [])
+        self.assertTrue(any(text.startswith("C10") for text in warnings(message)))
+
+    def test_an_unbreakable_token_does_not_warn(self):
+        """A URL cannot be wrapped; flagging it teaches people to ignore C10."""
+        message = body("https://example.com/" + "a" * 90)
+        self.assertEqual(warnings(message), [])
+
+    def test_no_body_is_fine(self):
+        self.assertEqual(errors("✨ feat(api): add a thing"), [])
+        self.assertEqual(warnings("✨ feat(api): add a thing"), [])
+
+    def test_the_caps_are_ordered(self):
+        self.assertLess(script.BODY_SOFT_CAP, script.BODY_HARD_CAP)
+
+    def test_the_cap_still_rejects_the_shape_it_was_written_for(self):
+        """Pins the VALUE, not just the mechanism.
+
+        Every other test here is written relative to BODY_HARD_CAP, so raising
+        the constant keeps them all green — and raising it by four is exactly
+        how this rule would be neutered, since the session-narrative bodies
+        that prompted it ran 22-29 lines. This asserts the two cases the number
+        was chosen from: an essay fails, and a body the size of this
+        repository's median passes.
+        """
+        narrative = [
+            "Adversarial pass over the branch, following the ten passes.",
+            "Four findings, all fixed here.",
+            "",
+            "PROSE — two claims repeated a source headline without the",
+            "correction that followed it, and the two skills then narrated",
+            "the same event incompatibly:",
+            "",
+            "  * the first said a person funded several tests; the source's",
+            "    own amendment records that this did not happen. The",
+            "    vocabulary gap was real; the event was not.",
+            "  * the second repeated a founding document's headline count,",
+            "    which a later census corrected in both directions.",
+            "",
+            "COVERAGE — four detection branches had no test, including the",
+            "render block that is the whole non-blocking visibility channel",
+            "this skill argues for. Tests added for each.",
+            "",
+            "REFUSAL — the scanner parsed merge diffs to nothing and said",
+            "clean, which is indistinguishable from the good news. It now",
+            "refuses on input it cannot read.",
+            "",
+            "Sabotage of the audit's own fixes caught two being vacuous,",
+            "which is the reason that pass exists at all. One passed with",
+            "the branch deleted because a literal was the real evidence,",
+            "and the other was tested as a function while main() ignored it.",
+            "",
+            "33 mutations run across the three scripts, 33 caught, and the",
+            "coverage pass is recorded in the branch notes.",
+        ]
+        # Self-checking: an earlier version of this fixture was 16 lines and
+        # quietly asserted nothing. A fixture whose size is the point must
+        # state its size.
+        measured = len([line for line in narrative if line.strip()])
+        self.assertEqual(measured, 22, "fixture must stay essay-sized")
+        self.assertTrue(any(text.startswith("C8") for text in errors(body(*narrative))),
+                        "the cap must reject a 22-line session narrative")
+
+        ordinary = [f"a line about why the change was made {n}" for n in range(9)]
+        self.assertEqual(errors(body(*ordinary)), [],
+                         "the cap must accept a body the size of this repo's median")
+
+
 class SeverityTest(unittest.TestCase):
     def test_long_subject_warns_but_does_not_fail(self):
         # The skill's cap is "<= 72 when possible"; a validator must not harden
