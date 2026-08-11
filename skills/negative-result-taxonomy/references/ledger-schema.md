@@ -5,6 +5,14 @@ one entry per negative result. Mostly additive: a label may be **raised** (`DESI
 ceiling measurement exists) but never quietly lowered, and each change records
 where its evidence lives.
 
+**The ledger is a snapshot; its history lives in version control.** The
+validator reads one state of the file and can say nothing about what a previous
+state held, so "never lowered" and "never overwritten" are enforced by the diff
+a reviewer reads, not by the check. A replacement that drops an earlier label
+passes validation and has to be caught in review — which is worth knowing
+before you rely on the check for it. `note` is the one field where this bites
+often enough to be worth stating on the field itself.
+
 The example below is invented, and deliberately mundane — the schema is
 domain-agnostic, and the fields matter more than what they happen to describe.
 
@@ -45,13 +53,13 @@ domain-agnostic, and the fields matter more than what they happen to describe.
 
 | field | required | meaning |
 |---|---|---|
-| `candidate` | yes | what died. Any stable identifier. |
+| `candidate` | yes | what died. Any stable identifier, and it must be a **string** — a number reads as absent, which would label the entry by its index and group it with every other unnamed one. |
 | `kill_class` | yes | one of the five below. |
-| `family` | no | the idea this build belongs to. Defaults to `candidate` with a trailing `-v<N>` / `-p<N>` stripped, so `root-scout-v1` and `root-scout-v2` share a family automatically. Set it explicitly when the naming does not carry it. |
+| `family` | no | the idea this build belongs to; a **string** when present. Defaults to `candidate` with a trailing `-v<N>` / `-p<N>` stripped, so `root-scout-v1` and `root-scout-v2` share a family automatically. Set it explicitly when the naming does not carry it. |
 | `verdict_artifact` | no | path to the evidence the verdict was read from. |
 | `ceiling_evidence` | **iff `FAMILY_DEAD`** | the measured ceiling, with its numbers and its bar. Prose, not a boolean. |
-| `base` | no | `{artifact, sha256, evidence}` — what this was built on, and the evidence it was stronger. |
-| `ticket` | **iff `DESIGN_DEAD`** | the redesign ticket. |
+| `base` | no | `{artifact, sha256, evidence}` — what this was built on, and the evidence it was stronger. All three are warned about individually: without the artifact and its hash the starting point cannot be identified later, which is the same gap as never measuring it. |
+| `ticket` | **iff `DESIGN_DEAD`** | the redesign ticket. A `FAMILY_DEAD` entry may carry one, but not an outstanding one — see below. |
 | `power_plan` | **iff `UNDECIDABLE`** | the priced way out. |
 
 A field expected to carry text counts as **absent** unless it holds a non-empty
@@ -92,6 +100,13 @@ difference is what to do next: fix the instrument, or buy resolution.
 `SETTLED` = {`ATTEMPTED`, `RETIRED_BY_OWNER`} — silent. Widening the vocabulary means adding
 to a bucket, never to the accept set; the two must partition the valid statuses,
 and a test should assert that they do.
+
+**A `FAMILY_DEAD` entry may not hold an `OUTSTANDING` ticket.** Promotion to
+`FAMILY_DEAD` is one of the three ways a ticket settles, and it adds no fourth
+status: the ceiling measurement closed the line, so the rebuild it owed is
+answered and the ticket records `ATTEMPTED` or `RETIRED_BY_OWNER`. An entry
+holding both is a blocking defect — the class and the ticket cannot both be
+right.
 
 **Why `owner_ruling` names a file.** A non-empty field inside the same JSON the
 agent is writing is bookkeeping in the costume of authentication — the same

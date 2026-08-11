@@ -56,6 +56,27 @@ class TestFamilyDeath(LedgerCase):
                                              "decisions [lo95 4.9%] against a 10.5% bar"}])
         self.assertEqual(r["verdict"], "OK", r)
 
+    def test_family_dead_still_owing_a_ticket_blocks(self):
+        """The skill lists promotion to FAMILY_DEAD as one of three routes a
+        ticket settles by, and the validator had no way to record it: the line
+        was closed while its rebuild sat outstanding forever."""
+        for state in ("OPEN", "FUNDED"):
+            r = self.audit([{"candidate": "ranker-v1", "kill_class": "FAMILY_DEAD",
+                             "ceiling_evidence": "an unlimited-budget run still "
+                                                 "missed the bar",
+                             "ticket": dict(TICKET, status=state,
+                                            owner_ruling="ruling.md")}],
+                           files=("ruling.md",))
+            self.assertBlocks(r, "whose ticket is still")
+            self.assertTrue(r["owed"], "an obligation must stay visible")
+
+    def test_family_dead_with_a_settled_ticket_passes(self):
+        r = self.audit([{"candidate": "ranker-v1", "kill_class": "FAMILY_DEAD",
+                         "ceiling_evidence": "an unlimited-budget run still "
+                                             "missed the bar",
+                         "ticket": dict(TICKET, status="ATTEMPTED")}])
+        self.assertEqual(r["verdict"], "OK", r)
+
     def test_a_falsy_ceiling_is_not_a_ceiling(self):
         """Converting None to text yields "None", which reads as present, so
         the obvious form counted the ordinary way of writing "nothing here yet"
@@ -108,12 +129,26 @@ class TestRedesignTicket(LedgerCase):
             self.assertBlocks(r, "is invalid")
 
     def test_a_non_string_status_blocks_and_never_raises(self):
-        """Set membership hashes its operand where the tuple form compared by
-        equality. A single throw inside a check reported the whole run clean."""
+        """The guard runs before the vocabulary test, which calls `.strip()` —
+        an attribute a list, a dict or an int does not have. A single throw
+        inside a check once reported the whole run clean."""
         for junk in ([{"a": 1}], {"a": 1}, 7, True):
             r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
                              "ticket": dict(TICKET, status=junk)}])
             self.assertBlocks(r, "has to be text")
+
+    def test_a_non_string_identifier_blocks_rather_than_reading_as_absent(self):
+        """`text()` treats anything but a string as absent, which is right for
+        a prose field and wrong for identity: the entry silently became
+        "entry #N" and grouped with every other unnamed one."""
+        for field in ("candidate", "family"):
+            r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
+                             "ticket": dict(TICKET), field: 101}])
+            self.assertBlocks(r, f"{field} has to be text")
+
+    def test_an_entry_with_no_candidate_blocks(self):
+        r = self.audit([{"kill_class": "DESIGN_DEAD", "ticket": dict(TICKET)}])
+        self.assertBlocks(r, "no candidate")
 
     def test_a_ticket_that_is_not_an_object_blocks(self):
         r = self.audit([{"candidate": "x-v1", "kill_class": "DESIGN_DEAD",
@@ -316,6 +351,15 @@ class TestAntiZombie(LedgerCase):
         self.assertEqual(kl.family_of({"candidate": "residual-p1"}), "residual")
         self.assertEqual(kl.family_of({"candidate": "compactor"}), "compactor")
 
+    def test_unidentifiable_entries_do_not_share_a_family(self):
+        """They collapsed into a shared `?`, so two builds with nothing to do
+        with each other were counted as one approach dying twice."""
+        r = self.audit([{"kill_class": "DESIGN_DEAD", "ticket": dict(TICKET)},
+                        {"kill_class": "DESIGN_DEAD", "ticket": dict(TICKET)}])
+        self.assertBlocks(r, "no candidate")
+        self.assertFalse(any("family" in d and "one reason" in d
+                             for d in r["defects"]), r["defects"])
+
     def test_an_explicit_family_wins(self):
         self.assertEqual(
             kl.family_of({"candidate": "alpha-v1", "family": "warm-cache"}),
@@ -419,6 +463,18 @@ class TestBase(LedgerCase):
                          "base": {"artifact": "champ.tar.gz", "sha256": "ab"}}])
         self.assertEqual(r["verdict"], "OK", r)
         self.assertTrue(any("is ahead" in w for w in r["warnings"]))
+
+    def test_an_unidentifiable_starting_point_warns_too(self):
+        """Only `evidence` was read, so a starting point with no artifact and
+        no hash — unidentifiable, the same gap by another route — was quiet."""
+        for missing in ("artifact", "sha256"):
+            base = {"artifact": "champ.tar.gz", "sha256": "ab",
+                    "evidence": "p99 118ms over 40k requests"}
+            base.pop(missing)
+            r = self.audit([{"candidate": "x-v1", "kill_class": "INSTRUMENT_VOID",
+                             "base": base}])
+            self.assertEqual(r["verdict"], "OK", r)
+            self.assertTrue(any(missing in w for w in r["warnings"]), missing)
 
     def test_a_base_with_evidence_is_quiet(self):
         r = self.audit([{"candidate": "x-v1", "kill_class": "INSTRUMENT_VOID",

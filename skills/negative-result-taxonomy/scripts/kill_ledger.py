@@ -56,6 +56,7 @@ VALID_STATUS = OWED_STATUS + CLOSED_STATUS
 RULED_STATUS = ("FUNDED", "RETIRED_BY_OWNER")
 
 TICKET_PROSE = ("failing_prong", "measured_cause", "candidate_fix", "cheapest_test")
+BASE_FIELDS = ("artifact", "sha256", "evidence")
 POWER_PLAN_FIELDS = ("achieved_mde", "required_mde", "units_needed",
                      "cost_estimate", "cheaper_alternative", "recommendation")
 
@@ -82,12 +83,18 @@ def text(value) -> str:
 
 
 def family_of(entry: dict) -> str:
-    """The idea this build belongs to. Explicit `family` wins; otherwise strip a
-    trailing version suffix, so sibling builds group without bookkeeping."""
+    """The idea this build belongs to, or "" when the entry names neither.
+
+    Explicit `family` wins; otherwise strip a trailing version suffix, so
+    sibling builds group without bookkeeping. Unidentifiable entries used to
+    collapse into a shared `?` family, which is worse than no grouping: two
+    builds with nothing to do with each other were counted as one approach
+    dying twice.
+    """
     declared = text(entry.get("family"))
     if declared:
         return declared
-    return VERSION_SUFFIX.sub("", text(entry.get("candidate")) or "?")
+    return VERSION_SUFFIX.sub("", text(entry.get("candidate")))
 
 
 def _norm(value) -> str:
@@ -145,10 +152,11 @@ def _check_ticket(name: str, cls: str, entry: dict, ledger_path: Path,
         defects.append(f"{name}: ticket carries no status — one of "
                        f"{list(VALID_STATUS)}")
     elif not isinstance(status, str):
-        # Set membership hashes its left operand, so an unhashable status
-        # would throw here instead of being turned away — and one throw inside a
-        # check wrapped in a catch-all handler reported every check as passing.
-        # A malformed row has to fail noisily rather than silence the whole run.
+        # This guard runs BEFORE the vocabulary test below, which calls
+        # `.strip()` — an attribute a list, a dict or an int does not have. The
+        # rule it comes from is `drift-to-gate`'s: a malformed row fails
+        # noisily, because one throw inside a check wrapped in a catch-all
+        # handler once reported every check as passing.
         defects.append(f"{name}: ticket status has to be text; this is "
                        f"{type(status).__name__} {status!r}")
     elif status.strip() not in VALID_STATUS:
@@ -161,7 +169,16 @@ def _check_ticket(name: str, cls: str, entry: dict, ledger_path: Path,
             _check_ruling(name, state, ticket, ledger_path, ruling_root, defects)
         if state in OWED_STATUS:
             note = text(ticket.get("note")) or text(ticket.get("failing_prong"))
+            # Listed even when it is also a defect: an obligation must not
+            # become less visible because the entry around it is malformed.
             owed.append(f"{name} [{state}]: {note or 'no note'}")
+            if cls == "FAMILY_DEAD":
+                defects.append(
+                    f"{name}: FAMILY_DEAD whose ticket is still {state}. Promotion "
+                    f"to FAMILY_DEAD is one of the three routes a ticket "
+                    f"settles by — the ceiling measurement closed the line, so "
+                    f"the rebuild it owed is answered, not still outstanding. "
+                    f"Settle the ticket or the class is wrong.")
 
     if cls == "DESIGN_DEAD":
         missing = [f for f in TICKET_PROSE if not text(ticket.get(f))]
@@ -219,7 +236,10 @@ def _check_zombies(entries: list, defects: list, warnings: list) -> None:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        fam = families.setdefault(family_of(entry),
+        name = family_of(entry)
+        if not name:
+            continue        # already a defect on its own; grouping it invents one
+        fam = families.setdefault(name,
                                   {"deaths": 0, "ceiling": False, "pairs": Counter()})
         # Only a FAMILY_DEAD entry's ceiling clears a family. Accepting it from
         # any class handed every repeat death an escape: add `ceiling_evidence`
@@ -305,6 +325,20 @@ def audit(path: Path, *, ruling_root: Path | None = None, now: dt.date | None = 
                            f"{type(entry).__name__}")
             continue
         name = text(entry.get("candidate")) or f"entry #{index}"
+        # An identifier that is not text reads as ABSENT, which is right for a
+        # field that must carry prose and wrong for one that carries identity:
+        # the entry silently became "entry #N" and every such entry grouped
+        # into the same `?` family, so two unrelated builds produced a repeat-
+        # failure defect against a family that does not exist.
+        mistyped = [f for f in ("candidate", "family")
+                    if entry.get(f) is not None and not isinstance(entry.get(f), str)]
+        for field in mistyped:
+            defects.append(f"{name}: {field} has to be text; this is "
+                           f"{type(entry[field]).__name__} {entry[field]!r}")
+        if not mistyped and not text(entry.get("candidate")):
+            defects.append(f"{name}: no candidate — an entry without a stable "
+                           f"identifier cannot be grouped into a family, and "
+                           f"the family is where repeat deaths become visible")
         cls = text(entry.get("kill_class"))
         if cls not in VALID_CLASSES:
             defects.append(f"{name}: kill_class {entry.get('kill_class')!r} is "
@@ -340,13 +374,19 @@ def audit(path: Path, *, ruling_root: Path | None = None, now: dt.date | None = 
         _check_ticket(name, cls, entry, path, ruling_root, defects, owed)
 
         base = _dict(entry.get("base"))
-        if base is not None and not text(base.get("evidence")):
-            warnings.append(
-                f"{name}: starting point recorded with no reading showing it "
-                f"is ahead. Piling changes onto the newest build and branching "
-                f"from a proven one are indistinguishable from outside; what "
-                f"separates them is whether a recorded measurement or a cleared "
-                f"threshold sits behind that starting point.")
+        if base is not None:
+            # All three, not `evidence` alone: an unnamed artifact or a missing
+            # hash leaves the starting point unidentifiable, which is the same
+            # gap as an unmeasured one arriving by a different route.
+            thin = [f for f in BASE_FIELDS if not text(base.get(f))]
+            if thin:
+                warnings.append(
+                    f"{name}: starting point is missing {thin}, so nothing "
+                    f"shows it is ahead. Piling changes onto the newest build "
+                    f"and branching from a proven one are indistinguishable "
+                    f"from outside; what separates them is whether a recorded "
+                    f"measurement or a cleared threshold sits behind that "
+                    f"starting point.")
 
     _check_zombies(entries, defects, warnings)
     meter = _meter(entries, now or dt.datetime.now(dt.timezone.utc).date(),

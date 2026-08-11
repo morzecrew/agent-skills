@@ -78,7 +78,7 @@ A rebuild ticket, stored next to the verdict it belongs to:
 
 `FUNDED` means *the work has been authorised and has not happened yet.* It sits in **OUTSTANDING** on purpose. Grouping it with the states that mean finished was the obvious move and was rejected, because it would let an item settle its obligation **by undertaking to meet it**. Authorised-but-unrun is not progress. It is progress someone has placed an order for.
 
-- A ticket reaches settled by exactly three routes: **the test ran**, whatever it returned; **it was promoted to `FAMILY_DEAD`** because a ceiling measurement now exists; or **the decision-maker dropped it** with a stated reason.
+- A ticket reaches settled by exactly three routes: **the test ran**, whatever it returned; **it was promoted to `FAMILY_DEAD`** because a ceiling measurement now exists; or **the decision-maker dropped it** with a stated reason. The middle route needs no new status — the ceiling measurement closed the line, so the entry moves to `FAMILY_DEAD` and its ticket is recorded as `ATTEMPTED` or `RETIRED_BY_OWNER` like any other. A `FAMILY_DEAD` entry still carrying an `OPEN` or `FUNDED` ticket is a contradiction the validator blocks: either the ticket is settled or the class is wrong.
 - **No automated actor drops or authorises its own ticket.** An agent once asked which way to decide, got no reply, wrote a batch of authorisations and dismissals into the record minutes later, and reported them back as the decision-maker's. Nothing caught it, because whatever sets the state also fills the field that vouches for it. The mitigation: point the decision at **an artifact held outside this record**, so the named person can read it and disown it. That is friction rather than prevention, and it should be described that way — see `authority-dissociation`.
 - **Ticket notes are only ever added to.** Writing those decisions in overwrote the existing notes and wiped out the diagnosis text the tickets existed to hold. Put the new state first, then `PRIOR DIAGNOSIS:` and the original wording underneath.
 
@@ -93,7 +93,7 @@ Every `UNDECIDABLE` verdict owes a power plan:
 | field | meaning |
 |---|---|
 | `achieved_mde` | the smallest effect this run could actually separate from noise |
-| `required_mde` | the smallest effect the question needs separated |
+| `required_mde` | the smallest effect the question needs to be able to separate |
 | `units_needed` | how much more it would take — **counted in whatever is actually spent**: runs, hours, samples, currency |
 | `cost_estimate` | what that amounts to |
 | `cheaper_alternative` | a narrower question that could be settled instead |
@@ -109,7 +109,7 @@ Diagnosis without a stopping rule is how a dead line runs forever. Three clauses
 
 - **Explained attempts and unexplained ones are counted separately.** Limits like "no more than two tries per milestone" or "stop after two consecutive failures" apply to attempts with **no established cause**. A rebuild carrying an established cause and a fix with precedent does not use one up. Those are two different activities: assembling on top of wreckage, versus assembling on top of findings — and reading such limits as banning *every* rebuild is what left fifteen abandonments with a single documented rebuild among them.
 - **The stopping rule:** a rebuild that fails on the **same threshold for the same reason** does use up a milestone, and what follows is a **ceiling measurement — never a third variant**. A ticket tried twice with no ceiling measurement is itself a defect. One approach in that record had failed four separate times against a single threshold with no ceiling measurement ever attempted; the periodic review found it, not any individual verdict.
-- **The tally is itself a result.** No individual experiment reveals "plenty built, few measured" or "four failures and no ceiling measurement" — nor can any individual experiment correct such figures, which is why the review across attempts belongs on a schedule rather than happening when someone gets uneasy. Carry the ratio of attempts to completed measurements as a first-class number.
+- **The tally is itself a result.** No individual experiment reveals "plenty built, few measured" or "four failures and no ceiling measurement" — nor can any individual experiment correct such figures, which is why the review across attempts belongs on a schedule rather than happening when someone gets uneasy. Carry the ratio of attempts to completed measurements as a first-class number. That is the **census** ratio, and it is not the meter below: the census asks how much of what was built ever got measured, while the meter asks whether *this process* is generating more paperwork than attempts. Keep them apart — they move independently, and a healthy reading on one says nothing about the other.
 
 ## Stacking is not building forward
 
@@ -145,7 +145,9 @@ python3 scripts/kill_ledger.py KILL_LEDGER.json --json   # machine-readable
 python3 scripts/kill_ledger.py --template entry          # blank entry to fill in
 ```
 
-It refuses an unpaid-for `FAMILY_DEAD`, a `DESIGN_DEAD` with a missing or partial ticket, a status that is invalid or not a string, an authorisation or dismissal whose supporting artifact is absent, an `UNDECIDABLE` carrying no costed route to an answer, and an approach that has failed twice against the same threshold for the same reason with no ceiling measurement anywhere. Without refusing, it lists every outstanding ticket on **every** run, and counts items raised against items acted on so an over-demanding process can be shown to be one.
+It refuses an unpaid-for `FAMILY_DEAD`, a `FAMILY_DEAD` whose rebuild ticket is still outstanding, a `DESIGN_DEAD` with a missing or partial ticket, an entry with no stable identifier or one that is not text, a status that is invalid or not a string, an authorisation or dismissal whose supporting artifact is absent, an `UNDECIDABLE` carrying no costed route to an answer, and an approach that has failed twice against the same threshold for the same reason with no ceiling measurement anywhere. Without refusing, it lists every outstanding ticket on **every** run, warns about a starting point recorded without an artifact, a hash, and a reading, and counts items raised against items acted on so an over-demanding process can be shown to be one.
+
+Provenance is a warning rather than a refusal on purpose: a record whose starting point is unidentifiable is worth flagging every run, but it does not make the verdict above it wrong, and blocking on it would teach people to stop reading the blocks.
 
 The full field-by-field schema is in [references/ledger-schema.md](references/ledger-schema.md).
 
