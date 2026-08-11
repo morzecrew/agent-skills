@@ -80,7 +80,9 @@ Distrust every "tested" and "covered" claim, including your own — reading a te
 
 ### 10. Conformance to the decision table
 
-If the work executed an RFC, spec or design doc, diff the branch against its decision table. **Every departure either appears in the deviation log or is a finding.**
+If the work executed an RFC, spec or design doc, diff the branch against its decision table. **Every departure either appears in the deviation log or is a finding — and so does every `OPEN` row.**
+
+The `OPEN` half is easy to miss, because choosing one of the options an RFC delegated is not a departure from it: conformance can look perfect while the choice that was made, and why, exists nowhere but the code. Walk the `OPEN` rows separately and check each one has a logged decision with its rationale. An `OPEN` row that execution never answered is the other finding — the plan needed it and nobody noticed.
 
 This pass differs in kind from the other nine, and it is worth knowing why. The rest are judgment calls — whether a boundary case matters, whether a wrapper is really unsafe in that state. This one has an oracle: a departure is either recorded or it isn't, and the document says which. That makes it the cheapest pass to run, and the only one where **"found nothing" is a credible result** rather than a sign the audit was shallow.
 
