@@ -41,8 +41,11 @@ class RepoCase(unittest.TestCase):
         git(self.root, "add", "-A")
         git(self.root, "commit", "-qm", message)
 
-    def scan(self, rev_range=None, patterns=sk.EVIDENCE_PATTERNS):
-        return sk.scan(self.root, rev_range, patterns)
+    def remove(self, path: str) -> None:
+        git(self.root, "rm", "-q", path)
+
+    def scan(self, rev_range=None, patterns=sk.EVIDENCE_PATTERNS, explicit=()):
+        return sk.scan(self.root, rev_range, patterns, explicit)
 
     def checks(self, findings) -> list[str]:
         return [f["check"] for f in findings]
@@ -78,6 +81,29 @@ class TestSameCommit(RepoCase):
         self.commit("both")
         self.assertIn("Test", self.scan()[0]["author"])
 
+    def test_deleting_an_approval_alongside_work_is_not_attesting(self):
+        """`--name-only` cannot tell writing a record from removing one, so
+        clearing out stale approvals was reported as manufacturing them."""
+        self.write("approvals/old.md", "approved\n")
+        self.commit("an old approval")
+        git(self.root, "tag", "cut")
+        self.remove("approvals/old.md")
+        self.write("code.py", "v2\n")
+        self.commit("drop the stale approval and change the code")
+        self.assertEqual(self.scan("cut..HEAD"), [])
+
+    def test_a_deletion_does_not_hide_a_written_approval_in_the_same_commit(self):
+        self.write("approvals/old.md", "approved\n")
+        self.commit("an old approval")
+        git(self.root, "tag", "cut")
+        self.remove("approvals/old.md")
+        self.write("approvals/new.md", "approved again\n")
+        self.write("code.py", "v2\n")
+        self.commit("replace the approval and change the code")
+        findings = self.scan("cut..HEAD")
+        self.assertEqual(self.checks(findings), ["self-attested-commit"])
+        self.assertEqual(findings[0]["evidence"], ["approvals/new.md"])
+
 
 class TestSplitCommit(RepoCase):
     """Committing the attestation separately removes the tell and nothing else."""
@@ -98,6 +124,29 @@ class TestSplitCommit(RepoCase):
         self.write("approvals/a.md", "approved\n")
         self.commit("approve it")
         self.assertEqual(self.scan(), [])
+
+    def test_a_second_party_approval_in_between_breaks_the_sequence(self):
+        """The finding says "no second party in between". Carrying the older
+        work forward past an intervening approval made that sentence false:
+        B's approval is the independent step the check looks for."""
+        self.write("code.py", "v2\n")
+        self.commit("A does the work")
+        self.author("Second Party", "second@example.com")
+        self.write("approvals/by-b.md", "approved\n")
+        self.commit("B approves")
+        self.author("Test", "t@example.com")
+        self.write("approvals/by-a.md", "approved too\n")
+        self.commit("A approves later")
+        self.assertEqual(self.scan(), [])
+
+    def test_a_second_attestation_by_the_same_author_is_reported_once(self):
+        self.write("code.py", "v2\n")
+        self.commit("the work")
+        self.write("approvals/a.md", "approved\n")
+        self.commit("approve it")
+        self.write("approvals/b.md", "approved again\n")
+        self.commit("approve it again")
+        self.assertEqual(self.checks(self.scan()), ["self-attested-sequence"])
 
     def test_attesting_someone_elses_work_much_later_is_clean(self):
         self.write("code.py", "v2\n")
@@ -134,6 +183,23 @@ class TestEvidenceDetection(unittest.TestCase):
         matter under every code-review note in the repository."""
         self.assertFalse(self.matches("docs/review-notes.md"))
 
+    def test_program_source_is_not_an_attestation_record(self):
+        """These implement the vocabulary rather than record a ruling, and
+        matching them made every repository with an auth module light up."""
+        for path in ("src/authorization.py", "approval-handler/index.go",
+                     "certified_client/main.rs", "lib/signoff.ts",
+                     "scripts/waiver.sh"):
+            self.assertFalse(self.matches(path), path)
+
+    def test_an_explicit_glob_still_matches_program_source(self):
+        """The caller knows their own layout; the built-in vocabulary does not."""
+        self.assertTrue(sk.is_evidence("src/authorization.py",
+                                       sk.EVIDENCE_PATTERNS + ("*authoriz*",),
+                                       ("*authoriz*",)))
+        self.assertFalse(sk.is_evidence("src/authorization.py",
+                                        sk.EVIDENCE_PATTERNS + ("*ruling*",),
+                                        ("*ruling*",)))
+
     def test_matching_is_case_insensitive(self):
         self.assertTrue(self.matches("Approvals/Q3.md"))
         self.assertTrue(self.matches("docs/Sign-Off.md"))
@@ -168,6 +234,33 @@ class TestRange(RepoCase):
         self.commit("later work only")
         self.assertEqual(self.scan("cut..HEAD"), [])
         self.assertEqual(len(self.scan()), 1)
+
+    def test_work_just_outside_the_range_still_anchors_a_sequence(self):
+        """`main..HEAD` is the way this is actually invoked, and it saw only
+        what was inside the range — so a sequence whose work commit is the
+        range's own base came back clean, which is the one answer it must
+        never give by construction."""
+        self.write("code.py", "v2\n")
+        self.commit("the work")
+        git(self.root, "tag", "cut")
+        self.write("approvals/a.md", "approved\n")
+        self.commit("approve it")
+        self.assertEqual(self.checks(self.scan("cut..HEAD")),
+                         ["self-attested-sequence"])
+
+    def test_an_attestation_just_outside_the_range_does_not_anchor_one(self):
+        self.write("code.py", "v2\n")
+        self.commit("the work")
+        self.write("approvals/a.md", "approved\n")
+        self.commit("approve it")
+        git(self.root, "tag", "cut")
+        self.write("approvals/b.md", "approved again\n")
+        self.commit("approve it again")
+        self.assertEqual(self.scan("cut..HEAD"), [])
+
+    def test_a_range_whose_first_commit_is_the_root_is_handled(self):
+        """`rev-parse HEAD^` fails on a root commit; the scan must not."""
+        self.assertEqual(self.scan("HEAD"), [])
 
 
 class TestCommandLine(RepoCase):

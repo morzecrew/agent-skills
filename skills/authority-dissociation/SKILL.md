@@ -107,7 +107,9 @@ python3 scripts/same_keystroke.py main..HEAD
 python3 scripts/same_keystroke.py --evidence-glob 'approvals/**' --evidence-glob '*SIGNOFF*'
 ```
 
-It reports structure, not motive. A solo repository lights up, and that is the correct answer to "is this independently attested?" rather than something to suppress. An approval committed separately by somebody else comes back clean.
+It reports structure, not motive. A solo repository lights up, and that is the correct answer to "is this independently attested?" rather than something to suppress. An approval committed separately by somebody else comes back clean, and so does a commit that *deletes* an old approval — removing a record is not writing one.
+
+The built-in vocabulary skips program source: `authorization.py` and `approval-handler/index.go` implement these words rather than record anyone's ruling, and matching them lights up every repository with an auth module, burying the findings that matter. A `--evidence-glob` you supply yourself still matches them.
 
 ## Related skills
 

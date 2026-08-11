@@ -42,9 +42,25 @@ EVIDENCE_PATTERNS = (
     "*sign_off*", "*signed-off*", "*attestation*", "*attested*", "*waiver*",
     "*authoriz*", "*authoris*", "*certification*", "*certified*", "*endorsement*",
 )
+# Extensions whose files are program source. `authorization.py`,
+# `approval-handler/index.go` and `certified_client/main.rs` IMPLEMENT this
+# vocabulary rather than record anyone's ruling, and treating them as
+# attestations lit up every repository that has an auth module — burying the
+# findings that matter, which is the failure this pattern list already avoids
+# by leaving "review" out. A glob the caller supplied explicitly still matches
+# them: they know their own layout.
+CODE_SUFFIXES = (
+    ".py", ".pyi", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".go", ".rs", ".java",
+    ".kt", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".rb", ".php", ".swift",
+    ".scala", ".sh", ".bash", ".zsh", ".sql", ".css", ".scss", ".vue", ".svelte",
+)
 # The unit separator, not NUL: a NUL cannot be passed in argv at all, so a
 # --format carrying one dies before git sees it.
 SEP = "\x1f"
+# Statuses that mean the commit WROTE this path. A commit deleting a stale
+# approval is not an attestation, and counting it as one reported the tidying
+# of old records as the very failure the records were kept to prevent.
+WRITTEN = ("A", "M")
 
 
 class GitUnavailable(RuntimeError):
@@ -62,16 +78,20 @@ def git(repo: Path, *args: str) -> str:
     return proc.stdout
 
 
-def is_evidence(path: str, patterns: tuple[str, ...]) -> bool:
+def is_evidence(path: str, patterns: tuple[str, ...],
+                explicit: tuple[str, ...] = ()) -> bool:
     """Does this path name an attestation record?
 
     Matched against the whole path and each component, case-insensitively, so
-    both `approvals/2024-03-11.md` and `docs/RULING-14.md` are caught.
+    both `approvals/2024-03-11.md` and `docs/RULING-14.md` are caught. On a
+    program-source path only `explicit` — the globs the caller passed on the
+    command line — applies; see CODE_SUFFIXES.
     """
     lowered = path.lower()
+    usable = explicit if lowered.endswith(CODE_SUFFIXES) else patterns
     parts = [lowered, *lowered.split("/")]
     return any(fnmatch.fnmatch(part, pattern)
-               for part in parts for pattern in patterns)
+               for part in parts for pattern in usable)
 
 
 def commits_in(repo: Path, rev_range: str | None) -> list[tuple[str, str, str]]:
@@ -87,10 +107,19 @@ def commits_in(repo: Path, rev_range: str | None) -> list[tuple[str, str, str]]:
     return rows
 
 
-def files_in(repo: Path, sha: str) -> list[str]:
-    """Paths a commit touched. A root commit has no parent to diff against."""
-    out = git(repo, "show", "--name-only", "--format=", "--no-renames", sha)
-    return [line.strip() for line in out.splitlines() if line.strip()]
+def files_in(repo: Path, sha: str) -> list[tuple[str, str]]:
+    """(status, path) for everything a commit touched, oldest form first.
+
+    Status, not just the name: `--name-only` cannot tell writing a record from
+    deleting one, and only a written record attests anything.
+    """
+    out = git(repo, "show", "--name-status", "--format=", "--no-renames", sha)
+    rows = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0].strip() and parts[-1].strip():
+            rows.append((parts[0].strip()[0], parts[-1].strip()))
+    return rows
 
 
 def authors_of(repo: Path, path: str | None = None) -> list[str]:
@@ -112,16 +141,55 @@ def authors_of(repo: Path, path: str | None = None) -> list[str]:
     return ordered
 
 
-def scan(repo: Path, rev_range: str | None, patterns: tuple[str, ...]) -> list[dict]:
+def _split(repo: Path, sha: str, patterns: tuple[str, ...],
+           explicit: tuple[str, ...]) -> tuple[list[str], list[str]]:
+    """(attestations written, other paths touched) for one commit."""
+    touched = files_in(repo, sha)
+    evidence = sorted({path for status, path in touched
+                       if status in WRITTEN and is_evidence(path, patterns, explicit)})
+    other = sorted({path for _status, path in touched
+                    if not is_evidence(path, patterns, explicit)})
+    return evidence, other
+
+
+def _before(repo: Path, rev_range: str | None, patterns: tuple[str, ...],
+            explicit: tuple[str, ...]) -> tuple[str, str, str] | None:
+    """The work commit immediately before a range, when there is one.
+
+    `main..HEAD` iterates only what is inside the range, so a sequence whose
+    work commit is `main` itself and whose approval is the first commit in the
+    range came back clean — the shape most likely to be scanned, reported as
+    the shape it was scanned for.
+    """
+    inside = commits_in(repo, rev_range)
+    if not inside:
+        return None
+    try:
+        row = git(repo, "log", "--no-merges", "-1",
+                  f"--format=%H{SEP}%an <%ae>{SEP}%s", f"{inside[0][0]}^")
+    except GitUnavailable:                  # a root commit has no parent
+        return None
+    parts = row.strip().split(SEP, 2)
+    if len(parts) != 3:
+        return None
+    sha, author, subject = (part.strip() for part in parts)
+    evidence, other = _split(repo, sha, patterns, explicit)
+    return (sha, author, subject) if other and not evidence else None
+
+
+def scan(repo: Path, rev_range: str | None, patterns: tuple[str, ...],
+         explicit: tuple[str, ...] = ()) -> list[dict]:
     findings: list[dict] = []
-    # The most recent commit that changed something other than attestations —
-    # the work an attestation-only commit is plausibly attesting.
-    preceding: tuple[str, str, str] | None = None
+    # The work commit DIRECTLY before this one. Any attestation commit in
+    # between ends the relationship: an approval by a second party sitting
+    # between the work and a later approval by its author is exactly the
+    # independent step the check exists to look for, and carrying the older
+    # work forward past it reported "no second party in between" about a
+    # history that had one.
+    preceding = _before(repo, rev_range, patterns, explicit)
 
     for sha, author, subject in commits_in(repo, rev_range):
-        paths = files_in(repo, sha)
-        evidence = [p for p in paths if is_evidence(p, patterns)]
-        other = [p for p in paths if p not in set(evidence)]
+        evidence, other = _split(repo, sha, patterns, explicit)
 
         if evidence and other:
             findings.append({
@@ -154,8 +222,7 @@ def scan(repo: Path, rev_range: str | None, patterns: tuple[str, ...]) -> list[d
                     f"hand, no second party in between."),
             })
 
-        if other:
-            preceding = (sha, author, subject)
+        preceding = (sha, author, subject) if other and not evidence else None
     return findings
 
 
@@ -185,7 +252,8 @@ def main(argv=None) -> int:
     parser.add_argument("--evidence-glob", action="append", default=[],
                         metavar="GLOB",
                         help="extra path glob naming an attestation record; "
-                             "repeatable. Adds to the built-in set.")
+                             "repeatable. Adds to the built-in set, and unlike "
+                             "the built-ins it also matches program source.")
     parser.add_argument("--only-glob", action="store_true",
                         help="use ONLY the supplied globs, not the built-ins")
     parser.add_argument("--json", action="store_true")
@@ -197,7 +265,7 @@ def main(argv=None) -> int:
     patterns = extra if args.only_glob else EVIDENCE_PATTERNS + extra
 
     try:
-        findings = scan(args.repo, args.range, patterns)
+        findings = scan(args.repo, args.range, patterns, extra)
     except GitUnavailable as exc:
         print(f"SAME KEYSTROKE — REFUSE: {exc}", file=sys.stderr)
         return 2
