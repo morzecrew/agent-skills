@@ -36,6 +36,28 @@ def run_script(skill: str, filename: str, *args: str, cwd: Path | None = None) -
     )
 
 
+def load_repo_script(filename: str) -> ModuleType:
+    """Same, for the repository's own tools under `scripts/` rather than a skill's."""
+    path = REPO / "scripts" / filename
+    if not path.is_file():
+        raise FileNotFoundError(f"no such script: {path}")
+    spec = importlib.util.spec_from_file_location(f"reposcript_{path.stem}", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_repo_script(filename: str, *args: str, cwd: Path | None = None,
+                    timeout: float | None = None) -> subprocess.CompletedProcess:
+    """`timeout` is not decoration: a scan that fails to advance hangs forever,
+    and a suite that waits for it reports nothing at all."""
+    return subprocess.run(
+        [sys.executable, str(REPO / "scripts" / filename), *args],
+        capture_output=True, text=True, cwd=cwd, timeout=timeout
+    )
+
+
 def git_repo(root: Path) -> None:
     """Initialize a throwaway repository with deterministic identity."""
     subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)

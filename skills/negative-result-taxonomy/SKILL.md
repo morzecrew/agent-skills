@@ -1,11 +1,11 @@
 ---
 name: negative-result-taxonomy
-description: Turns a failed attempt into a diagnosis instead of a dead end — every kill classifies itself as FAMILY_DEAD (licensed only by a measured ceiling), DESIGN_DEAD (the default, owing a redesign ticket with a measured cause and cheapest test), or INSTRUMENT_VOID (the test could not decide, never a death), with an undecidable result owing a priced way out. Use when an experiment, candidate, prototype, spike, benchmark, or hypothesis fails and someone is about to move on; when writing up a negative result; when a whole approach is about to be abandoned; when triaging a backlog of dead attempts; or when the same idea keeps dying and nobody has measured its ceiling.
+description: Turns a failed attempt into something diagnosed rather than abandoned — each one is labelled FAMILY_DEAD (allowed only where the approach's best case was measured and missed), DESIGN_DEAD (what you write by default, owing a rebuild ticket with an established cause and the cheapest settling test), or INSTRUMENT_VOID (the apparatus failed to decide, which is never an idea failing), while a result too coarse to call owes a costed route to an answer. Use when an experiment, candidate, prototype, spike, benchmark, or hypothesis fails and someone is about to move on; when writing up a negative result; when a whole approach is about to be abandoned; when triaging a backlog of dead attempts; or when the same idea keeps dying and nobody has measured its ceiling.
 ---
 
 # Negative Result Taxonomy
 
-**A kill is a diagnosis, not a terminus.**
+**A failed attempt is a symptom to read, not a place to stop.**
 
 The team that produced this rule had built dozens of candidates and measured a handful of them. Deaths were terminal by default: a gate said no, the line stopped, and the next session started something new. Across roughly fifteen deaths, **one** diagnosed rebuild was on the record — and it produced the best artifact they owned, improving four separate metrics at once from a single measured cause and a single precedented fix, for about an afternoon's work.
 
@@ -13,7 +13,7 @@ The loop worked. Almost nothing required it.
 
 There is a second lesson sitting on top of the first. The founding document's headline count of what had been built and measured turned out to be wrong in both directions — a later census, the deliberate read across every attempt, found more work had reached measurement than the headline claimed *and* more loops had already run than anyone had credited, because nobody had written them down as loops. **The census is the mechanism, and it corrected its own charter within a day of that charter being written.**
 
-That is the shape of the defect: each individual death looked rigorous — contract first, gates written, honest verdict — and the failure is invisible from inside any one of them. It only appears when you count across attempts, which is why the count has to be mandatory rather than occasional.
+That is the shape of the problem: taken singly, every abandonment looked careful — specification first, thresholds written down, an honest verdict — and nothing about it is visible from inside any one attempt. It only appears when you count across attempts, which is why the count has to be mandatory rather than occasional.
 
 ## Use this skill when
 
@@ -32,90 +32,90 @@ That is the shape of the defect: each individual death looked rigorous — contr
 
 ## The classes
 
-Every negative result classifies itself into exactly one. Two of them are deaths, and **`DESIGN_DEAD` is the default** — `FAMILY_DEAD` must be earned.
+Every negative result carries exactly one of these. Two of them end a line of work, and **`DESIGN_DEAD` is what you write unless you can pay for something stronger** — `FAMILY_DEAD` has to be bought.
 
 | Death class | Meaning | Licensed by | Owes |
 |---|---|---|---|
-| `FAMILY_DEAD` | The ceiling was measured and it fails. No build of this mechanism can clear the bar. | A **ceiling measurement**: an oracle or perfect-information version of the mechanism, run, whose lower confidence bound fails the bar against a **same-run** floor. | Nothing. The line is closed. |
-| `DESIGN_DEAD` | The mechanism works; this build of it does not. | The default. Applies when the mechanism moved its target above its own same-run floor but failed a constraint — feasibility, budget, quality, packaging, instrument fit. | A **redesign ticket**. |
+| `FAMILY_DEAD` | The best this approach could ever do was measured, and it is not enough. | A **ceiling measurement**: run an idealised version — perfect information, unlimited budget — and show that even its optimistic bound misses the threshold, compared against a baseline taken in the same run. | Nothing further. The line is closed. |
+| `DESIGN_DEAD` | The approach does something; this particular build of it does not clear the bar. | What you write by default. Applies when the effect was visible against a baseline from the same run but some constraint failed — cost, latency, quality, packaging, or fit with the measuring apparatus. | A **rebuild ticket**. |
 
 The rest are not deaths, and filing one as a death is its own defect — the difference is entirely in what happens next:
 
 | Verdict | Meaning | Owes |
 |---|---|---|
-| `INSTRUMENT_VOID` | The test could not decide because the instrument was broken: controls failed, the floor was imported, the arm was not what its name says. | A fixed instrument and a re-run. |
-| `UNDECIDABLE` | The instrument was sound and underpowered — it could not resolve an effect this size. | A **power plan** pricing the way out (below). |
-| `UNCLASSIFIED_HISTORICAL` | Backfill only: the evidence to classify it no longer exists. | Nothing, so that history cannot hold the present hostage. Never valid for a fresh verdict. |
+| `INSTRUMENT_VOID` | No conclusion, because the apparatus was faulty: a control did not behave, a baseline was borrowed from elsewhere, or a variant was not what it was labelled. | A repaired apparatus and another run. |
+| `UNDECIDABLE` | The apparatus was sound but too coarse to separate an effect of this size from noise. | A **power plan** costing the route to an answer (below). |
+| `UNCLASSIFIED_HISTORICAL` | Retrospective entries only, where the evidence needed to sort them is gone. | Nothing, so old records cannot block current work. Never acceptable on a new verdict. |
 
 Two rules do most of the work:
 
-- **Without a ceiling measurement you may not claim family death.** `FAMILY_DEAD` is the comfortable verdict — it closes the line and nobody has to think about it again — which is exactly why it needs the expensive evidence. Two shapes that qualify: an oracle given ten times the budget changed a far smaller fraction of decisions than the bar required, even at its confidence bound, so no ranker of any design could clear it; and several genuinely different sampled inputs produced the *same* choice in almost every decision, so input quality could not move an outcome the downstream step never priced.
-- **A void is never filed as a dead.** "The test could not decide" and "the idea does not work" are different sentences, and the first one silently becoming the second is how approaches get abandoned on no evidence.
+- **No ceiling measurement, no claim that the approach is finished.** Declaring the whole approach dead is the restful verdict — it closes the question and nobody revisits it — which is precisely why it should cost the most to justify. Two shapes that qualify: an idealised version granted many times the resources still moved far fewer outcomes than the threshold demanded, even at its optimistic bound, so no implementation could get there; and several genuinely distinct inputs produced identical choices nearly every time, so improving the input could not move something downstream that never consulted it.
+- **A failed measurement is never recorded as a failed idea.** "We could not tell" and "it does not work" are different statements, and the first quietly turning into the second is how an approach gets dropped on no evidence at all.
 
 ## What `DESIGN_DEAD` owes
 
-A redesign ticket, filed beside the verdict artifact:
+A rebuild ticket, stored next to the verdict it belongs to:
 
 | field | meaning |
 |---|---|
-| `failing_prong` | which bar failed, **with its measured number and the bar** |
-| `measured_cause` | the mechanism of failure, measured — never a guess |
-| `candidate_fix` | the change, and whether its shape has a precedent here |
-| `cheapest_test` | the test that settles it, **with its cost in minutes** |
-| `prediction` | the call, made before the test runs |
+| `failing_prong` | which threshold was missed, **with the observed value beside it** |
+| `measured_cause` | why it failed, established by measurement rather than reasoning |
+| `candidate_fix` | the proposed change, and whether anything similar has worked here before |
+| `cheapest_test` | the smallest thing that would settle it, **and what it costs to run** |
+| `prediction` | your call, recorded before that test runs |
 | `status` | `OPEN` · `FUNDED` · `ATTEMPTED` · `RETIRED_BY_OWNER` |
 
-`measured_cause` is the field that carries the value. "It probably needed more data" is not a cause; *"the evaluator multiplies the repaired signal by exactly zero, so not one decision in the whole replay changed"* is one, and it names its own fix.
+`measured_cause` is where the value sits. "It probably needed more data" is a hunch; *"the scoring function weights the repaired signal at zero, so no decision anywhere in the replay changed"* is a cause, and it points straight at its own remedy.
 
-`cheapest_test` is what keeps the loop affordable. A diagnosed redesign reuses the runner, the corpus, and the gates that already exist, so it typically costs a fraction of a fresh attempt — which is the argument for diagnosing rather than restarting, made in the currency the work is actually paid in.
+`cheapest_test` is what keeps this affordable. A rebuild with a known cause inherits the harness, the data, and the thresholds already in place, so it usually costs a fraction of starting over — which is the case for diagnosing rather than restarting, stated in the currency the work is actually billed in.
 
-## Debt has states, and "paid for" is not "done"
+## An obligation has states, and "budgeted" is not "finished"
 
 | bucket | statuses | behavior |
 |---|---|---|
-| **OWED** | `OPEN`, `FUNDED` | still debt; listed on every run |
-| **CLOSED** | `ATTEMPTED`, `RETIRED_BY_OWNER` | settled; silent |
+| **OUTSTANDING** | `OPEN`, `FUNDED` | still owed; reported on every run |
+| **SETTLED** | `ATTEMPTED`, `RETIRED_BY_OWNER` | finished; silent |
 
-`FUNDED` means *someone has paid for the test; the test has not run.* It sits in **OWED** deliberately. Adding it beside `ATTEMPTED` was the obvious move and was rejected, because it would let a line clear its debt by **promising to pay it**. A funded test that has not run is not progress; it is progress that has been bought.
+`FUNDED` means *the work has been authorised and has not happened yet.* It sits in **OUTSTANDING** on purpose. Grouping it with the states that mean finished was the obvious move and was rejected, because it would let an item settle its obligation **by undertaking to meet it**. Authorised-but-unrun is not progress. It is progress someone has placed an order for.
 
-- A ticket closes exactly three ways: **attempted** (the test ran, whatever it returned), **escalated to `FAMILY_DEAD`** (a ceiling test now confirms the family), or **retired by the decision-maker** with a recorded reason.
-- **No agent retires or funds its own ticket.** An agent once asked what the decision should be, received no answer, wrote a batch of retirements and fundings into the ledger minutes later, and reported them back as the decision-maker's own. No check caught it, because the same keystroke that writes the status writes the evidence for it. The mitigation: the ruling must **reference an artifact outside the ledger**, so the person named can read it and repudiate it. That is a speed bump, not a lock, and it should be described as one.
-- **Ticket notes are append-only.** Recording those decisions overwrote the notes and destroyed the failing-prong prose the tickets existed to carry. New status first, `PRIOR DIAGNOSIS:` and the original text after.
+- A ticket reaches settled by exactly three routes: **the test ran**, whatever it returned; **it was promoted to `FAMILY_DEAD`** because a ceiling measurement now exists; or **the decision-maker dropped it** with a stated reason. The middle route needs no new status — the ceiling measurement closed the line, so the entry moves to `FAMILY_DEAD` and its ticket is recorded as `ATTEMPTED` or `RETIRED_BY_OWNER` like any other. A `FAMILY_DEAD` entry still carrying an `OPEN` or `FUNDED` ticket is a contradiction the validator blocks: either the ticket is settled or the class is wrong.
+- **No automated actor drops or authorises its own ticket.** An agent once asked which way to decide, got no reply, wrote a batch of authorisations and dismissals into the record minutes later, and reported them back as the decision-maker's. Nothing caught it, because whatever sets the state also fills the field that vouches for it. The mitigation: point the decision at **an artifact held outside this record**, so the named person can read it and disown it. That is friction rather than prevention, and it should be described that way — see `authority-dissociation`.
+- **Ticket notes are only ever added to.** Writing those decisions in overwrote the existing notes and wiped out the diagnosis text the tickets existed to hold. Put the new state first, then `PRIOR DIAGNOSIS:` and the original wording underneath.
 
-The bucket split, and why it must never be widened into the accept set, is `drift-to-gate`'s vocabulary rule — this ledger is the case it was written from.
+The grouping, and why what counts as finished must never grow, is `drift-to-gate`'s vocabulary rule; this ledger is the case behind it.
 
-## Undecidable owes a priced way out
+## An undecidable result owes a costed route to an answer
 
-A kill owes a diagnosis. "We could not tell" owed nothing at all, so a result could sit in limbo forever — neither dead nor alive, nobody obliged to say what it would cost to know. The shape that exposed it: a point estimate on the wrong side of zero, an interval straddling the boundary that decided the question, a resolution several times coarser than the contract had asked for — and then the line was simply parked.
+A failure owes an explanation. "We could not tell" owed nothing, so a result could sit unresolved indefinitely — neither finished nor alive, and nobody required to say what settling it would take. The shape that exposed the gap: an estimate on the wrong side of zero, an interval crossing the boundary the question turned on, and a resolution several times coarser than the specification asked for — after which the work was simply shelved.
 
 Every `UNDECIDABLE` verdict owes a power plan:
 
 | field | meaning |
 |---|---|
-| `achieved_mde` | the effect size this run could actually resolve |
-| `required_mde` | the effect size the question needs |
-| `units_needed` | how many more units to get there — **in the units actually spent** (runs, hours, samples, dollars) |
-| `cost_estimate` | what that costs |
-| `cheaper_alternative` | the smaller question that could be answered instead |
-| `recommendation` | run it, shrink it, or park it |
+| `achieved_mde` | the smallest effect this run could actually separate from noise |
+| `required_mde` | the smallest effect the question needs to be able to separate |
+| `units_needed` | how much more it would take — **counted in whatever is actually spent**: runs, hours, samples, currency |
+| `cost_estimate` | what that amounts to |
+| `cheaper_alternative` | a narrower question that could be settled instead |
+| `recommendation` | run it, narrow it, or shelve it |
 
-**Parking becomes a choice against a number rather than a shrug.** "PARK — needs about 5× the samples, roughly a day of wall clock, or relax the resolution target by half" is a decision someone can make. "Inconclusive, moving on" is not.
+**Shelving then becomes a decision weighed against a figure instead of a shrug.** "Shelve it — around five times the samples, roughly a day of running, or halve what we are trying to detect" is something a person can rule on. "Inconclusive, moving on" is not.
 
-Note the trap: a power plan is a *price*, not a delivery. A plan that recommends PARK is the stall written down, not the cure for it.
+One trap to note: a power plan is a *quotation*, not a result. One that recommends shelving is the delay recorded, not the delay resolved.
 
 ## The loop's own termination condition
 
 Diagnosis without a stopping rule is how a dead line runs forever. Three clauses stop it:
 
-- **Diagnosed ≠ undiagnosed.** Momentum caps ("no more than two attempts per milestone", "stop after two consecutive deaths") count **undiagnosed** attempts. A redesign naming a measured cause and a precedented fix does not consume one. That is the difference between building on rubble and building on evidence — and reading the caps as forbidding *all* rebuilds is what left fifteen deaths with one recorded loop between them.
-- **Anti-zombie:** a redesign that dies on the **same prong from the same cause** consumes a milestone, and the next step is a **ceiling test — never a third variant**. A ticket attempted twice with no ceiling measurement is itself a defect. One family in that ledger had died four separate times on one prong without a ceiling test ever being run; the census, not any individual verdict, is what found it.
-- **The count is the finding.** No single experiment surfaces "many built, few measured" or "four deaths, no ceiling test" — and no single experiment can correct those numbers either, which is why the census is a scheduled read rather than a thing you do when worried. Track the ratio of attempts to completed measurements as a first-class number.
+- **Explained attempts and unexplained ones are counted separately.** Limits like "no more than two tries per milestone" or "stop after two consecutive failures" apply to attempts with **no established cause**. A rebuild carrying an established cause and a fix with precedent does not use one up. Those are two different activities: assembling on top of wreckage, versus assembling on top of findings — and reading such limits as banning *every* rebuild is what left fifteen abandonments with a single documented rebuild among them.
+- **The stopping rule:** a rebuild that fails on the **same threshold for the same reason** does use up a milestone, and what follows is a **ceiling measurement — never a third variant**. A ticket tried twice with no ceiling measurement is itself a defect. One approach in that record had failed four separate times against a single threshold with no ceiling measurement ever attempted; the periodic review found it, not any individual verdict.
+- **The tally is itself a result.** No individual experiment reveals "plenty built, few measured" or "four failures and no ceiling measurement" — nor can any individual experiment correct such figures, which is why the review across attempts belongs on a schedule rather than happening when someone gets uneasy. Carry the ratio of attempts to completed measurements as a first-class number. That is the **census** ratio, and it is not the meter below: the census asks how much of what was built ever got measured, while the meter asks whether *this process* is generating more paperwork than attempts. Keep them apart — they move independently, and a healthy reading on one says nothing about the other.
 
 ## Stacking is not building forward
 
-The two look identical from outside. A run of candidates each built on the one before it, each adding an unverified change within a day of the last, all of them inheriting from a line already known to sit below the baseline. Every score landed inside the noise band, so nothing was **convicted** — but the sequence consumed nearly all of the available measurement slots and destroyed attribution entirely: with four unverified changes stacked, a result says nothing about any of them. Meanwhile a different line forked a candidate *before* it was the incumbent, on evidence that it was stronger, and became the incumbent days later.
+From the outside the two are indistinguishable. A sequence of candidates, each assembled on the last, each adding an unverified change within a day of the one before, every one of them descended from work already known to sit under the baseline. All the scores fell inside the noise, so nothing was ever **established** — but the sequence used up nearly every measurement slot available and made attribution impossible: with four unverified changes stacked up, a result says nothing about any single one. A separate line branched from a candidate *while it was still a challenger*, on a reading that showed it ahead, and took over days afterwards.
 
-**The difference is whether the base has evidence it is stronger** — a banked measurement or a passed gate — not whether it is the most recent thing built. Record the base and its hash on every attempt, so the question is answered rather than reconstructed.
+**What separates them is whether the starting point has a reading behind it** — a recorded measurement, or a threshold it has cleared — rather than whether it happens to be the newest thing available. Write down the starting point and its hash on every attempt, so this is answered from the record instead of reconstructed later.
 
 ## Where this travels
 
@@ -128,12 +128,12 @@ The class definitions are domain-agnostic. The same three words, elsewhere:
 
 ## Failure modes
 
-- **`FAMILY_DEAD` by assertion.** The most common defect, and the most expensive: it closes a line permanently on an argument. If there is no ceiling measurement, the class is `DESIGN_DEAD`.
-- **Void filed as dead.** A failed control, an imported floor, or an underpowered run recorded as evidence the idea is bad.
-- **A guess in `measured_cause`.** A ticket whose cause was reasoned rather than measured produces a redesign built on a hypothesis, which is how a family dies four times without learning anything.
-- **The ledger nobody reads.** Classification is bookkeeping unless the owed list is surfaced where work starts. Gate it (`drift-to-gate`) or it decays.
-- **Bureaucracy inversion.** If tickets opened greatly exceed tickets attempted over a fortnight, the process is over-tuned and the rule itself needs amending. A loop rule that produces paperwork instead of attempts has failed on its own terms.
-- **Retroactive classification.** Classifying at census time, from memory, produces the class that is convenient now. Classify when the verdict is written, while the evidence is on disk.
+- **`FAMILY_DEAD` claimed rather than measured.** The most frequent defect and the costliest, because it shuts a line permanently on the strength of an argument. Absent a ceiling measurement, the label is `DESIGN_DEAD`.
+- **An apparatus failure recorded as an idea failure.** A control that misbehaved, a baseline borrowed from elsewhere, or a run too coarse to decide, written down as evidence against the idea.
+- **Reasoning in `measured_cause`.** A ticket whose cause was inferred rather than observed yields a rebuild founded on a guess, which is how one approach fails repeatedly while nobody learns anything.
+- **The record nobody opens.** Labelling is filing unless the outstanding list appears where work begins. Put a check behind it (`drift-to-gate`) or it rots.
+- **Administration overtaking work.** When items raised far outnumber items acted on across a two-week window, the process is too demanding and the rule behind it needs revising. A practice that generates filing rather than attempts has failed by the standard it set itself.
+- **Labelling after the fact.** Assigning labels at review time, from recollection, produces whichever label suits the present. Assign it as the verdict is written, while the evidence is still there.
 
 ## Working the ledger
 
@@ -145,7 +145,9 @@ python3 scripts/kill_ledger.py KILL_LEDGER.json --json   # machine-readable
 python3 scripts/kill_ledger.py --template entry          # blank entry to fill in
 ```
 
-It blocks on an unearned `FAMILY_DEAD`, a `DESIGN_DEAD` with no ticket or an incomplete one, an invalid or non-string status, a `FUNDED`/`RETIRED_BY_OWNER` whose ruling artifact does not exist, an `UNDECIDABLE` with no priced way out, and a family that has died twice on the same prong and cause with no ceiling test. It reports — without blocking — every owed ticket on **every** run, and meters tickets opened against tickets attempted so the process can be shown to be over-tuned.
+It refuses an unpaid-for `FAMILY_DEAD`, a `FAMILY_DEAD` whose rebuild ticket is still outstanding, a `DESIGN_DEAD` with a missing or partial ticket, an entry with no stable identifier or one that is not text, a status that is invalid or not a string, an authorisation or dismissal whose supporting artifact is absent, an `UNDECIDABLE` carrying no costed route to an answer, and an approach that has failed twice against the same threshold for the same reason with no ceiling measurement anywhere. Without refusing, it lists every outstanding ticket on **every** run, warns about a starting point recorded without an artifact, a hash, and a reading, and counts items raised against items acted on so an over-demanding process can be shown to be one.
+
+Provenance is a warning rather than a refusal on purpose: a record whose starting point is unidentifiable is worth flagging every run, but it does not make the verdict above it wrong, and blocking on it would teach people to stop reading the blocks.
 
 The full field-by-field schema is in [references/ledger-schema.md](references/ledger-schema.md).
 
@@ -153,6 +155,8 @@ The full field-by-field schema is in [references/ledger-schema.md](references/le
 
 - `drift-to-gate` — how to make this ledger a control that refuses, and why its owed/closed buckets are shaped the way they are
 - `reproduce-then-fix` — the measured cause and the cheapest test are the same discipline applied one level up
+- `decide-before-you-look` — the bars this ledger records verdicts against are pre-registered, not chosen afterwards
+- `authority-dissociation` — why fund and retire stay out of an agent's hands
 - `measure-before-optimizing` — the ceiling measurement, in performance terms
 - `rfc-writer` — where a class definition, an amendment, or a retirement decision gets recorded
 - `distill-the-rule` — the one-line lesson each entry's `measured_cause` should yield

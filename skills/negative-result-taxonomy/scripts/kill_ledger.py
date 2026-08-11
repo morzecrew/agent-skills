@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""Validate a ledger of negative results — a kill is a diagnosis, not a terminus.
+"""Validate a record of failed attempts — each one diagnosed, not just filed.
 
 Reads one JSON ledger (see references/ledger-schema.md) and answers three
 questions the individual verdicts cannot:
 
-  DEFECTS   an unearned FAMILY_DEAD, a DESIGN_DEAD with no redesign ticket or an
-            incomplete one, an invalid status, a funding or retirement whose
-            ruling artifact does not exist, an UNDECIDABLE with no priced way
-            out, and a family that died twice on the same prong from the same
-            cause with no ceiling test ever run.
+  DEFECTS   a FAMILY_DEAD nobody paid the ceiling measurement for; a
+            DESIGN_DEAD whose ticket is missing or half-filled; a status that
+            is invalid or not a string; an authorisation or dismissal whose
+            supporting artifact is absent; an UNDECIDABLE with no costed route
+            to an answer; and an approach that failed twice against one
+            threshold for one reason with no ceiling measurement anywhere.
 
-  OWED      every OPEN or FUNDED ticket, listed on EVERY run — including runs
-            where the ledger is otherwise red. A funded test that has not run is
-            not progress; it is progress that has been bought, and parking the
-            owed list in the pass branch hides all debt behind one unrelated
-            defect, exactly when the ledger is in its worst shape.
+  OUTSTANDING  every OPEN or FUNDED ticket, on EVERY run — including runs that
+            are already failing for other reasons. Authorised-but-unrun is not
+            progress, and keeping this list inside the success branch hides
+            every obligation behind one unrelated defect, precisely when the
+            record is in its worst state.
 
-  METER     tickets opened against tickets attempted over a window. If the first
-            greatly exceeds the second, the process is over-tuned and the rule
-            itself needs amending. A loop rule that produces paperwork instead
-            of attempts has failed on its own terms.
+  METER     items raised against items acted on across a window. When the first
+            far outnumbers the second, the process is demanding more than it
+            returns and the rule behind it needs revising. A practice that
+            generates filing rather than attempts has failed by its own
+            standard.
 
 Exit 0 = OK, 1 = defects, 2 = the ledger could not be read (a gate that cannot
 read its input rules on nothing rather than ruling on nothing).
@@ -43,17 +45,18 @@ VALID_CLASSES = ("FAMILY_DEAD", "DESIGN_DEAD", "INSTRUMENT_VOID",
 # UNDECIDABLE (the instrument was sound but underpowered) never count as one.
 DEATH_CLASSES = ("FAMILY_DEAD", "DESIGN_DEAD")
 
-# Widening the vocabulary means adding to a BUCKET, never to the accepted set:
-# a status that let a line read as settled by promising to pay for the test
-# would be a way to clear debt by intending to.
+# New states join a GROUP; the set that counts as finished never grows. A state
+# letting an item read as settled because the work was merely authorised would
+# discharge the obligation by intending to meet it.
 OWED_STATUS = ("OPEN", "FUNDED")
 CLOSED_STATUS = ("ATTEMPTED", "RETIRED_BY_OWNER")
 VALID_STATUS = OWED_STATUS + CLOSED_STATUS
-# Statuses that are claims about what a PERSON decided, so they owe an artifact
-# outside this file. No agent funds or retires its own ticket.
+# Statuses asserting what a PERSON chose, so they owe an artifact held outside
+# this file. No automated actor authorises or dismisses its own ticket.
 RULED_STATUS = ("FUNDED", "RETIRED_BY_OWNER")
 
 TICKET_PROSE = ("failing_prong", "measured_cause", "candidate_fix", "cheapest_test")
+BASE_FIELDS = ("artifact", "sha256", "evidence")
 POWER_PLAN_FIELDS = ("achieved_mde", "required_mde", "units_needed",
                      "cost_estimate", "cheaper_alternative", "recommendation")
 
@@ -67,24 +70,31 @@ METER_FLOOR = 3                 # below this the ratio is noise, not a signal
 
 
 def text(value) -> str:
-    """A field that must carry prose, or "" when it carries nothing.
+    """The text in a field that must carry some, or "" when it carries none.
 
-    Anything that is not a non-empty string reads as ABSENT. This is deliberate
-    and load-bearing: `str(None)` is `"None"`, which is truthy, so the naive
-    `str(v).strip()` form accepted a JSON null — the idiom for "no value yet" —
-    as a recorded decision, and handed every writer a one-word escape from its
-    own debt. `false`, `0`, `[]` and `{}` fall the same way.
+    Anything other than a non-empty string counts as ABSENT, deliberately.
+    Converting None to text produces the string "None", which reads as present,
+    so the obvious `str(v).strip()` form accepted a JSON null — the ordinary way
+    of writing "nothing here yet" — as a recorded decision, giving every writer
+    a one-token way out of its obligations. `false`, `0`, `[]` and `{}` behave
+    the same way.
     """
     return value.strip() if isinstance(value, str) else ""
 
 
 def family_of(entry: dict) -> str:
-    """The idea this build belongs to. Explicit `family` wins; otherwise strip a
-    trailing version suffix, so sibling builds group without bookkeeping."""
+    """The idea this build belongs to, or "" when the entry names neither.
+
+    Explicit `family` wins; otherwise strip a trailing version suffix, so
+    sibling builds group without bookkeeping. Unidentifiable entries used to
+    collapse into a shared `?` family, which is worse than no grouping: two
+    builds with nothing to do with each other were counted as one approach
+    dying twice.
+    """
     declared = text(entry.get("family"))
     if declared:
         return declared
-    return VERSION_SUFFIX.sub("", text(entry.get("candidate")) or "?")
+    return VERSION_SUFFIX.sub("", text(entry.get("candidate")))
 
 
 def _norm(value) -> str:
@@ -142,11 +152,12 @@ def _check_ticket(name: str, cls: str, entry: dict, ledger_path: Path,
         defects.append(f"{name}: ticket carries no status — one of "
                        f"{list(VALID_STATUS)}")
     elif not isinstance(status, str):
-        # A membership test against a set HASHES its left operand, so an
-        # unhashable status would raise here rather than be rejected — and one
-        # raise inside a gate wrapped in a blanket `except` reported every check
-        # clean. A malformed row must block loudly, never take the gate down.
-        defects.append(f"{name}: ticket status must be a string, got "
+        # This guard runs BEFORE the vocabulary test below, which calls
+        # `.strip()` — an attribute a list, a dict or an int does not have. The
+        # rule it comes from is `drift-to-gate`'s: a malformed row fails
+        # noisily, because one throw inside a check wrapped in a catch-all
+        # handler once reported every check as passing.
+        defects.append(f"{name}: ticket status has to be text; this is "
                        f"{type(status).__name__} {status!r}")
     elif status.strip() not in VALID_STATUS:
         defects.append(f"{name}: ticket status {status.strip()!r} is invalid — "
@@ -158,7 +169,16 @@ def _check_ticket(name: str, cls: str, entry: dict, ledger_path: Path,
             _check_ruling(name, state, ticket, ledger_path, ruling_root, defects)
         if state in OWED_STATUS:
             note = text(ticket.get("note")) or text(ticket.get("failing_prong"))
+            # Listed even when it is also a defect: an obligation must not
+            # become less visible because the entry around it is malformed.
             owed.append(f"{name} [{state}]: {note or 'no note'}")
+            if cls == "FAMILY_DEAD":
+                defects.append(
+                    f"{name}: FAMILY_DEAD whose ticket is still {state}. Promotion "
+                    f"to FAMILY_DEAD is one of the three routes a ticket "
+                    f"settles by — the ceiling measurement closed the line, so "
+                    f"the rebuild it owed is answered, not still outstanding. "
+                    f"Settle the ticket or the class is wrong.")
 
     if cls == "DESIGN_DEAD":
         missing = [f for f in TICKET_PROSE if not text(ticket.get(f))]
@@ -172,12 +192,12 @@ def _check_ticket(name: str, cls: str, entry: dict, ledger_path: Path,
 
 def _check_ruling(name: str, state: str, ticket: dict, ledger_path: Path,
                   ruling_root: Path, defects: list) -> None:
-    """`FUNDED` and `RETIRED_BY_OWNER` are claims about a person's decision.
+    """These two statuses assert what a person decided.
 
-    A non-empty field inside the very file being written is bookkeeping in the
-    costume of authentication: the keystroke that writes the status writes the
-    evidence for it. Requiring a separate artifact is a speed bump — one the
-    named person can read and repudiate — not a lock.
+    A populated field inside the file currently being written records rather
+    than verifies: whatever sets the status also fills the field vouching for
+    it. Requiring a separate artifact adds friction — something the named person
+    can read and disown — rather than prevention.
     """
     ref = text(ticket.get("owner_ruling"))
     if not ref:
@@ -205,18 +225,21 @@ def _check_ruling(name: str, state: str, ticket: dict, ledger_path: Path,
 
 
 def _check_zombies(entries: list, defects: list, warnings: list) -> None:
-    """A redesign that dies on the SAME prong from the SAME cause consumes a
-    milestone, and the next step is a ceiling test — never a third variant.
+    """A rebuild failing against the SAME threshold for the SAME reason uses up
+    a milestone, and what follows is a ceiling measurement, not a third variant.
 
-    No single verdict can see this. It is the census that finds it: one family
-    in the ledger this rule came from had died four times on one prong without a
-    ceiling measurement ever being run.
+    No individual verdict reveals this; the review across attempts does. In the
+    record behind this rule, one approach had failed four separate times against
+    a single threshold with no ceiling measurement ever attempted.
     """
     families: dict[str, dict] = {}
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        fam = families.setdefault(family_of(entry),
+        name = family_of(entry)
+        if not name:
+            continue        # already a defect on its own; grouping it invents one
+        fam = families.setdefault(name,
                                   {"deaths": 0, "ceiling": False, "pairs": Counter()})
         # Only a FAMILY_DEAD entry's ceiling clears a family. Accepting it from
         # any class handed every repeat death an escape: add `ceiling_evidence`
@@ -240,9 +263,9 @@ def _check_zombies(entries: list, defects: list, warnings: list) -> None:
         repeats = [n for n in fam["pairs"].values() if n >= 2]
         if repeats:
             defects.append(
-                f"family {name!r}: {max(repeats)} deaths on the same prong from "
-                f"the same cause with no ceiling measurement anywhere — the next "
-                f"step is a CEILING test, never a third variant")
+                f"family {name!r}: {max(repeats)} failures against one "
+                f"threshold for one reason, and no ceiling measurement anywhere. "
+                f"What comes next is a CEILING measurement, not a third variant.")
         elif fam["deaths"] >= 3:
             warnings.append(
                 f"family {name!r}: {fam['deaths']} deaths and no ceiling "
@@ -302,6 +325,20 @@ def audit(path: Path, *, ruling_root: Path | None = None, now: dt.date | None = 
                            f"{type(entry).__name__}")
             continue
         name = text(entry.get("candidate")) or f"entry #{index}"
+        # An identifier that is not text reads as ABSENT, which is right for a
+        # field that must carry prose and wrong for one that carries identity:
+        # the entry silently became "entry #N" and every such entry grouped
+        # into the same `?` family, so two unrelated builds produced a repeat-
+        # failure defect against a family that does not exist.
+        mistyped = [f for f in ("candidate", "family")
+                    if entry.get(f) is not None and not isinstance(entry.get(f), str)]
+        for field in mistyped:
+            defects.append(f"{name}: {field} has to be text; this is "
+                           f"{type(entry[field]).__name__} {entry[field]!r}")
+        if not mistyped and not text(entry.get("candidate")):
+            defects.append(f"{name}: no candidate — an entry without a stable "
+                           f"identifier cannot be grouped into a family, and "
+                           f"the family is where repeat deaths become visible")
         cls = text(entry.get("kill_class"))
         if cls not in VALID_CLASSES:
             defects.append(f"{name}: kill_class {entry.get('kill_class')!r} is "
@@ -310,9 +347,10 @@ def audit(path: Path, *, ruling_root: Path | None = None, now: dt.date | None = 
 
         if cls == "FAMILY_DEAD" and not text(entry.get("ceiling_evidence")):
             defects.append(
-                f"{name}: FAMILY_DEAD without ceiling_evidence — family death is "
-                f"EARNED by a measured ceiling (an oracle run whose lower bound "
-                f"fails the bar against a same-run floor), never asserted")
+                f"{name}: FAMILY_DEAD with no ceiling_evidence. Closing an "
+                f"approach is EARNED by measuring its best case — an idealised "
+                f"run whose optimistic bound still misses the threshold, against "
+                f"a baseline from the same run — and never simply claimed.")
         if cls and cls != "FAMILY_DEAD" and text(entry.get("ceiling_evidence")):
             # Silently ignoring it would hide the misclassification: a measured
             # ceiling that fails its bar IS a family death, and one that passes
@@ -336,12 +374,19 @@ def audit(path: Path, *, ruling_root: Path | None = None, now: dt.date | None = 
         _check_ticket(name, cls, entry, path, ruling_root, defects, owed)
 
         base = _dict(entry.get("base"))
-        if base is not None and not text(base.get("evidence")):
-            warnings.append(
-                f"{name}: base recorded with no evidence it is stronger. "
-                f"Stacking and building forward look identical from outside; "
-                f"the difference is whether the base has a banked measurement or a "
-                f"passed gate behind it.")
+        if base is not None:
+            # All three, not `evidence` alone: an unnamed artifact or a missing
+            # hash leaves the starting point unidentifiable, which is the same
+            # gap as an unmeasured one arriving by a different route.
+            thin = [f for f in BASE_FIELDS if not text(base.get(f))]
+            if thin:
+                warnings.append(
+                    f"{name}: starting point is missing {thin}, so nothing "
+                    f"shows it is ahead. Piling changes onto the newest build "
+                    f"and branching from a proven one are indistinguishable "
+                    f"from outside; what separates them is whether a recorded "
+                    f"measurement or a cleared threshold sits behind that "
+                    f"starting point.")
 
     _check_zombies(entries, defects, warnings)
     meter = _meter(entries, now or dt.datetime.now(dt.timezone.utc).date(),
@@ -354,9 +399,9 @@ def audit(path: Path, *, ruling_root: Path | None = None, now: dt.date | None = 
                    "verdict": "LOOP_DEBT" if defects else "OK"})
     if defects:
         result["detail"] = (
-            f"{len(defects)} defect(s) in {len(entries)} entries. A kill is a "
-            f"diagnosis, not a terminus: classify it, and if the design died "
-            f"while the mechanism worked, name the fix.")
+            f"{len(defects)} defect(s) across {len(entries)} entries. Label "
+            f"each failure, and where the approach worked but this build of it "
+            f"did not, say what would be changed.")
     return result
 
 
@@ -372,9 +417,9 @@ def render(result: dict) -> str:
         lines.append("")
         lines.append("DEFECTS")
         lines += [f"  {d}" for d in result["defects"]]
-    # OWED rides EVERY run, red or green. It reached the reader only by breaking
-    # the gate once; fixing the gate would then have made real debt less visible
-    # than the bug had been.
+    # This list prints on EVERY run, passing or failing. It once reached a
+    # reader only because it was breaking the check, so repairing the check
+    # would have left genuine obligations less visible than the defect had.
     if result["owed"]:
         lines.append("")
         lines.append("OWED — do not report these lines closed while they stand")
@@ -399,11 +444,11 @@ TEMPLATES = {
         "base": {"artifact": "", "sha256": "", "evidence": ""},
         "ticket": {
             "status": "OPEN",
-            "failing_prong": "which bar failed, with the measured number and the bar",
-            "measured_cause": "the mechanism of failure, measured — never a guess",
-            "candidate_fix": "the change, and whether its shape has a precedent here",
-            "cheapest_test": "the test that settles it, with its cost in minutes",
-            "prediction": "the call, made before the test runs",
+            "failing_prong": "which threshold was missed, and the observed value",
+            "measured_cause": "why it failed, from measurement rather than reasoning",
+            "candidate_fix": "the proposed change, and any precedent for it here",
+            "cheapest_test": "the smallest thing that settles it, and its cost",
+            "prediction": "your call, recorded before that test runs",
             "opened_utc": "",
             "closed_utc": None,
             "owner_ruling": None,
@@ -413,7 +458,7 @@ TEMPLATES = {
     },
     "ticket": {
         "status": "OPEN",
-        "failing_prong": "",
+        "failing_prong": "",  # see the "entry" template for what each field holds
         "measured_cause": "",
         "candidate_fix": "",
         "cheapest_test": "",

@@ -4,9 +4,9 @@
 Four findings, each earned by a control that ran, stayed green, and protected
 nothing:
 
-  rubber-stamp      a test module where no test asserts a REFUSAL. A gate that
-                    only says GO is a rubber stamp, and a freshly written gate
-                    passing on today's data feels like evidence that it works.
+  rubber-stamp      a test module in which nothing asserts a REFUSAL. A check
+                    that has only ever approved is a formality, and a newly
+                    written one passing on today's data feels like proof.
   never-passes      ...and the mirror: no test asserts a PASS, so the gate is
                     stuck in the other position and cannot distinguish anything.
   swallowed-failure a broad `except` whose handler neither re-raises nor records
@@ -15,8 +15,9 @@ nothing:
                     four of its checks clean.
   unwired-verdict   a gate with a CLI that can never exit non-zero. It reports;
                     it does not refuse.
-  stranded-tests    `if __name__ == "__main__"` above later test classes. One
-                    such file ran 12 tests, printed OK, and skipped 13.
+  stranded-tests    `if __name__ == "__main__"` sitting above later test
+                    classes. One such file executed the first half of its
+                    suite, announced success, and skipped the rest.
 
 This checks the MECHANICAL half of "prove it can say no". The other half is not
 static and cannot be: mutate the enforcement line, and watch the decisive test
@@ -215,8 +216,10 @@ def _stranded(path: Path, tree: ast.Module) -> list[dict]:
                 "message": (f"the __main__ entrypoint sits above "
                             f"{len(later)} later definition(s) (first: "
                             f"{later[0].name!r}, line {later[0].lineno}). Running "
-                            f"this file directly executes the tests defined so "
-                            f"far, prints OK, and silently skips the rest."),
+                            f"this file directly executes only what is defined "
+                            f"above it and passes over the rest without saying "
+                            f"so — reporting on part of the suite in the "
+                            f"language of all of it."),
             }]
     return []
 
@@ -341,7 +344,7 @@ def _dispatch_tables(tree: ast.Module) -> dict[str, ast.Dict]:
 
 
 def _unwired(path: Path, tree: ast.Module) -> list[dict]:
-    """A verdict not wired to a non-zero exit reports; it does not refuse."""
+    """An outcome that reaches no exit status announces without stopping."""
     has_entrypoint = any(isinstance(n, ast.If) and "__main__" in _names_in(n.test)
                          for n in tree.body)
     if not has_entrypoint:
