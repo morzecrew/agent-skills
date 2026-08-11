@@ -49,6 +49,8 @@ Skills cross-reference each other in their "Related skills" sections. Every skil
 | [flag-dont-flip](skills/flag-dont-flip/) | Executes an RFC without silently changing it — plan gate first, halt on LOCKED decisions, every departure logged. |
 | [pr-review-loop](skills/pr-review-loop/) | Works AI and human PR feedback to convergence — deduped findings, evidence-backed verdicts, one push per round. |
 | [ratchet-what-you-build](skills/ratchet-what-you-build/) | Ranks every guard on an enforcement ladder; anything still sitting at "convention" is an open finding. |
+| [drift-to-gate](skills/drift-to-gate/) | Turns a rule that keeps being broken into a program that refuses — then runs that control's whole lifecycle. |
+| [negative-result-taxonomy](skills/negative-result-taxonomy/) | Classifies every failed attempt as family-dead, design-dead, or undecidable, so a kill is a diagnosis and not a dead end. |
 | [distill-the-rule](skills/distill-the-rule/) | Turns hard-won findings into one-line transferable rules, filed where future work will meet them. |
 
 ### Documentation
