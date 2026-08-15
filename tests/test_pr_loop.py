@@ -15,7 +15,9 @@ import unittest
 from datetime import datetime, timezone
 from typing import ClassVar
 
-from support import load_script
+import subprocess
+
+from support import load_script, run_script
 
 script = load_script("pr-review-loop", "pr_loop.py")
 
@@ -749,6 +751,117 @@ class StartupCreditTest(unittest.TestCase):
         self.assertEqual(script.startup_credit([], [], self.STALE, self.NOW, 90), 0.0)
 
 
+class WaitWiringTest(unittest.TestCase):
+    """The decisions are pure and tested above; this pins them into `cmd_wait`.
+
+    Worth the setup because the wiring is where this went wrong: the scoping
+    functions can be perfectly right while the loop passes them the wrong
+    thing, and the resulting failure is an early exit that looks like success.
+    Only this module's own functions are stubbed — GitHub is not simulated.
+    """
+
+    HEAD = "448e006"
+
+    class Clock:
+        """Deterministic time, so a settle window costs no wall-clock."""
+
+        def __init__(self):
+            self.now = 1000.0
+            self.slept = 0.0
+
+        def monotonic(self):
+            return self.now
+
+        def sleep(self, seconds):
+            self.slept += seconds
+            self.now += max(seconds, 0.001)
+
+    def setUp(self):
+        self.clock = self.Clock()
+        self.original = (script.check_snapshot, script.poll_comments,
+                         script.cleanly_checked_apps, script.time)
+        script.time = self.clock
+        script.cleanly_checked_apps = lambda *a: set()
+        script.check_snapshot = lambda *a: {
+            "pending": [], "clean": ["validate"], "attention": [], "head": self.HEAD}
+
+    def tearDown(self):
+        (script.check_snapshot, script.poll_comments,
+         script.cleanly_checked_apps, script.time) = self.original
+
+    def poll_returning(self, speakers: set[str]):
+        """The stub answers the question it was actually asked.
+
+        Scoped, it reports who spoke about this head. Unscoped — the bug — it
+        reports the reviewer as having spoken, because its round-one comments
+        are still on the PR. A stub that ignored its arguments would let the
+        call site pass anything and still pass.
+        """
+        def poll(owner, repo, pr, head, started):
+            scoped = head == self.HEAD and started is not None
+            return {"fingerprint": (1, 0, 1),
+                    "speakers": speakers if scoped else {"coderabbitai"},
+                    "latest": "2020-01-01T00:00:00Z"}   # quiet, from an earlier round
+
+        script.poll_comments = poll
+
+    def wait(self, expect=("coderabbitai",), timeout=300, settle=90) -> tuple[int, dict]:
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(io.StringIO()):
+            code = script.cmd_wait("o", "r", 7, timeout, 60, settle, list(expect))
+        return code, json.loads(stream.getvalue())
+
+    def test_a_reviewer_silent_about_this_head_keeps_the_wait_open(self):
+        """The round-two failure end to end: stale quiet, checks green, and a
+        reviewer that has not looked at the new commits. Before the fix this
+        returned 0 on the first poll and the round came back empty."""
+        self.poll_returning(set())
+        code, out = self.wait()
+        self.assertEqual(code, 3)
+        self.assertIn("coderabbitai", out["timedOutWaitingFor"])
+        self.assertGreaterEqual(self.clock.slept, 300, "it must actually have waited")
+
+    def test_an_idle_pr_with_its_reviewers_accounted_for_finishes_at_once(self):
+        """The credit is still worth having: nothing missing, quiet already
+        recorded, so the settle window is not re-observed."""
+        self.poll_returning({"coderabbitai"})
+        code, out = self.wait()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.clock.slept, 0.0, "no window should be served twice")
+        self.assertEqual(out["commentCounts"]["reviews"], 1)
+
+    def test_a_reviewer_that_turns_up_clean_later_still_gets_a_settle_window(self):
+        """Why the credit is gated on `missing` and not only on the later
+        done-check: a reviewer can become accounted for without writing
+        anything, when its check goes green on a later poll. Crediting stale
+        quiet at poll one would let that moment end the wait instantly — and a
+        check going green before the prose lands is the whole reason the
+        window exists. Sabotage found this; the obvious case masks it.
+        """
+        self.poll_returning(set())
+        checks = iter([set(), {"coderabbitai"}, {"coderabbitai"}, {"coderabbitai"}])
+        script.cleanly_checked_apps = lambda *a: next(checks, {"coderabbitai"})
+        code, _ = self.wait()
+        self.assertEqual(code, 0)
+        self.assertGreaterEqual(self.clock.slept, 90,
+                                "the window must run from when it was satisfied")
+
+    def test_naming_nobody_serves_the_window_rather_than_guessing(self):
+        self.poll_returning(set())
+        code, _ = self.wait(expect=())
+        self.assertEqual(code, 0)
+        self.assertGreaterEqual(self.clock.slept, 90, "the settle window is the only evidence left")
+
+    def test_an_unknown_head_is_announced_rather_than_implied(self):
+        script.check_snapshot = lambda *a: {"pending": [], "clean": [], "attention": [],
+                                            "head": None}
+        self.poll_returning({"coderabbitai"})
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()) as notes:
+            script.cmd_wait("o", "r", 7, 300, 60, 90, ["coderabbitai"])
+        self.assertIn("head commit unknown", notes.getvalue())
+
+
 class CollectFilterTest(unittest.TestCase):
 
     def test_a_reply_container_is_recognized_and_a_stated_verdict_is_not(self):
@@ -1095,6 +1208,143 @@ class RespondTest(unittest.TestCase):
             self.assertEqual({r["status"] for r in stored["applied"]}, {"ok", "failed", "blocked"})
 
 
+class RespondRailTest(unittest.TestCase):
+    """The human rails, through the batch rather than around it.
+
+    Found by sabotage: `RespondTest` stubs the three commands wholesale, so
+    `refuse` never ran inside a batch and two mutations survived — one that
+    aborted the batch on a rail refusal, one that retried a rail-skipped action
+    on every rerun. Only gh is stubbed here, so the real rail executes.
+    """
+
+    def setUp(self):
+        self.posted: list[list[str]] = []
+        self.original = (script.gh_json, script.run_gh, script.graphql)
+        script.run_gh = lambda args: self.posted.append(args) or ""
+        script.gh_json = self.fake_rest
+        script.graphql = self.fake_graphql
+
+    def tearDown(self):
+        script.gh_json, script.run_gh, script.graphql = self.original
+
+    def fake_rest(self, args):
+        if "-X" in args:
+            self.posted.append(args)
+            return {"html_url": "https://example/posted"}
+        return {"user": {"type": "User", "login": "octocat"}}   # a human wrote it
+
+    def fake_graphql(self, query, str_vars, int_vars):
+        return {"node": {"comments": {"nodes": [
+            {"author": {"login": "octocat", "__typename": "User"}}]}}}
+
+    def plan(self) -> dict:
+        return {"findings": [{
+            "id": "F1", "verdict": "refuted", "evidence": "covered at rfc_index.py:41",
+            "reply": "The prefix check already pins this.",
+            "anchors": [{"surface": "review", "commentId": 111, "threadId": "PRRT_a"}]}]}
+
+    def respond(self, receipt=None) -> dict:
+        with contextlib.redirect_stdout(io.StringIO()) as out, \
+                contextlib.redirect_stderr(io.StringIO()):
+            script.cmd_respond("o", "r", 7, self.plan(), receipt, False)
+        return json.loads(out.getvalue())
+
+    def status_of(self, summary: dict, action: str) -> str:
+        record = next(r for r in summary["results"] if r["action"] == action)
+        return record.get("run") or record["status"]
+
+    def test_a_human_anchor_skips_its_rails_without_stopping_the_batch(self):
+        summary = self.respond()
+        self.assertEqual(self.status_of(summary, "react"), "skipped")
+        self.assertEqual(self.status_of(summary, "resolve"), "skipped")
+        self.assertEqual(self.status_of(summary, "reply"), "ok",
+                         "the argument still has to reach the reviewer")
+
+    def test_the_reply_is_the_only_thing_posted_to_a_human(self):
+        self.respond()
+        targets = [a for a in self.posted if "-X" in a]
+        self.assertEqual(len(targets), 1, targets)
+        self.assertIn("repos/o/r/pulls/7/comments/111/replies", targets[0])
+
+    def test_a_rail_skip_is_permanent_and_is_not_retried(self):
+        """A rail decided this write must not happen, and it will decide the
+        same way tomorrow — unlike a blocked or failed action, which is what a
+        rerun exists to retry."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            receipt = f"{room}/receipt.json"
+            self.respond(receipt)
+            self.posted.clear()
+            summary = self.respond(receipt)
+        self.assertEqual(self.status_of(summary, "react"), "already-applied")
+        self.assertEqual([a for a in self.posted if "-X" in a], [])
+
+
+class RespondReceiptTest(unittest.TestCase):
+    """The receipt is advisory; the writes it records are not."""
+
+    def setUp(self):
+        self.posted: list[str] = []
+        self.original = (script.cmd_react, script.cmd_reply, script.cmd_resolve)
+        script.cmd_react = lambda *a, **k: self.posted.append("react") or {"reacted": "+1"}
+        script.cmd_reply = lambda *a, **k: self.posted.append("reply") or {"replied": True}
+        script.cmd_resolve = lambda *a, **k: self.posted.append("resolve") or {"resolved": True}
+
+    def tearDown(self):
+        script.cmd_react, script.cmd_reply, script.cmd_resolve = self.original
+
+    def test_an_unwritable_receipt_is_refused_before_anything_is_posted(self):
+        """Regression: the first write happened after the first 👍 was public,
+        so a bad path meant a reaction posted, a traceback, and no record."""
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            script.cmd_respond("o", "r", 7, plan(), "/nonexistent-dir/receipt.json", False)
+        self.assertIn("nothing was posted", str(caught.exception))
+        self.assertEqual(self.posted, [])
+
+    def test_a_receipt_that_fails_mid_batch_does_not_outrank_what_was_posted(self):
+        """The cleanup-path rule: if this raises, what did it just outrank?
+
+        Everything already posted is public and irreversible. Dying on the
+        bookkeeping would take down the summary that says what went out — the
+        one record left once the receipt has stopped being one.
+        """
+        original = script.write_receipt
+        calls = []
+
+        def failing(path, done):
+            calls.append(path)
+            if len(calls) > 1:
+                raise OSError("device full")
+            return original(path, done)
+
+        script.write_receipt = failing
+        try:
+            import tempfile
+            with tempfile.TemporaryDirectory() as room:
+                stream, notes = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(notes):
+                    code = script.cmd_respond("o", "r", 7, plan(), f"{room}/r.json", False)
+        finally:
+            script.write_receipt = original
+        self.assertEqual(code, 0)
+        self.assertEqual(self.posted, ["react", "reply", "resolve"])
+        self.assertEqual(json.loads(stream.getvalue())["tally"], {"ok": 3},
+                         "the summary must survive the bookkeeping")
+        self.assertIn("stopped updating", notes.getvalue())
+        self.assertEqual(notes.getvalue().count("stopped updating"), 1, "said once, not per action")
+
+    def test_a_receipt_written_by_an_older_run_does_not_crash_the_seeding(self):
+        """The receipt is a file a person can edit, so it is input, not state."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            receipt = f"{room}/receipt.json"
+            with open(receipt, "w", encoding="utf-8") as handle:
+                json.dump({"applied": [{"action": "reply", "status": "ok"}]}, handle)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(script.cmd_respond("o", "r", 7, plan(), receipt, False), 0)
+        self.assertEqual(self.posted, ["react", "reply", "resolve"])
+
+
 class AccountTest(unittest.TestCase):
     """The loop's characteristic failure is not a wrong verdict but a finding
     that never got one."""
@@ -1176,6 +1426,155 @@ class AccountTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(script.cmd_account(document, self.collected(), None), 0)
             self.assertEqual(script.cmd_account(plan(), self.collected(), None), 4)
+
+
+class MalformedPlanTest(unittest.TestCase):
+    """The detection branches — the code that runs only when the bug it detects
+    is present, and so is exactly the code that must not be dead.
+
+    Found by patch coverage after the sabotage sweep came back clean: sabotage
+    only probes what you thought to mutate, and none of this was in that list.
+    """
+
+    def problems(self, document: dict) -> str:
+        return " | ".join(script.plan_problems(document))
+
+    def test_findings_that_are_not_objects_are_named_not_crashed_on(self):
+        self.assertIn("is not an object", self.problems({"findings": ["oops"]}))
+
+    def test_findings_that_are_not_a_list_are_rejected(self):
+        self.assertIn("no `findings` list", self.problems({"findings": "F1"}))
+
+    def test_an_anchor_that_is_not_an_object_is_named(self):
+        self.assertIn("anchors[0] is not an object", self.problems(plan(anchors=["111"])))
+
+    def test_a_thread_id_that_is_not_a_string_is_rejected(self):
+        self.assertIn("threadId must be a non-empty string", self.problems(
+            plan(anchors=[{"surface": "review", "commentId": 1, "threadId": 99}])))
+        self.assertIn("threadId must be a non-empty string", self.problems(
+            plan(anchors=[{"surface": "review", "commentId": 1, "threadId": "  "}])))
+
+    def test_noise_shapes_are_checked(self):
+        document = plan()
+        document["noise"] = ["5302384447"]
+        self.assertIn("noise[0] is not an object", self.problems(document))
+        document["noise"] = [{"reason": "walkthrough"}]
+        self.assertIn("no `id`", self.problems(document))
+
+    def test_a_receipt_that_is_not_json_is_refused_rather_than_ignored(self):
+        """Silently starting from scratch would repost the whole round."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            path = f"{room}/r.json"
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("{not json")
+            with self.assertRaises(SystemExit) as caught:
+                script.load_receipt(path)
+        self.assertIn("cannot read the receipt", str(caught.exception))
+
+    def test_a_missing_receipt_is_simply_a_first_run(self):
+        self.assertEqual(script.load_receipt("/nonexistent/receipt.json"), {})
+        self.assertEqual(script.load_receipt(None), {})
+
+
+class ResolveRailTest(unittest.TestCase):
+
+    def setUp(self):
+        self.original = script.graphql
+
+    def tearDown(self):
+        script.graphql = self.original
+
+    def stub(self, author):
+        script.graphql = lambda *a: {"node": {"comments": {"nodes": [{"author": author}]}}}
+
+    def test_a_deleted_account_is_left_for_a_person_in_either_mode(self):
+        """Nobody can tell whether it was a human's thread, so neither can this."""
+        self.stub(None)
+        with self.assertRaises(SystemExit) as caught:
+            script.cmd_resolve("PRRT_a")
+        self.assertIn("resolve it by hand", str(caught.exception))
+        self.assertIn("unavailable", script.cmd_resolve("PRRT_a", on_human="skip")["skipped"])
+
+    def test_a_thread_that_is_not_a_thread_is_refused(self):
+        script.graphql = lambda *a: {"node": None}
+        with self.assertRaises(SystemExit):
+            script.cmd_resolve("PRRT_a", on_human="skip")
+
+
+class CommandLineTest(unittest.TestCase):
+    """The dispatch itself — argparse wiring, file reading, exit codes.
+
+    Worth a subprocess because `account` needs no network at all and
+    `respond --dry-run` posts nothing, so the two commands that carry the new
+    surface can be run exactly as an agent runs them.
+    """
+
+    def write(self, room: str, name: str, payload) -> str:
+        path = f"{room}/{name}"
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        return path
+
+    def collected(self) -> dict:
+        return {"fence": "F", "reviewThreads": [
+            {"threadId": "PRRT_a", "isResolved": False, "path": "a.py", "line": 1,
+             "comments": [{"databaseId": 111, "author": "coderabbitai[bot]"}]}],
+            "reviews": [], "issueComments": []}
+
+    def cli(self, *args) -> subprocess.CompletedProcess:
+        return run_script("pr-review-loop", "pr_loop.py", *args)
+
+    def test_a_dry_run_prints_the_writes_and_needs_no_network(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            done = self.cli("respond", "7", "--repo", "o/r",
+                            "--plan", self.write(room, "plan.json", plan()), "--dry-run")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        actions = json.loads(done.stdout)["actions"]
+        self.assertEqual([a["action"] for a in actions], ["react", "reply", "resolve"])
+
+    def test_account_exits_four_on_a_gap_and_zero_when_answered(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            collected = self.write(room, "collected.json", self.collected())
+            gap = self.cli("account", "--plan", self.write(room, "empty.json", plan(
+                anchors=[{"surface": "review", "commentId": 999}])), "--collected", collected)
+            clean = self.cli("account", "--plan", self.write(room, "full.json", plan()),
+                             "--collected", collected)
+        self.assertEqual(gap.returncode, 4, gap.stderr)
+        self.assertEqual(json.loads(gap.stdout)["tally"]["unaccounted"], 1)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+
+    def test_a_plan_with_problems_is_refused_with_every_problem_named(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            done = self.cli("respond", "7", "--repo", "o/r", "--dry-run",
+                            "--plan", self.write(room, "bad.json", plan(verdict="wontfix", reply="")))
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("verdict must be one of", done.stderr)
+        self.assertIn("not a verdict", done.stderr)
+
+    def test_a_missing_or_unusable_plan_file_says_which(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            missing = self.cli("respond", "7", "--repo", "o/r", "--dry-run",
+                               "--plan", f"{room}/nope.json")
+            listed = self.cli("respond", "7", "--repo", "o/r", "--dry-run",
+                              "--plan", self.write(room, "list.json", ["F1"]))
+        self.assertIn("no such file", missing.stderr)
+        self.assertIn("must hold a JSON object", listed.stderr)
+
+    def test_an_unparseable_since_is_refused_rather_than_ignored(self):
+        """Ignoring it would silently collect everything and read as a filter."""
+        done = self.cli("collect", "7", "--repo", "o/r", "--since", "last tuesday")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("not an ISO-8601 timestamp", done.stderr)
+
+    def test_the_new_subcommands_are_reachable(self):
+        listing = self.cli("--help")
+        for name in ("respond", "account", "collect", "wait"):
+            self.assertIn(name, listing.stdout)
 
 
 class UnfenceTest(unittest.TestCase):

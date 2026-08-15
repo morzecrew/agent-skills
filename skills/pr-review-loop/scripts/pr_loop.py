@@ -21,7 +21,9 @@ Replaces hand-crafted API calls for the loop's mechanical steps:
                   with a linked top-level comment (step 5)
   resolve         resolve a review thread by GraphQL thread id (step 5, bots only)
 
-Read subcommands are safe anywhere; react/reply/resolve write to the PR.
+status, collect and account only read — account not even that, it takes files.
+respond, react, reply and resolve write to the PR, and `respond --dry-run`
+prints what it would write without writing it.
 All output on stdout is JSON; progress goes to stderr.
 
 UNTRUSTED CONTENT. `collect` ingests free text written by anyone who can
@@ -1201,6 +1203,15 @@ def write_receipt(path: str | None, done: dict) -> None:
     os.replace(temporary, path)
 
 
+def require_valid_plan(plan: dict, purpose: str) -> None:
+    """Refuse a malformed plan before it can do anything, listing every fault."""
+    problems = plan_problems(plan)
+    if problems:
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        sys.exit(f"error: {len(problems)} problem(s) in the plan — {purpose}")
+
+
 def cmd_respond(owner: str, repo: str, pr: int, plan: dict, receipt: str | None,
                 dry_run: bool) -> int:
     """Apply a plan of verdicts: react, reply and resolve, per anchor.
@@ -1211,22 +1222,28 @@ def cmd_respond(owner: str, repo: str, pr: int, plan: dict, receipt: str | None,
     has actually landed, a human is never thumbed-down or resolved over, and a
     rerun after a failure does not post a second copy of everything.
     """
-    problems = plan_problems(plan)
-    if problems:
-        for problem in problems:
-            print(f"  {problem}", file=sys.stderr)
-        sys.exit(f"error: {len(problems)} problem(s) in the plan — nothing was posted")
-
+    require_valid_plan(plan, "nothing was posted")
     actions = plan_actions(plan)
     if dry_run:
         print(json.dumps({"pr": pr, "dryRun": True, "actions": actions}, indent=2))
         return 0
 
     done = load_receipt(receipt)
-    answered = {(record["surface"], record["commentId"]) for record in done.values()
+    if receipt:
+        # Before anything is posted. The receipt is what a rerun reads to avoid
+        # posting a second copy, and finding it unwritable *after* the first 👍
+        # is public finds it too late — an advisory write must never outrank
+        # the outcome it trails.
+        try:
+            write_receipt(receipt, done)
+        except OSError as unwritable:
+            sys.exit(f"error: cannot write the receipt at {receipt} ({unwritable}) — "
+                     "nothing was posted")
+    answered = {(record.get("surface"), record.get("commentId")) for record in done.values()
                 if record.get("action") == "reply" and record.get("status") == "ok"}
     results: list[dict] = []
     seen_failures: set[str] = set()
+    receipt_broken = False
 
     for position, action in enumerate(actions):
         key = action_key(action)
@@ -1268,7 +1285,16 @@ def cmd_respond(owner: str, repo: str, pr: int, plan: dict, receipt: str | None,
                     answered.add((action["surface"], action["commentId"]))
 
         done[key] = record
-        write_receipt(receipt, done)
+        try:
+            write_receipt(receipt, done)
+        except OSError as unwritable:
+            # Reported once and survived, never raised: these writes are
+            # already public, and dying here would take the summary that says
+            # so down with it.
+            if not receipt_broken:
+                print(f"pr_loop: the receipt stopped updating ({unwritable}) — "
+                      "stdout is now the only record of this run", file=sys.stderr)
+                receipt_broken = True
         results.append(record)
 
         if record["status"] == "failed":
@@ -1377,11 +1403,7 @@ def account(plan: dict, collected: dict, mine: str | None = None) -> dict:
 
 
 def cmd_account(plan: dict, collected: dict, mine: str | None) -> int:
-    problems = plan_problems(plan)
-    if problems:
-        for problem in problems:
-            print(f"  {problem}", file=sys.stderr)
-        sys.exit(f"error: {len(problems)} problem(s) in the plan — nothing to account against")
+    require_valid_plan(plan, "nothing to account against")
     ledger = account(plan, collected, mine)
     print(json.dumps(ledger, indent=2))
     if ledger["unaccounted"]:
