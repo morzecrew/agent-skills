@@ -28,9 +28,15 @@ jobs:
       - name: markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v20
         with:
+          # Must stay in step with `just lint`, which is what a contributor
+          # runs. A file linted in one and not the other fails in whichever
+          # place nobody was looking: `AGENTS.md` was local-only, and
+          # `.github/` was CI-only in the other direction.
           globs: |
             README.md
+            AGENTS.md
             skills/**/*.md
+            .github/**/*.md
           config: .markdownlint.yml
 
       - name: Structural skill validation

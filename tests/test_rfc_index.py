@@ -65,6 +65,19 @@ class RfcCollectionTest(unittest.TestCase):
         (self.rfcs / "0009-orphan.md").write_text("# RFC 0009 — Orphan\n\n- **Status:** 📝 Draft\n", encoding="utf-8")
         self.assertEqual(self.check(), 2)
 
+    def test_the_execution_log_is_not_an_rfc(self):
+        """`rfcs/` holds one non-numbered resident, written by `flag-dont-flip`.
+        The skill now documents that it needs no index row and takes no number;
+        that used to be incidental — `RFC_FILENAME` requires a 4-digit prefix —
+        and a documented behaviour with no test is one an unrelated change to
+        the glob can silently break."""
+        before = script.next_number(self.rfcs)
+        (self.rfcs / "EXECUTION-LOG.md").write_text(
+            "# Execution log\n\n# Wave 0\n\n**Drift count: 0.**\n", encoding="utf-8")
+        self.assertEqual(self.check(), 0, "it is not an orphan RFC")
+        self.assertEqual(script.next_number(self.rfcs), before,
+                         "it must not consume a number")
+
     def test_index_row_without_file(self):
         (self.rfcs / "0002-beta.md").unlink()
         self.assertEqual(self.check(), 2)
