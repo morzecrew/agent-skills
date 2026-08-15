@@ -3,7 +3,11 @@ repos:
   rev: v0.48.0
   hooks:
   - id: markdownlint
-    exclude: ^\.(agent|agents|claude)/
+    # `.github/` is excluded to match `just lint`, which CI runs and which
+    # globs README, AGENTS and skills/ only. The hook was the stricter of two
+    # copies of one rule, so a PR template — which must not open with an H1,
+    # since the PR title is the heading — failed here and nowhere else.
+    exclude: ^(\.(agent|agents|claude)|\.github)/
 - repo: local
   hooks:
   - id: validate-skills
