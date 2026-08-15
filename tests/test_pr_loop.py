@@ -647,5 +647,107 @@ class InjectionReportTest(unittest.TestCase):
         self.assertNotIn("PWNED-MARKER", self.report([finding]))
 
 
+class HeadSpeakersTest(unittest.TestCase):
+    """Regression: --expect-bot was vacuous from round two onward.
+
+    `speakers` answered "has this login ever posted?", which a reviewer's
+    round-one comments satisfy before it has looked at the new commits. The
+    wait then finished early and the round came back empty, which reads exactly
+    like convergence.
+    """
+
+    HEAD = "448e006"
+    OLD = "d5d7f14"
+
+    def review(self, login: str, commit: str, at: str = "2026-08-15T13:00:00Z") -> dict:
+        return {"user": {"login": login}, "commit_id": commit, "submitted_at": at}
+
+    def comment(self, login: str, at: str, commit: str | None = None) -> dict:
+        item = {"user": {"login": login}, "created_at": at}
+        if commit:
+            item["commit_id"] = commit
+        return item
+
+    def test_a_reviewer_that_only_spoke_last_round_is_still_missing(self):
+        started = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
+        spoke = script.head_speakers(
+            [self.comment("coderabbitai[bot]", "2026-08-15T13:00:00Z")],
+            [], [self.review("coderabbitai[bot]", self.OLD)], self.HEAD, started,
+        )
+        self.assertEqual(spoke, set())
+        self.assertEqual(
+            script.unsatisfied_bots(["coderabbitai"], spoke, set()), ["coderabbitai"]
+        )
+
+    def test_a_review_of_the_current_head_satisfies_it(self):
+        started = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
+        spoke = script.head_speakers(
+            [], [], [self.review("coderabbitai[bot]", self.HEAD)], self.HEAD, started
+        )
+        self.assertEqual(spoke, {"coderabbitai"})
+
+    def test_a_review_comments_own_commit_id_is_not_trusted(self):
+        """GitHub re-anchors a still-applicable review comment to the new head,
+        so a round-one comment carries the round-two sha. Checked against PR #7,
+        where comments written at 13:21 against d5d7f14 report 448e006."""
+        started = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
+        spoke = script.head_speakers(
+            [self.comment("coderabbitai[bot]", "2026-08-15T13:21:31Z", commit=self.HEAD)],
+            [], [], self.HEAD, started,
+        )
+        self.assertEqual(spoke, set(), "an old comment re-anchored to head is not a new review")
+
+    def test_anything_posted_since_the_wait_began_counts(self):
+        """Issue comments carry no commit, so without this a reviewer that
+        speaks only at the top level could never satisfy an --expect-bot."""
+        started = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
+        spoke = script.head_speakers(
+            [], [self.comment("greptile-apps[bot]", "2026-08-15T14:00:30Z")], [],
+            self.HEAD, started,
+        )
+        self.assertEqual(spoke, {"greptile-apps"})
+
+    def test_an_unknown_head_falls_back_rather_than_blocking_forever(self):
+        spoke = script.head_speakers(
+            [self.comment("coderabbitai[bot]", "2026-08-15T13:00:00Z")], [], [], None, None
+        )
+        self.assertEqual(spoke, {"coderabbitai"})
+
+    def test_undated_items_do_not_crash_the_scoping(self):
+        started = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
+        spoke = script.head_speakers(
+            [{"user": {"login": "octocat"}}], [], [], self.HEAD, started
+        )
+        self.assertEqual(spoke, set())
+
+
+class StartupCreditTest(unittest.TestCase):
+    """The other half of the same bug: the recorded quiet is the previous
+    round's, and crediting it ends the wait as this round begins."""
+
+    NOW = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
+    STALE = "2026-08-15T13:40:00Z"
+
+    def test_quiet_from_the_previous_round_is_not_credited(self):
+        self.assertEqual(
+            script.startup_credit(["coderabbitai"], ["coderabbitai"], self.STALE, self.NOW, 90),
+            0.0,
+        )
+
+    def test_an_idle_pr_with_every_reviewer_accounted_for_is_credited(self):
+        self.assertEqual(
+            script.startup_credit(["coderabbitai"], [], self.STALE, self.NOW, 90), 90.0
+        )
+
+    def test_the_credit_never_exceeds_the_window(self):
+        recent = "2026-08-15T13:59:30Z"
+        self.assertEqual(script.startup_credit(["x"], [], recent, self.NOW, 90), 30.0)
+
+    def test_naming_nobody_credits_nothing(self):
+        """Without names there is no way to tell a finished round from one that
+        has not started, so the settle window has to be served."""
+        self.assertEqual(script.startup_credit([], [], self.STALE, self.NOW, 90), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

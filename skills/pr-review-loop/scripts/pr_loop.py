@@ -462,8 +462,12 @@ def collect_all(owner: str, repo: str, pr: int, unresolved_only: bool) -> dict:
 
 
 def check_snapshot(owner: str, repo: str, pr: int) -> dict:
+    # headRefOid rides along on a call `wait` already makes every poll: the
+    # scoping in `head_speakers` needs it, and a second request per poll to
+    # fetch one string would be paid on every PR to fix a bug on some of them.
     view = gh_json(
-        ["pr", "view", str(pr), "-R", f"{owner}/{repo}", "--json", "statusCheckRollup,reviewDecision"]
+        ["pr", "view", str(pr), "-R", f"{owner}/{repo}",
+         "--json", "statusCheckRollup,reviewDecision,headRefOid"]
     )
     pending, clean, attention = [], [], []
     for item in view.get("statusCheckRollup") or []:
@@ -485,7 +489,8 @@ def check_snapshot(owner: str, repo: str, pr: int) -> dict:
         else:
             attention.append({"name": name, "conclusion": item.get("conclusion")})
     return {"pending": pending, "clean": clean, "attention": attention,
-            "reviewDecision": view.get("reviewDecision")}
+            "reviewDecision": view.get("reviewDecision"),
+            "head": view.get("headRefOid")}
 
 
 def cmd_status(owner: str, repo: str, pr: int) -> dict:
@@ -565,6 +570,24 @@ def quiet_seconds(latest: str, now_utc: datetime) -> float:
     return max(0.0, (now_utc - written).total_seconds())
 
 
+def startup_credit(expect_bots: list[str], missing: list[str], latest: str,
+                   now_utc: datetime, settle_s: int) -> float:
+    """How much of the settle window the PR's own history has already served.
+
+    Only for a caller that named its reviewers and has them all accounted for.
+    The recorded quiet is quiet from the PREVIOUS round: after a push it is the
+    lull before this round's reviews, and crediting it ends the wait at the
+    moment the round begins. With names, `missing` knows the difference; with
+    none, nothing does, and the settle window is the only remaining evidence
+    that anybody has stopped writing.
+
+    Pure because the bug it fixes was in the wiring, not in the arithmetic.
+    """
+    if not expect_bots or missing:
+        return 0.0
+    return min(quiet_seconds(latest, now_utc), float(settle_s))
+
+
 def speakers(items: list[dict]) -> set[str]:
     """Logins that have posted, normalized the way --expect-bot spells them."""
     found = set()
@@ -572,6 +595,69 @@ def speakers(items: list[dict]) -> set[str]:
         login = ((item.get("user") or {}).get("login") or "").strip()
         if login:
             found.add(login.lower().removesuffix("[bot]"))
+    return found
+
+
+def parse_ts(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def item_time(item: dict) -> datetime | None:
+    """When GitHub says this comment last changed."""
+    for key in ("updated_at", "submitted_at", "created_at"):
+        stamp = parse_ts(item.get(key))
+        if stamp:
+            return stamp
+    return None
+
+
+def head_speakers(
+    review_comments: list[dict], issue_comments: list[dict], reviews: list[dict],
+    head: str | None, started: datetime | None,
+) -> set[str]:
+    """Logins that have spoken *about the PR's current head commit*.
+
+    Asking only "has this login ever posted?" makes --expect-bot vacuous from
+    round two onward: the reviewer's round-one comments satisfy it before it has
+    looked at the new commits, which is the exact failure --expect-bot exists to
+    prevent, arriving silently as an empty round that reads like convergence.
+
+    Two signals, because neither covers the surface alone:
+
+      * a REVIEW record carries `commit_id`, and it is the sha that was
+        reviewed — stable, and set on the container GitHub creates for an
+        in-thread reply as well as on a submitted review. A review *comment's*
+        own `commit_id` is not usable for this: GitHub re-anchors it to the new
+        head while the comment still applies, so a round-one comment reads as
+        though it were written about round two.
+      * anything posted since this wait began, on any surface. Issue comments
+        carry no commit at all, so without this a reviewer that speaks only at
+        the top level could never satisfy an --expect-bot.
+
+    Commit dates are deliberately not a horizon here: they come from the
+    committer's clock, and this repository's own history has commits recorded
+    out of push order after an amend.
+
+    With neither signal available — an unknown head on a first poll — this
+    falls back to the unscoped question rather than blocking forever, and
+    `wait` reports the missing scope instead of implying it had one.
+    """
+    if not head and not started:
+        return speakers([*review_comments, *issue_comments, *reviews])
+    found: set[str] = set()
+    for review in reviews:
+        if head and review.get("commit_id") == head:
+            found |= speakers([review])
+    if started:
+        for item in (*review_comments, *issue_comments, *reviews):
+            stamp = item_time(item)
+            if stamp and stamp >= started:
+                found |= speakers([item])
     return found
 
 
@@ -632,7 +718,8 @@ def unsatisfied_bots(expect: list[str], spoke: set[str], checked_clean: set[str]
     ]
 
 
-def poll_comments(owner: str, repo: str, pr: int) -> dict:
+def poll_comments(owner: str, repo: str, pr: int, head: str | None,
+                  started: datetime | None) -> dict:
     """One read of every comment surface: fingerprint, who spoke, when last.
 
     All three come from the same fetch. Deriving them together is what lets
@@ -649,7 +736,7 @@ def poll_comments(owner: str, repo: str, pr: int) -> dict:
             surface_digest(review_comments), surface_digest(issue_comments),
             surface_digest(reviews),
         ),
-        "speakers": speakers(every),
+        "speakers": head_speakers(review_comments, issue_comments, reviews, head, started),
         "latest": latest_activity(every),
     }
 
@@ -682,12 +769,13 @@ def cmd_wait(
     settle_s: int, expect_bots: list[str],
 ) -> int:
     deadline = time.monotonic() + timeout_s
+    started = datetime.now(timezone.utc)
     previous: tuple | None = None
     stable_since: float | None = None
     fingerprint: tuple = ()
     first_poll = True
 
-    last_snapshot: dict = {"pending": [], "clean": [], "attention": []}
+    last_snapshot: dict = {"pending": [], "clean": [], "attention": [], "head": None}
     while True:
         missing: list[str] = []
         try:
@@ -702,7 +790,7 @@ def cmd_wait(
                 # costs a full pagination of three surfaces. Nothing is lost —
                 # a pending poll resets the settle clock.
                 if not snapshot["pending"]:
-                    poll = poll_comments(owner, repo, pr)
+                    poll = poll_comments(owner, repo, pr, snapshot.get("head"), started)
                     fingerprint = poll["fingerprint"]
                     spoke = poll["speakers"]
                     # A reviewer that ran and found nothing is finished, not
@@ -713,13 +801,20 @@ def cmd_wait(
                         expect_bots, spoke,
                         cleanly_checked_apps(owner, repo, pr) if silent else set(),
                     )
+                    if first_poll and not snapshot.get("head"):
+                        # Degraded, so say so: an unscoped wait can be satisfied
+                        # by a reviewer's comments from an earlier round.
+                        print("waiting: head commit unknown — reviewer "
+                              "expectations are not scoped to it", file=sys.stderr)
                     if first_poll:
                         # Credit the quiet GitHub already recorded. Without
                         # this, arriving after every reviewer has finished
                         # still costs a full settle window to observe silence
                         # that the timestamps had already established.
-                        quiet = quiet_seconds(poll["latest"], datetime.now(timezone.utc))
-                        credit = min(quiet, float(settle_s))
+                        credit = startup_credit(
+                            expect_bots, missing, poll["latest"],
+                            datetime.now(timezone.utc), settle_s,
+                        )
                         if credit > 0:
                             previous = fingerprint
                             stable_since = time.monotonic() - credit
