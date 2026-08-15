@@ -749,5 +749,72 @@ class StartupCreditTest(unittest.TestCase):
         self.assertEqual(script.startup_credit([], [], self.STALE, self.NOW, 90), 0.0)
 
 
+class CollectFilterTest(unittest.TestCase):
+
+    def test_a_reply_container_is_recognized_and_a_stated_verdict_is_not(self):
+        self.assertTrue(script.is_empty_container({"state": "COMMENTED", "body": ""}))
+        self.assertTrue(script.is_empty_container({"state": "COMMENTED", "body": "  \n"}))
+        self.assertFalse(script.is_empty_container({"state": "COMMENTED", "body": "a nitpick"}))
+        self.assertFalse(script.is_empty_container({"state": "CHANGES_REQUESTED", "body": ""}))
+
+    def test_since_keeps_what_it_cannot_date(self):
+        """A filter that drops an item it cannot date turns an unreadable field
+        into a missing finding."""
+        since = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
+        self.assertTrue(script.after({"created_at": "not a date"}, since))
+        self.assertTrue(script.after({}, since))
+        self.assertTrue(script.after({"created_at": "2026-08-15T15:00:00Z"}, since))
+        self.assertFalse(script.after({"created_at": "2026-08-15T13:00:00Z"}, since))
+
+    def test_everything_survives_when_no_since_is_given(self):
+        self.assertTrue(script.after({"created_at": "1999-01-01T00:00:00Z"}, None))
+
+    def collect(self, since=None, unresolved_only=False):
+        original = script.collect_threads, script.rest_paginated
+        script.collect_threads = lambda *a: []
+        script.rest_paginated = lambda path: (
+            [
+                {"id": 1, "user": {"login": "coderabbitai[bot]"}, "state": "COMMENTED",
+                 "body": "", "submitted_at": "2026-08-15T13:00:00Z"},
+                {"id": 2, "user": {"login": "coderabbitai[bot]"}, "state": "CHANGES_REQUESTED",
+                 "body": "round one", "submitted_at": "2026-08-15T13:00:00Z"},
+                {"id": 3, "user": {"login": "coderabbitai[bot]"}, "state": "CHANGES_REQUESTED",
+                 "body": "round two", "submitted_at": "2026-08-15T15:00:00Z"},
+            ] if path.endswith("/reviews") else
+            [{"id": 9, "user": {"login": "octocat"}, "body": "old note",
+              "created_at": "2026-08-15T13:00:00Z"}]
+        )
+        try:
+            return script.collect_all("o", "r", 1, unresolved_only, since)
+        finally:
+            script.collect_threads, script.rest_paginated = original
+
+    def test_empty_containers_are_dropped_and_counted(self):
+        out = self.collect()
+        self.assertEqual([r["id"] for r in out["reviews"]], [2, 3])
+        self.assertEqual(out["omitted"]["emptyReviewContainers"], 1)
+
+    def test_since_drops_the_previous_round_and_says_how_much(self):
+        out = self.collect(since=datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc))
+        self.assertEqual([r["id"] for r in out["reviews"]], [3])
+        self.assertEqual(out["issueComments"], [])
+        self.assertEqual(out["omitted"]["reviewsBeforeSince"], 1)
+        self.assertEqual(out["omitted"]["issueCommentsBeforeSince"], 1)
+
+    def test_the_counts_are_written_even_at_zero(self):
+        """"Nothing was dropped" and "nothing says what was dropped" have to
+        look different, or a filtered document reads as the whole PR."""
+        out = self.collect()
+        for field in ("emptyReviewContainers", "reviewsBeforeSince",
+                      "issueCommentsBeforeSince", "since", "note"):
+            self.assertIn(field, out["omitted"])
+        self.assertEqual(out["omitted"]["reviewsBeforeSince"], 0)
+        self.assertIsNone(out["omitted"]["since"])
+
+    def test_filtered_bodies_are_still_fenced(self):
+        out = self.collect(since=datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc))
+        self.assertTrue(all(b.startswith(f"<{out['fence']}>") for b in bodies(out)), bodies(out))
+
+
 if __name__ == "__main__":
     unittest.main()

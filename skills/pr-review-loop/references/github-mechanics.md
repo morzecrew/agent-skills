@@ -97,6 +97,18 @@ gh api "repos/{owner}/{repo}/issues/comments/$COMMENT_ID/reactions" -f content='
 gh api "repos/{owner}/{repo}/pulls/$PR/comments/$COMMENT_ID/replies" -f body="$REPLY"
 ```
 
+The top level has no threading, so a finding carried in a review body or an issue comment is answered with a **new** issue comment that says what it answers — otherwise it lands at the end of the conversation with nothing tying it to the claim:
+
+```bash
+gh api "repos/{owner}/{repo}/issues/comments/$COMMENT_ID" --jq '.html_url, .issue_url'
+# then, having confirmed issue_url ends in /$PR — the comment id space is
+# repository-wide, so a mistyped id belongs to some other pull request:
+gh api "repos/{owner}/{repo}/issues/$PR/comments" \
+  -f body="> Replying to [@author's comment]($URL)
+
+$REPLY"
+```
+
 Some reviewers also accept command replies (e.g. `@coderabbitai resolve`); the native thread resolution below works regardless of reviewer.
 
 ## Resolve a thread (step 5 — bot threads only)

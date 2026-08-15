@@ -425,40 +425,83 @@ def collect_threads(owner: str, repo: str, pr: int) -> list[dict]:
         cursor = conn["pageInfo"]["endCursor"]
 
 
-def collect_all(owner: str, repo: str, pr: int, unresolved_only: bool) -> dict:
+def is_empty_container(review: dict) -> bool:
+    """A review record that exists only because somebody replied in a thread.
+
+    GitHub creates one per in-thread reply: state COMMENTED, body empty. The
+    loop's own step 5 therefore inflates the surface its next round has to
+    read — on a seven-finding round here, 18 of 20 reviews were these. They
+    carry no claim, so they are dropped; an empty body on a review whose STATE
+    is the claim (APPROVED, CHANGES_REQUESTED) is kept.
+    """
+    return (review.get("state") == "COMMENTED"
+            and not (review.get("body") or "").strip())
+
+
+def after(item: dict, since: datetime | None) -> bool:
+    """Whether GitHub last touched this at or after `since`.
+
+    An item with no usable timestamp is kept: a filter that drops what it
+    cannot date turns an unreadable field into a silently missing finding.
+    """
+    if since is None:
+        return True
+    stamp = item_time(item)
+    return stamp is None or stamp >= since
+
+
+def collect_all(owner: str, repo: str, pr: int, unresolved_only: bool,
+                since: datetime | None = None) -> dict:
     threads = collect_threads(owner, repo, pr)
     if unresolved_only:
         threads = [t for t in threads if not t["isResolved"]]
+    raw_reviews = rest_paginated(f"repos/{owner}/{repo}/pulls/{pr}/reviews")
+    raw_issue_comments = rest_paginated(f"repos/{owner}/{repo}/issues/{pr}/comments")
+    kept_reviews = [r for r in raw_reviews if not is_empty_container(r)]
+    dated_reviews = [r for r in kept_reviews if after(r, since)]
+    dated_issue_comments = [c for c in raw_issue_comments if after(c, since)]
     reviews = [
         {
             "id": r["id"],
             "author": (r.get("user") or {}).get("login"),
             "isBot": rest_is_bot(r.get("user")),
             "state": r.get("state"),
+            "at": r.get("submitted_at") or r.get("updated_at"),
             "url": r.get("html_url"),
             "body": r.get("body") or "",
         }
-        for r in rest_paginated(f"repos/{owner}/{repo}/pulls/{pr}/reviews")
+        for r in dated_reviews
     ]
     issue_comments = [
         {
             "id": c["id"],
             "author": (c.get("user") or {}).get("login"),
             "isBot": rest_is_bot(c.get("user")),
+            "at": c.get("updated_at") or c.get("created_at"),
             "url": c.get("html_url"),
             "body": c.get("body") or "",
         }
-        for c in rest_paginated(f"repos/{owner}/{repo}/issues/{pr}/comments")
+        for c in dated_issue_comments
     ]
     collected = {"reviewThreads": threads, "reviews": reviews,
                  "issueComments": issue_comments}
+    # Written even when every count is zero. "Nothing was dropped" and "nothing
+    # says what was dropped" have to look different, or a filtered document
+    # reads as the whole PR.
+    omitted = {
+        "since": since.isoformat() if since else None,
+        "emptyReviewContainers": len(raw_reviews) - len(kept_reviews),
+        "reviewsBeforeSince": len(kept_reviews) - len(dated_reviews),
+        "issueCommentsBeforeSince": len(raw_issue_comments) - len(dated_issue_comments),
+        "note": "--since never filters reviewThreads; use --unresolved-only for those",
+    }
     # Unconditional, and before the caller can see any of it: a marking step a
     # caller may skip is one a future caller will skip, and the label has to
     # travel with the data rather than with whoever remembered to ask for it.
     fence = new_fence()
     findings = mark_untrusted(collected, fence)
     return {"fence": fence, "untrustedContent": UNTRUSTED_NOTE,
-            "injectionFindings": findings, **collected}
+            "injectionFindings": findings, "omitted": omitted, **collected}
 
 
 def check_snapshot(owner: str, repo: str, pr: int) -> dict:
@@ -991,6 +1034,11 @@ def main() -> int:
         p = sub.add_parser(name, parents=[common])
         p.add_argument("pr", type=int)
     sub.choices["collect"].add_argument("--unresolved-only", action="store_true")
+    sub.choices["collect"].add_argument(
+        "--since", metavar="ISO8601",
+        help="drop reviews and issue comments older than this (e.g. the previous "
+             "round's finish). Never filters threads — use --unresolved-only.",
+    )
 
     p = sub.add_parser("wait", parents=[common])
     p.add_argument("pr", type=int)
@@ -1029,7 +1077,10 @@ def main() -> int:
     if args.cmd == "status":
         print(json.dumps(cmd_status(owner, repo, args.pr), indent=2))
     elif args.cmd == "collect":
-        collected = collect_all(owner, repo, args.pr, args.unresolved_only)
+        since = parse_ts(args.since)
+        if args.since and since is None:
+            sys.exit(f"error: --since {args.since!r} is not an ISO-8601 timestamp")
+        collected = collect_all(owner, repo, args.pr, args.unresolved_only, since)
         print(json.dumps(collected, indent=2))
         report_injection(collected["injectionFindings"])
     elif args.cmd == "wait":
