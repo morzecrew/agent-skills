@@ -12,8 +12,13 @@ Replaces hand-crafted API calls for the loop's mechanical steps:
   collect  <pr>   every review thread (fully paginated, both levels), review
                   bodies, and issue comments, normalized to one JSON doc
                   (step 2). Every body comes back FENCED — see below.
+  respond  <pr>   apply a verdict plan you wrote: react, reply and resolve for
+                  every anchor of every finding, in one process (step 5)
+  account         which collected comments the plan leaves without a verdict —
+                  pure, no network, the check against a silent drop
   react           👍/👎 on a comment, review or issue surface (step 5)
-  reply    <pr>   in-thread reply to a review comment (step 5)
+  reply    <pr>   answer a review comment in its thread, or an issue comment
+                  with a linked top-level comment (step 5)
   resolve         resolve a review thread by GraphQL thread id (step 5, bots only)
 
 Read subcommands are safe anywhere; react/reply/resolve write to the PR.
@@ -33,9 +38,10 @@ than remembered:
     requests to merge. It is a floor, not a ceiling, and it does not change the
     exit code: see `report_injection` for why blocking here would be worse.
 
-Exit codes: 0 ok · 1 usage/gh error · 2 wait saw attention-needed conclusions ·
-3 wait timed out (on checks, on comments settling, or on an expected reviewer).
-Unknown flags exit 2, from argparse itself.
+Exit codes: 0 ok · 1 usage/gh error, or a `respond` action that failed · 2 wait
+saw attention-needed conclusions · 3 wait timed out (on checks, on comments
+settling, or on an expected reviewer) · 4 `account` found comments with no
+verdict. Unknown flags exit 2, from argparse itself.
 
 Requires: `gh` installed and authenticated. Repo comes from the cwd, or
 --repo owner/name.
@@ -50,6 +56,7 @@ import argparse
 import contextlib
 import hashlib
 import json
+import os
 import re
 import secrets
 import subprocess
@@ -928,7 +935,22 @@ def cmd_wait(
         )
 
 
-def cmd_react(owner: str, repo: str, surface: str, comment_id: int, reaction: str) -> dict:
+def refuse(message: str, on_human: str, why: str) -> dict:
+    """Stop, or step around — the rail holds either way.
+
+    A person who typed `react --reaction down` at a human reviewer made a
+    mistake and should be told. A `respond` plan states a VERDICT, and the rail
+    for a refuted human is to argue rather than react, so skipping that one
+    action is the rail being obeyed, not an error to abort a batch over. Both
+    paths refuse the write; only the reporting differs.
+    """
+    if on_human == "skip":
+        return {"skipped": why}
+    sys.exit(message)
+
+
+def cmd_react(owner: str, repo: str, surface: str, comment_id: int, reaction: str,
+              on_human: str = "refuse") -> dict:
     """React to a comment. 👎 is bot-only, enforced here rather than documented.
 
     The skill's rail is that a refuted human gets the argument, not a reaction:
@@ -942,28 +964,63 @@ def cmd_react(owner: str, repo: str, surface: str, comment_id: int, reaction: st
         comment = gh_json(["api", f"repos/{owner}/{repo}/{root}/comments/{comment_id}"]) or {}
         author = comment.get("user") or {}
         if not author:
-            sys.exit(
-                f"error: cannot establish who wrote comment {comment_id} — refusing to post 👎 blind"
+            return refuse(
+                f"error: cannot establish who wrote comment {comment_id} — refusing to post 👎 blind",
+                on_human, f"author of comment {comment_id} unknown — no 👎 posted blind",
             )
         if not rest_is_bot(author):
-            sys.exit(
+            return refuse(
                 f"error: comment {comment_id} was written by {author.get('login')}, a human — "
                 "reply with the evidence instead. Reacting 👎 to a human reviewer is a hard rail "
-                "in SKILL.md."
+                "in SKILL.md.",
+                on_human,
+                f"{author.get('login')} is a human — the refutation goes in the reply, not a 👎",
             )
     run_gh(["api", "-X", "POST", f"repos/{owner}/{repo}/{root}/comments/{comment_id}/reactions",
             "-f", f"content={content}"])
     return {"reacted": content, "surface": surface, "commentId": comment_id}
 
 
-def cmd_reply(owner: str, repo: str, pr: int, comment_id: int, body: str) -> dict:
-    created = gh_json(["api", "-X", "POST",
-                       f"repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies",
-                       "-f", f"body={body}"])
-    return {"replied": True, "commentId": comment_id, "url": created.get("html_url")}
+def cmd_reply(owner: str, repo: str, pr: int, comment_id: int, body: str,
+              surface: str = "review") -> dict:
+    """Answer a comment where it lives.
+
+    A review comment has a thread, so the reply goes into it. An issue comment
+    has none — GitHub gives the top-level conversation no threading at all — so
+    the answer is a new comment, and the tool prefixes the one line that says
+    what it answers. Without that anchor a body-carried finding is answered by
+    a comment floating at the end of the conversation, which is how a reviewer
+    ends up reading it as unrelated commentary.
+
+    Step 2 calls body-carried findings the ones a loop silently drops. Leaving
+    them the only surface with no write path was this tool arranging for that.
+    """
+    if surface == "review":
+        created = gh_json(["api", "-X", "POST",
+                           f"repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies",
+                           "-f", f"body={body}"]) or {}
+        return {"replied": True, "surface": surface, "commentId": comment_id,
+                "url": created.get("html_url")}
+
+    target = gh_json(["api", f"repos/{owner}/{repo}/issues/comments/{comment_id}"]) or {}
+    url = target.get("html_url")
+    if not url:
+        sys.exit(f"error: no issue comment {comment_id} in {owner}/{repo}")
+    # The id space is repository-wide, so a mistyped id is a comment on some
+    # other PR — and the answer would be posted here while pointing there.
+    if not str(target.get("issue_url") or "").endswith(f"/{pr}"):
+        sys.exit(
+            f"error: issue comment {comment_id} belongs to {target.get('issue_url')}, not PR {pr}"
+        )
+    author = (target.get("user") or {}).get("login") or "the comment above"
+    anchored = f"> Replying to [@{author}'s comment]({url})\n\n{body}"
+    created = gh_json(["api", "-X", "POST", f"repos/{owner}/{repo}/issues/{pr}/comments",
+                       "-f", f"body={anchored}"]) or {}
+    return {"replied": True, "surface": surface, "commentId": comment_id,
+            "url": created.get("html_url")}
 
 
-def cmd_resolve(thread_id: str) -> dict:
+def cmd_resolve(thread_id: str, on_human: str = "refuse") -> dict:
     """Resolve a bot thread. The skill's rail is enforced here, not just documented.
 
     A human's thread is theirs to resolve; closing it for them ends a
@@ -977,11 +1034,16 @@ def cmd_resolve(thread_id: str) -> dict:
         sys.exit(f"error: {thread_id} has no comments — refusing to resolve an unknown thread")
     author = comments[0].get("author")
     if author is None:
-        sys.exit(f"error: {thread_id}'s author is unavailable (deleted account) — resolve it by hand")
+        return refuse(
+            f"error: {thread_id}'s author is unavailable (deleted account) — resolve it by hand",
+            on_human, f"{thread_id}'s author is unavailable — resolve it by hand",
+        )
     if not gql_is_bot(author):
-        sys.exit(
+        return refuse(
             f"error: {thread_id} was opened by {author.get('login')}, a human — reply instead. "
-            "Resolving a human's thread is a hard rail in SKILL.md."
+            "Resolving a human's thread is a hard rail in SKILL.md.",
+            on_human,
+            f"{author.get('login')} is a human — the thread stays theirs to resolve",
         )
     data = graphql(RESOLVE_MUTATION, {"thread": thread_id}, {})
     return {
@@ -989,6 +1051,344 @@ def cmd_resolve(thread_id: str) -> dict:
         "threadId": thread_id,
         "author": author.get("login"),
     }
+
+
+# The four verdicts of SKILL.md step 3, and what each one obliges. The reaction
+# is DERIVED from the verdict rather than stated again per comment: "one verdict
+# applied everywhere" stops being a thing to remember when there is nowhere to
+# write a second one. The middle column is the evidence the verdict is not
+# allowed to be asserted without.
+PLAN_VERDICTS = {
+    "fixed": ("commit", "up"),
+    "out-of-scope": (None, "up"),
+    "upstream": ("upstream", "up"),
+    "refuted": ("evidence", "down"),
+}
+
+
+def plan_problems(plan: dict) -> list[str]:
+    """Everything wrong with a verdict plan, checked before anything is posted.
+
+    Pure, and total: a batch that stops halfway through a public PR because the
+    fourth finding was malformed has already published three replies it cannot
+    take back. So this reports every problem at once and `respond` posts nothing
+    until there are none.
+    """
+    problems: list[str] = []
+    findings = plan.get("findings")
+    if not isinstance(findings, list) or not findings:
+        return ["the plan has no `findings` list"]
+
+    seen_ids: set = set()
+    verdict_of: dict = {}          # comment id / thread id -> (finding id, verdict)
+    for index, finding in enumerate(findings):
+        where = f"findings[{index}]"
+        if not isinstance(finding, dict):
+            problems.append(f"{where} is not an object")
+            continue
+        name = finding.get("id") or where
+        if name in seen_ids:
+            problems.append(f"{where}: duplicate finding id {name!r}")
+        seen_ids.add(name)
+
+        verdict = finding.get("verdict")
+        if verdict not in PLAN_VERDICTS:
+            problems.append(
+                f"{name}: verdict must be one of "
+                f"{', '.join(sorted(PLAN_VERDICTS))} — not {verdict!r}"
+            )
+        else:
+            needed = PLAN_VERDICTS[verdict][0]
+            if needed and not str(finding.get(needed) or "").strip():
+                problems.append(
+                    f"{name}: a {verdict!r} verdict requires `{needed}` — "
+                    "the loop's rule is that a verdict cites something checkable"
+                )
+        if not str(finding.get("reply") or "").strip():
+            problems.append(f"{name}: no `reply` — a verdict nobody is told is not a verdict")
+
+        anchors = finding.get("anchors")
+        if not isinstance(anchors, list) or not anchors:
+            problems.append(f"{name}: no `anchors` — name the comments this verdict answers")
+            continue
+        for spot, anchor in enumerate(anchors):
+            at = f"{name}.anchors[{spot}]"
+            if not isinstance(anchor, dict):
+                problems.append(f"{at} is not an object")
+                continue
+            surface = anchor.get("surface")
+            if surface not in ("review", "issue"):
+                problems.append(f"{at}: surface must be 'review' or 'issue', not {surface!r}")
+            comment_id = anchor.get("commentId")
+            if not isinstance(comment_id, int) or isinstance(comment_id, bool):
+                problems.append(f"{at}: commentId must be an integer, not {comment_id!r}")
+            thread = anchor.get("threadId")
+            if thread is not None and not (isinstance(thread, str) and thread.strip()):
+                problems.append(f"{at}: threadId must be a non-empty string")
+            if thread and surface == "issue":
+                problems.append(f"{at}: an issue comment has no thread to resolve")
+            for ident in (comment_id, thread):
+                if ident is None or not isinstance(ident, (int, str)):
+                    continue
+                owner, other = verdict_of.get(ident, (None, None))
+                if owner is None:
+                    verdict_of[ident] = (name, verdict)
+                elif owner == name:
+                    problems.append(f"{at}: {ident!r} is anchored twice by {name}")
+                else:
+                    problems.append(
+                        f"{at}: {ident!r} already carries the {other!r} verdict from {owner} — "
+                        "one finding, one verdict, everywhere it was reported"
+                    )
+
+    for spot, entry in enumerate(plan.get("noise") or []):
+        at = f"noise[{spot}]"
+        if not isinstance(entry, dict):
+            problems.append(f"{at} is not an object")
+            continue
+        if entry.get("id") is None:
+            problems.append(f"{at}: no `id`")
+        if not str(entry.get("reason") or "").strip():
+            problems.append(f"{at}: no `reason` — dismissing something unexplained is the "
+                            "silent drop this file exists to prevent")
+    return problems
+
+
+def plan_actions(plan: dict) -> list[dict]:
+    """Every write the plan implies, in order. Data, so --dry-run can show it."""
+    actions: list[dict] = []
+    for index, finding in enumerate(plan["findings"]):
+        name = finding.get("id") or f"findings[{index}]"
+        verdict = finding["verdict"]
+        reaction = PLAN_VERDICTS[verdict][1]
+        for anchor in finding["anchors"]:
+            base = {"finding": name, "verdict": verdict,
+                    "surface": anchor["surface"], "commentId": anchor["commentId"]}
+            actions.append({**base, "action": "react", "reaction": reaction})
+            actions.append({**base, "action": "reply", "body": finding["reply"]})
+            if anchor.get("threadId"):
+                actions.append({**base, "action": "resolve", "threadId": anchor["threadId"]})
+    return actions
+
+
+def action_key(action: dict) -> str:
+    """Identity of one write, stable across runs so a receipt can skip it."""
+    return "|".join(str(action.get(field) or "") for field in
+                    ("finding", "action", "surface", "commentId", "threadId"))
+
+
+def load_receipt(path: str | None) -> dict:
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as broken:
+        sys.exit(f"error: cannot read the receipt at {path}: {broken}")
+    return {action_key(record): record for record in stored.get("applied") or []}
+
+
+def write_receipt(path: str | None, done: dict) -> None:
+    """Rewritten after every action: a batch that dies mid-way must still say
+    what it already posted, or the rerun posts it twice."""
+    if not path:
+        return
+    temporary = f"{path}.tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump({"applied": list(done.values())}, handle, indent=2)
+    os.replace(temporary, path)
+
+
+def cmd_respond(owner: str, repo: str, pr: int, plan: dict, receipt: str | None,
+                dry_run: bool) -> int:
+    """Apply a plan of verdicts: react, reply and resolve, per anchor.
+
+    The verdicts are the agent's; this only carries them out. What it adds over
+    three commands in a shell loop is the part that goes wrong by hand: the
+    reaction follows from the verdict, a thread is resolved only once its reply
+    has actually landed, a human is never thumbed-down or resolved over, and a
+    rerun after a failure does not post a second copy of everything.
+    """
+    problems = plan_problems(plan)
+    if problems:
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        sys.exit(f"error: {len(problems)} problem(s) in the plan — nothing was posted")
+
+    actions = plan_actions(plan)
+    if dry_run:
+        print(json.dumps({"pr": pr, "dryRun": True, "actions": actions}, indent=2))
+        return 0
+
+    done = load_receipt(receipt)
+    answered = {(record["surface"], record["commentId"]) for record in done.values()
+                if record.get("action") == "reply" and record.get("status") == "ok"}
+    results: list[dict] = []
+    seen_failures: set[str] = set()
+
+    for position, action in enumerate(actions):
+        key = action_key(action)
+        prior = done.get(key)
+        # `skipped` is a rail deciding this write must not happen, and it will
+        # decide the same way tomorrow. `blocked` and `failed` are this run's
+        # accidents, and a rerun exists to retry exactly those.
+        if prior and prior.get("status") in ("ok", "skipped"):
+            results.append({**prior, "run": "already-applied"})
+            continue
+
+        record = {field: action.get(field) for field in
+                  ("finding", "verdict", "action", "surface", "commentId", "threadId")}
+        try:
+            if action["action"] == "react":
+                outcome = cmd_react(owner, repo, action["surface"], action["commentId"],
+                                    action["reaction"], on_human="skip")
+            elif action["action"] == "reply":
+                outcome = cmd_reply(owner, repo, pr, action["commentId"], action["body"],
+                                    surface=action["surface"])
+            elif (action["surface"], action["commentId"]) not in answered:
+                # The rail is reply-then-resolve. A thread closed without its
+                # reply landing is a reviewer told nothing and asked to consider
+                # the matter settled. Blocked rather than skipped: the reply is
+                # what a rerun retries, and this must follow it when it lands.
+                outcome = {"blocked": "the reply did not land, so the thread is unanswered"}
+            else:
+                outcome = cmd_resolve(action["threadId"], on_human="skip")
+        except (SystemExit, GhUnavailable) as failure:
+            record |= {"status": "failed", "why": str(failure)}
+        else:
+            if "blocked" in outcome:
+                record |= {"status": "blocked", "why": outcome["blocked"]}
+            elif "skipped" in outcome:
+                record |= {"status": "skipped", "why": outcome["skipped"]}
+            else:
+                record |= {"status": "ok", "url": outcome.get("url")}
+                if action["action"] == "reply":
+                    answered.add((action["surface"], action["commentId"]))
+
+        done[key] = record
+        write_receipt(receipt, done)
+        results.append(record)
+
+        if record["status"] == "failed":
+            # The same message from two different anchors is the environment,
+            # not the anchor — a missing `gh`, a dead token, a revoked scope.
+            # Working through the rest of the plan would post nothing and say
+            # so forty times. Counted across the batch rather than
+            # consecutively: the reactions in between can be succeeding while
+            # every reply fails, and that is still one fault, not eight.
+            if record["why"] in seen_failures:
+                for pending in actions[position + 1:]:
+                    results.append({**{f: pending.get(f) for f in
+                                       ("finding", "action", "surface", "commentId")},
+                                    "status": "not-attempted",
+                                    "why": "stopped after the same failure twice"})
+                break
+            seen_failures.add(record["why"])
+
+    tally: dict[str, int] = {}
+    for result in results:
+        state = result.get("run") or result["status"]
+        tally[state] = tally.get(state, 0) + 1
+    print(json.dumps({"pr": pr, "actions": len(actions), "tally": tally,
+                      "receipt": receipt, "results": results}, indent=2))
+    undone = sum(tally.get(state, 0) for state in ("failed", "blocked", "not-attempted"))
+    if undone:
+        print(f"pr_loop: {undone} action(s) did not go through — rerun with the same "
+              f"--receipt to retry only those", file=sys.stderr)
+    return 1 if undone else 0
+
+
+def unfence(body: str, fence: str) -> str:
+    """The text back out of its wrapper, for measuring rather than for reading."""
+    opener, closer = f"<{fence}>\n", f"\n</{fence}>"
+    if fence and body.startswith(opener) and body.endswith(closer):
+        return body[len(opener):-len(closer)]
+    return body
+
+
+def account(plan: dict, collected: dict, mine: str | None = None) -> dict:
+    """Which collected comments the plan leaves without a verdict.
+
+    The loop's characteristic failure is not a wrong verdict, it is a finding
+    that was never given one — a nitpick inside a collapsed block, a human's
+    top-level objection. Both of those are invisible in a thread list and stay
+    invisible in a report written from memory. This is the arithmetic: every
+    unresolved thread and every comment carrying text is answered, explicitly
+    dismissed with a reason, or reported here.
+
+    No network, no bodies in the output. The bodies are third-party text; what
+    is needed to act is the surface, the id and the author.
+    """
+    anchored: set = set()
+    for finding in plan.get("findings") or []:
+        for anchor in finding.get("anchors") or []:
+            anchored.add(anchor.get("commentId"))
+            if anchor.get("threadId"):
+                anchored.add(anchor["threadId"])
+    reasons = {entry.get("id"): entry.get("reason")
+               for entry in plan.get("noise") or [] if isinstance(entry, dict)}
+    fence = collected.get("fence") or ""
+    normal = (mine or "").lower().removesuffix("[bot]")
+
+    answered: list[dict] = []
+    dismissed: list[dict] = []
+    unaccounted: list[dict] = []
+    yours: list[dict] = []
+    empty = 0
+
+    def place(entry: dict, ids: set) -> None:
+        if normal and (entry.get("author") or "").lower().removesuffix("[bot]") == normal:
+            yours.append(entry)
+        elif ids & anchored:
+            answered.append(entry)
+        elif [reasons[i] for i in ids if i in reasons]:
+            dismissed.append({**entry, "reason": next(reasons[i] for i in ids if i in reasons)})
+        else:
+            unaccounted.append(entry)
+
+    for thread in collected.get("reviewThreads") or []:
+        if thread.get("isResolved"):
+            continue
+        comments = thread.get("comments") or []
+        place(
+            {"surface": "reviewThread", "id": thread.get("threadId"),
+             "path": thread.get("path"), "line": thread.get("line"),
+             "author": (comments[0] if comments else {}).get("author"),
+             "url": (comments[0] if comments else {}).get("url")},
+            {thread.get("threadId"), *(c.get("databaseId") for c in comments)},
+        )
+
+    for surface, key in (("review", "reviews"), ("issueComment", "issueComments")):
+        for item in collected.get(key) or []:
+            if not unfence(item.get("body") or "", fence).strip():
+                # No text is no claim: an empty review is the container GitHub
+                # makes for a reply, and it is nobody's finding.
+                empty += 1
+                continue
+            place({"surface": surface, "id": item.get("id"), "author": item.get("author"),
+                   "url": item.get("url")}, {item.get("id")})
+
+    return {"unaccounted": unaccounted, "answered": answered, "dismissed": dismissed,
+            "mine": yours, "emptyBodies": empty,
+            "tally": {"unaccounted": len(unaccounted), "answered": len(answered),
+                      "dismissed": len(dismissed), "mine": len(yours)}}
+
+
+def cmd_account(plan: dict, collected: dict, mine: str | None) -> int:
+    problems = plan_problems(plan)
+    if problems:
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        sys.exit(f"error: {len(problems)} problem(s) in the plan — nothing to account against")
+    ledger = account(plan, collected, mine)
+    print(json.dumps(ledger, indent=2))
+    if ledger["unaccounted"]:
+        print(f"pr_loop: {len(ledger['unaccounted'])} collected item(s) carry no verdict — "
+              "give each one, or list it under `noise` with a reason", file=sys.stderr)
+        return 4
+    return 0
 
 
 def report_injection(findings: list[dict]) -> None:
@@ -1013,6 +1413,19 @@ def report_injection(findings: list[dict]) -> None:
     for finding in alerts:
         print(f"  alert  {finding['check']}  by {finding['author']} "
               f"({finding['surface']})  {finding['why']}", file=sys.stderr)
+
+
+def read_json(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except FileNotFoundError:
+        sys.exit(f"error: no such file: {path}")
+    except (OSError, ValueError) as broken:
+        sys.exit(f"error: cannot read {path}: {broken}")
+    if not isinstance(loaded, dict):
+        sys.exit(f"error: {path} must hold a JSON object, not {type(loaded).__name__}")
+    return loaded
 
 
 def read_body(args: argparse.Namespace) -> str:
@@ -1061,6 +1474,11 @@ def main() -> int:
     p = sub.add_parser("reply", parents=[common])
     p.add_argument("pr", type=int)
     p.add_argument("--comment-id", type=int, required=True)
+    p.add_argument(
+        "--surface", choices=("review", "issue"), default="review",
+        help="review: reply inside the comment's thread. issue: a new top-level "
+             "comment linked to the one it answers (the top level has no threads).",
+    )
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--body")
     group.add_argument("--body-file")
@@ -1068,10 +1486,31 @@ def main() -> int:
     p = sub.add_parser("resolve", parents=[common])
     p.add_argument("--thread-id", required=True)
 
+    p = sub.add_parser("respond", parents=[common])
+    p.add_argument("pr", type=int)
+    p.add_argument("--plan", required=True, metavar="FILE",
+                   help="verdict plan: findings, each with a verdict, its evidence, "
+                        "one reply, and the anchors it answers")
+    p.add_argument("--receipt", metavar="FILE",
+                   help="what was posted, rewritten after every action. Pass the same "
+                        "file to a rerun and only the failed actions are retried.")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print every write the plan implies and post nothing")
+
+    p = sub.add_parser("account", parents=[common])
+    p.add_argument("--plan", required=True, metavar="FILE")
+    p.add_argument("--collected", required=True, metavar="FILE",
+                   help="a `collect` document to check the plan against")
+    p.add_argument("--mine", metavar="LOGIN",
+                   help="your own login: your replies are your side of the "
+                        "conversation, not findings awaiting a verdict")
+
     args = parser.parse_args()
     if args.cmd == "resolve":
         print(json.dumps(cmd_resolve(args.thread_id), indent=2))
         return 0
+    if args.cmd == "account":
+        return cmd_account(read_json(args.plan), read_json(args.collected), args.mine)
 
     owner, repo = resolve_repo(args.repo)
     if args.cmd == "status":
@@ -1095,7 +1534,11 @@ def main() -> int:
     elif args.cmd == "react":
         print(json.dumps(cmd_react(owner, repo, args.surface, args.comment_id, args.reaction), indent=2))
     elif args.cmd == "reply":
-        print(json.dumps(cmd_reply(owner, repo, args.pr, args.comment_id, read_body(args)), indent=2))
+        print(json.dumps(cmd_reply(owner, repo, args.pr, args.comment_id, read_body(args),
+                                   surface=args.surface), indent=2))
+    elif args.cmd == "respond":
+        return cmd_respond(owner, repo, args.pr, read_json(args.plan),
+                           args.receipt, args.dry_run)
     return 0
 
 

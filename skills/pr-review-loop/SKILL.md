@@ -53,10 +53,14 @@ For the mechanical steps, prefer the bundled tool over hand-crafted API calls �
 python3 scripts/pr_loop.py status  $PR                    # checks + reviewers + unresolved count
 # step 1 — exit 0 clean / 2 attention / 3 timeout; name every reviewer you expect
 python3 scripts/pr_loop.py wait    $PR --timeout-seconds 600 --expect-bot coderabbitai --expect-bot cubic-dev-ai
-python3 scripts/pr_loop.py collect $PR --unresolved-only       # step 2 input, one JSON doc
-python3 scripts/pr_loop.py react   --surface review --comment-id ID --reaction up   # step 5
-python3 scripts/pr_loop.py reply   $PR --comment-id ID --body "…"                   # step 5
-python3 scripts/pr_loop.py resolve --thread-id THREAD_ID                            # step 5, bot threads only
+python3 scripts/pr_loop.py collect $PR --unresolved-only --since 2026-08-15T13:30:00Z  # step 2 input, one JSON doc
+python3 scripts/pr_loop.py respond $PR --plan plan.json --dry-run              # step 5, every write, none posted
+python3 scripts/pr_loop.py respond $PR --plan plan.json --receipt receipt.json # step 5, apply it
+python3 scripts/pr_loop.py account --plan plan.json --collected round.json --mine YOUR_LOGIN  # exit 4 = a gap
+# Single writes, for the odd one-off where a plan is more ceremony than the job:
+python3 scripts/pr_loop.py react   --surface review --comment-id ID --reaction up
+python3 scripts/pr_loop.py reply   $PR --comment-id ID --body "…"           # --surface issue for a body finding
+python3 scripts/pr_loop.py resolve --thread-id THREAD_ID                    # bot threads only
 ```
 
 (Paths relative to this skill's directory; needs an authenticated `gh`.) The raw incantations behind it live in [references/github-mechanics.md](references/github-mechanics.md) — use them only where the script can't run. The judgment steps — verdicts, dedup into findings, fixes, coverage, description edits — are yours, not the tool's.
@@ -122,6 +126,24 @@ For every comment, the reaction matches its finding's verdict: 👍 on comments 
 
 Replies stay technical too: what the code does now, and the commit that changed it. They never narrate the work behind the fix, and never point at a PR-level comment — a thread that only makes sense alongside a summary elsewhere has not answered its reviewer.
 
+**Write the verdicts down as a plan and let `respond` carry them out.** One finding, one verdict, one reply, and the anchors it answers:
+
+```json
+{"findings": [
+  {"id": "F1", "verdict": "fixed", "commit": "7cb62f5", "reply": "Fixed in 7cb62f5 — …",
+   "anchors": [{"surface": "review", "commentId": 3789438014, "threadId": "PRRT_kwDO…"},
+               {"surface": "review", "commentId": 3789438024, "threadId": "PRRT_kwDP…"}]},
+  {"id": "F2", "verdict": "refuted", "evidence": "rfc_index.py:41 requires the 4-digit prefix",
+   "reply": "…", "anchors": [{"surface": "issue", "commentId": 5302385713}]}],
+ "noise": [{"id": 5302384447, "reason": "status table, claims nothing"}]}
+```
+
+Four verdicts, matching the four in step 3: `fixed` (needs `commit`), `out-of-scope`, `upstream` (needs the repository), `refuted` (needs `evidence`). **The reaction is derived, never restated** — that is how "one verdict applied everywhere" stops depending on your memory: a comment anchored under two findings is a plan that will not run, rather than a bot thanked and a human contradicted about the same line. The plan is checked whole before anything is posted, because a batch that stops at the fourth finding has already published three replies it cannot take back.
+
+`respond` then holds the rails the prose above can only ask for: a thread is resolved **only after its reply actually landed**, a human is never thumbed-down or resolved over (that anchor is skipped, and the skip is reported), and with `--receipt` a rerun after a failure retries only what failed instead of posting a second copy of everything. Read the `--dry-run` output first; those writes are public and permanent.
+
+**Then check the arithmetic: `account --plan … --collected …`.** It answers the one question a report written from memory cannot — is there a collected comment with no verdict? Every unresolved thread and every comment carrying text must be answered, dismissed under `noise` **with a reason**, or it comes back as `unaccounted` and the command exits 4. Pass `--mine` so your own replies are not mistaken for findings. This is where the body-carried findings of step 2 get caught; on the PR that prompted this, seven threads were answered and a review body carrying a nitpick was not.
+
 ### 5a. Commenting on the PR itself — almost never
 
 In-thread replies are part of the machinery: they carry the verdict and let the thread resolve. A **top-level PR comment is a different act.** It is addressed to everyone watching, it outlives the review, and it is the first thing a future reader sees. Post one only when *all* of these hold:
@@ -154,7 +176,7 @@ Push the iteration's commits in one batch (every push triggers a re-review round
 
 ## Termination and escalation
 
-**Done** = every thread is resolved or answered, required checks are green, and the coverage floor (if any) is met. Then stop and report — the merge decision is the user's.
+**Done** = every thread is resolved or answered, required checks are green, and the coverage floor (if any) is met. `account` exiting 0 is what turns the first of those from a recollection into a count. Then stop and report — the merge decision is the user's.
 
 **Escalate instead of looping** when:
 

@@ -816,5 +816,393 @@ class CollectFilterTest(unittest.TestCase):
         self.assertTrue(all(b.startswith(f"<{out['fence']}>") for b in bodies(out)), bodies(out))
 
 
+class ReplySurfaceTest(unittest.TestCase):
+    """Step 2 calls body-carried findings the ones a loop silently drops.
+    Leaving them the only surface with no write path arranged for that."""
+
+    def setUp(self):
+        self.posted: list[list[str]] = []
+        self.original = script.gh_json
+        script.gh_json = self.fake
+
+    def tearDown(self):
+        script.gh_json = self.original
+
+    def fake(self, args):
+        if args[0] == "api" and "-X" in args:
+            self.posted.append(args)
+            return {"html_url": "https://example/new"}
+        return {"html_url": "https://example/333", "issue_url": "https://api/issues/7",
+                "user": {"login": "coderabbitai[bot]"}}
+
+    def body_of(self, args: list[str]) -> str:
+        return next(a for a in args if a.startswith("body=")).removeprefix("body=")
+
+    def test_a_review_comment_is_answered_in_its_thread(self):
+        script.cmd_reply("o", "r", 7, 111, "the fix is in abc123")
+        self.assertIn("repos/o/r/pulls/7/comments/111/replies", self.posted[0])
+        self.assertEqual(self.body_of(self.posted[0]), "the fix is in abc123")
+
+    def test_an_issue_comment_is_answered_with_a_linked_top_level_comment(self):
+        out = script.cmd_reply("o", "r", 7, 333, "answered: see abc123", surface="issue")
+        self.assertIn("repos/o/r/issues/7/comments", self.posted[0])
+        body = self.body_of(self.posted[0])
+        self.assertIn("https://example/333", body, "the answer must say what it answers")
+        self.assertTrue(body.endswith("answered: see abc123"))
+        self.assertEqual(out["surface"], "issue")
+
+    def test_a_comment_from_another_pr_is_refused(self):
+        """Comment ids are repository-wide: a mistyped one would post the answer
+        here while pointing at another PR's conversation."""
+        script.gh_json = lambda args: {"html_url": "https://example/1",
+                                       "issue_url": "https://api/issues/999",
+                                       "user": {"login": "octocat"}}
+        with self.assertRaises(SystemExit) as caught:
+            script.cmd_reply("o", "r", 7, 333, "text", surface="issue")
+        self.assertIn("999", str(caught.exception))
+        self.assertEqual(self.posted, [])
+
+    def test_a_missing_comment_is_refused(self):
+        script.gh_json = lambda args: {}
+        with self.assertRaises(SystemExit):
+            script.cmd_reply("o", "r", 7, 333, "text", surface="issue")
+        self.assertEqual(self.posted, [])
+
+
+def plan(**overrides) -> dict:
+    finding = {"id": "F1", "verdict": "fixed", "commit": "abc123", "reply": "Fixed in abc123.",
+               "anchors": [{"surface": "review", "commentId": 111, "threadId": "PRRT_a"}]}
+    finding.update(overrides)
+    return {"findings": [finding]}
+
+
+class PlanValidationTest(unittest.TestCase):
+    """Everything wrong is reported at once, before anything is posted: a batch
+    that stops at the fourth finding has already published three replies."""
+
+    def problems(self, document: dict) -> str:
+        return " | ".join(script.plan_problems(document))
+
+    def test_a_good_plan_has_no_problems(self):
+        self.assertEqual(script.plan_problems(plan()), [])
+
+    def test_an_empty_plan_is_rejected(self):
+        self.assertTrue(script.plan_problems({}))
+        self.assertTrue(script.plan_problems({"findings": []}))
+
+    def test_every_verdict_names_its_evidence(self):
+        self.assertIn("commit", self.problems(plan(commit="")))
+        self.assertIn("upstream", self.problems(
+            plan(verdict="upstream", upstream="", commit=None)))
+        self.assertIn("evidence", self.problems(
+            plan(verdict="refuted", evidence="   ", commit=None)))
+
+    def test_out_of_scope_needs_no_extra_evidence(self):
+        self.assertEqual(script.plan_problems(plan(verdict="out-of-scope", commit=None)), [])
+
+    def test_an_unknown_verdict_is_rejected(self):
+        self.assertIn("verdict must be one of", self.problems(plan(verdict="wontfix")))
+
+    def test_a_finding_without_a_reply_is_rejected(self):
+        self.assertIn("not a verdict", self.problems(plan(reply="")))
+
+    def test_a_finding_without_anchors_is_rejected(self):
+        self.assertIn("anchors", self.problems(plan(anchors=[])))
+
+    def test_one_comment_cannot_carry_two_verdicts(self):
+        """The rail: never fix it for one bot and refute it to another."""
+        document = plan()
+        document["findings"].append(
+            {"id": "F2", "verdict": "refuted", "evidence": "tested", "reply": "no",
+             "anchors": [{"surface": "review", "commentId": 111}]}
+        )
+        self.assertIn("one finding, one verdict", self.problems(document))
+
+    def test_one_thread_cannot_carry_two_verdicts(self):
+        document = plan()
+        document["findings"].append(
+            {"id": "F2", "verdict": "refuted", "evidence": "tested", "reply": "no",
+             "anchors": [{"surface": "review", "commentId": 222, "threadId": "PRRT_a"}]}
+        )
+        self.assertIn("one finding, one verdict", self.problems(document))
+
+    def test_a_repeated_anchor_within_one_finding_is_reported(self):
+        anchor = {"surface": "review", "commentId": 111}
+        self.assertIn("anchored twice", self.problems(plan(anchors=[anchor, dict(anchor)])))
+
+    def test_duplicate_finding_ids_are_reported(self):
+        document = plan()
+        document["findings"].append(dict(document["findings"][0],
+                                         anchors=[{"surface": "review", "commentId": 222}]))
+        self.assertIn("duplicate finding id", self.problems(document))
+
+    def test_anchor_shapes_are_checked(self):
+        self.assertIn("surface must be", self.problems(
+            plan(anchors=[{"surface": "email", "commentId": 1}])))
+        self.assertIn("commentId must be an integer", self.problems(
+            plan(anchors=[{"surface": "review", "commentId": "111"}])))
+        self.assertIn("commentId must be an integer", self.problems(
+            plan(anchors=[{"surface": "review", "commentId": True}])))
+        self.assertIn("no thread to resolve", self.problems(
+            plan(anchors=[{"surface": "issue", "commentId": 1, "threadId": "PRRT_a"}])))
+
+    def test_dismissing_something_needs_a_reason(self):
+        document = plan()
+        document["noise"] = [{"id": 5}]
+        self.assertIn("no `reason`", self.problems(document))
+        document["noise"] = [{"id": 5, "reason": "walkthrough table"}]
+        self.assertEqual(script.plan_problems(document), [])
+
+    def test_every_problem_is_reported_not_just_the_first(self):
+        self.assertGreaterEqual(len(script.plan_problems(plan(verdict="wontfix", reply=""))), 2)
+
+
+class PlanActionsTest(unittest.TestCase):
+
+    def test_the_reaction_is_derived_from_the_verdict(self):
+        for verdict, extra, expected in (
+            ("fixed", {"commit": "a"}, "up"),
+            ("out-of-scope", {}, "up"),
+            ("upstream", {"upstream": "o/r"}, "up"),
+            ("refuted", {"evidence": "e"}, "down"),
+        ):
+            actions = script.plan_actions(plan(verdict=verdict, **{"commit": None, **extra}))
+            react = next(a for a in actions if a["action"] == "react")
+            self.assertEqual(react["reaction"], expected, verdict)
+
+    def test_each_anchor_gets_react_reply_resolve_in_that_order(self):
+        actions = script.plan_actions(plan())
+        self.assertEqual([a["action"] for a in actions], ["react", "reply", "resolve"])
+
+    def test_an_anchor_without_a_thread_has_nothing_to_resolve(self):
+        actions = script.plan_actions(plan(anchors=[{"surface": "issue", "commentId": 5}]))
+        self.assertEqual([a["action"] for a in actions], ["react", "reply"])
+
+    def test_one_verdict_reaches_every_anchor(self):
+        actions = script.plan_actions(plan(anchors=[
+            {"surface": "review", "commentId": 1}, {"surface": "review", "commentId": 2}]))
+        self.assertEqual({a["commentId"] for a in actions}, {1, 2})
+        self.assertEqual({a["body"] for a in actions if a["action"] == "reply"},
+                         {"Fixed in abc123."})
+
+
+class RespondTest(unittest.TestCase):
+    """The batch that used to be a throwaway script written per round."""
+
+    def setUp(self):
+        self.calls: list[tuple] = []
+        self.original = (script.cmd_react, script.cmd_reply, script.cmd_resolve)
+        self.reply_fails = False
+        script.cmd_react = self.react
+        script.cmd_reply = self.reply
+        script.cmd_resolve = self.resolve
+        self.receipt = None
+
+    def tearDown(self):
+        script.cmd_react, script.cmd_reply, script.cmd_resolve = self.original
+
+    def react(self, owner, repo, surface, comment_id, reaction, on_human="refuse"):
+        self.calls.append(("react", comment_id, reaction, on_human))
+        return {"reacted": reaction}
+
+    def reply(self, owner, repo, pr, comment_id, body, surface="review"):
+        self.calls.append(("reply", comment_id, surface))
+        if self.reply_fails:
+            raise SystemExit("error: gh said no")
+        return {"replied": True, "url": "https://example/r"}
+
+    def resolve(self, thread_id, on_human="refuse"):
+        self.calls.append(("resolve", thread_id, on_human))
+        return {"resolved": True}
+
+    def apply(self, document, receipt=None, dry_run=False) -> int:
+        with contextlib.redirect_stdout(io.StringIO()) as out, \
+                contextlib.redirect_stderr(io.StringIO()):
+            code = script.cmd_respond("o", "r", 7, document, receipt, dry_run)
+        self.summary = json.loads(out.getvalue())
+        return code
+
+    def test_a_plan_with_problems_posts_nothing(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            script.cmd_respond("o", "r", 7, plan(reply=""), None, False)
+        self.assertEqual(self.calls, [])
+
+    def test_a_dry_run_posts_nothing(self):
+        self.assertEqual(self.apply(plan(), dry_run=True), 0)
+        self.assertEqual(self.calls, [])
+        self.assertTrue(self.summary["dryRun"])
+
+    def test_the_happy_path_reacts_replies_and_resolves(self):
+        self.assertEqual(self.apply(plan()), 0)
+        self.assertEqual([c[0] for c in self.calls], ["react", "reply", "resolve"])
+        self.assertEqual(self.summary["tally"], {"ok": 3})
+
+    def test_a_thread_is_not_resolved_when_its_reply_did_not_land(self):
+        """Reply-then-resolve: a thread closed without its reply landing is a
+        reviewer told nothing and asked to consider the matter settled."""
+        self.reply_fails = True
+        self.assertEqual(self.apply(plan()), 1)
+        self.assertNotIn("resolve", [c[0] for c in self.calls])
+        resolve = next(r for r in self.summary["results"] if r["action"] == "resolve")
+        self.assertEqual(resolve["status"], "blocked")
+        self.assertIn("unanswered", resolve["why"])
+
+    def test_a_batch_never_argues_with_a_human_by_reaction_or_resolution(self):
+        self.apply(plan(verdict="refuted", evidence="tested", commit=None))
+        self.assertEqual([c[3] for c in self.calls if c[0] == "react"], ["skip"])
+        self.assertEqual([c[2] for c in self.calls if c[0] == "resolve"], ["skip"])
+
+    def test_the_same_failure_twice_stops_the_batch(self):
+        """A missing gh or a dead token is the environment, not the anchor —
+        working through the rest would post nothing and say so forty times."""
+        self.reply_fails = True
+        document = plan(anchors=[{"surface": "review", "commentId": i} for i in (1, 2, 3, 4)])
+        self.assertEqual(self.apply(document), 1)
+        self.assertEqual(self.summary["tally"]["not-attempted"], 4)
+        self.assertEqual(len([c for c in self.calls if c[0] == "reply"]), 2)
+
+    def test_a_rerun_with_the_receipt_does_not_post_twice(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            receipt = f"{room}/receipt.json"
+            self.assertEqual(self.apply(plan(), receipt=receipt), 0)
+            first = list(self.calls)
+            self.calls.clear()
+            self.assertEqual(self.apply(plan(), receipt=receipt), 0)
+            self.assertEqual(self.calls, [], "everything was already applied")
+            self.assertEqual(self.summary["tally"], {"already-applied": len(first)})
+
+    def test_a_rerun_retries_only_what_failed(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            receipt = f"{room}/receipt.json"
+            self.reply_fails = True
+            self.assertEqual(self.apply(plan(), receipt=receipt), 1)
+            self.calls.clear()
+            self.reply_fails = False
+            self.assertEqual(self.apply(plan(), receipt=receipt), 0)
+            self.assertEqual([c[0] for c in self.calls], ["reply", "resolve"],
+                             "the 👍 that landed is not posted again")
+
+    def test_the_receipt_survives_a_failure_mid_batch(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            receipt = f"{room}/receipt.json"
+            self.reply_fails = True
+            self.apply(plan(), receipt=receipt)
+            with open(receipt, encoding="utf-8") as handle:
+                stored = json.load(handle)
+            self.assertEqual({r["status"] for r in stored["applied"]}, {"ok", "failed", "blocked"})
+
+
+class AccountTest(unittest.TestCase):
+    """The loop's characteristic failure is not a wrong verdict but a finding
+    that never got one."""
+
+    def collected(self, fence="F") -> dict:
+        return {
+            "fence": fence,
+            "reviewThreads": [
+                {"threadId": "PRRT_a", "isResolved": False, "path": "a.py", "line": 1,
+                 "comments": [{"databaseId": 111, "author": "coderabbitai[bot]"}]},
+                {"threadId": "PRRT_b", "isResolved": False, "path": "b.py", "line": 2,
+                 "comments": [{"databaseId": 222, "author": "octocat"}]},
+                {"threadId": "PRRT_done", "isResolved": True, "comments": []},
+            ],
+            "reviews": [
+                {"id": 900, "author": "coderabbitai[bot]", "body": f"<{fence}>\nnitpicks\n</{fence}>"},
+                {"id": 901, "author": "octocat", "body": f"<{fence}>\n\n</{fence}>"},
+            ],
+            "issueComments": [
+                {"id": 800, "author": "codeant-ai[bot]", "body": f"<{fence}>\nsummary\n</{fence}>"},
+                {"id": 801, "author": "Misery7100", "body": f"<{fence}>\nmy own reply\n</{fence}>"},
+            ],
+        }
+
+    def test_an_unanswered_review_body_is_reported(self):
+        """The exact shape missed on PR #7: seven threads answered, a review
+        body carrying a nitpick left without a verdict."""
+        ledger = script.account(plan(), self.collected())
+        self.assertIn(900, [item["id"] for item in ledger["unaccounted"]])
+        self.assertIn("PRRT_a", [item["id"] for item in ledger["answered"]])
+
+    def test_a_thread_is_answered_by_its_comment_id_too(self):
+        document = plan(anchors=[{"surface": "review", "commentId": 111}])
+        ledger = script.account(document, self.collected())
+        self.assertIn("PRRT_a", [item["id"] for item in ledger["answered"]])
+
+    def test_a_resolved_thread_needs_nothing(self):
+        ledger = script.account(plan(), self.collected())
+        every = ledger["unaccounted"] + ledger["answered"] + ledger["dismissed"]
+        self.assertNotIn("PRRT_done", [item["id"] for item in every])
+
+    def test_an_empty_body_is_no_claim_and_is_counted(self):
+        ledger = script.account(plan(), self.collected())
+        self.assertNotIn(901, [item["id"] for item in ledger["unaccounted"]])
+        self.assertEqual(ledger["emptyBodies"], 1)
+
+    def test_noise_is_dismissed_with_its_reason(self):
+        document = plan()
+        document["noise"] = [{"id": 800, "reason": "status table, claims nothing"}]
+        ledger = script.account(document, self.collected())
+        self.assertEqual([item["id"] for item in ledger["dismissed"]], [800])
+        self.assertEqual(ledger["dismissed"][0]["reason"], "status table, claims nothing")
+
+    def test_your_own_replies_are_not_findings_awaiting_a_verdict(self):
+        ledger = script.account(plan(), self.collected(), mine="Misery7100")
+        self.assertEqual([item["id"] for item in ledger["mine"]], [801])
+        self.assertNotIn(801, [item["id"] for item in ledger["unaccounted"]])
+
+    def test_without_mine_your_own_comments_show_up_rather_than_vanish(self):
+        ledger = script.account(plan(), self.collected())
+        self.assertIn(801, [item["id"] for item in ledger["unaccounted"]])
+
+    def test_no_third_party_text_reaches_the_ledger(self):
+        marked = self.collected()
+        marked["reviews"][0]["body"] = "<F>\nPWNED-MARKER\n</F>"
+        self.assertNotIn("PWNED-MARKER", json.dumps(script.account(plan(), marked)))
+
+    def test_the_tally_and_the_lists_agree(self):
+        ledger = script.account(plan(), self.collected(), mine="Misery7100")
+        for bucket in ("unaccounted", "answered", "dismissed", "mine"):
+            self.assertEqual(ledger["tally"][bucket], len(ledger[bucket]), bucket)
+
+    def test_a_clean_ledger_exits_zero_and_a_gap_exits_four(self):
+        document = plan(anchors=[{"surface": "review", "commentId": 111},
+                                 {"surface": "review", "commentId": 222}])
+        document["noise"] = [{"id": 900, "reason": "nitpicks, answered in thread"},
+                             {"id": 800, "reason": "status table"},
+                             {"id": 801, "reason": "mine"}]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(script.cmd_account(document, self.collected(), None), 0)
+            self.assertEqual(script.cmd_account(plan(), self.collected(), None), 4)
+
+
+class UnfenceTest(unittest.TestCase):
+
+    def test_a_fenced_body_comes_back_out(self):
+        self.assertEqual(script.unfence("<F>\ntext\n</F>", "F"), "text")
+
+    def test_text_that_is_not_fenced_is_left_alone(self):
+        self.assertEqual(script.unfence("plain", "F"), "plain")
+        self.assertEqual(script.unfence("<F>\ntext\n</F>", ""), "<F>\ntext\n</F>")
+
+    def test_a_body_that_merely_mentions_the_fence_is_not_unwrapped(self):
+        self.assertEqual(script.unfence("see <F> here", "F"), "see <F> here")
+
+
+class ActionKeyTest(unittest.TestCase):
+
+    def test_a_receipt_record_keys_the_same_as_the_action_it_records(self):
+        action = script.plan_actions(plan())[2]
+        record = {"finding": "F1", "action": "resolve", "surface": "review",
+                  "commentId": 111, "threadId": "PRRT_a", "status": "ok"}
+        self.assertEqual(script.action_key(action), script.action_key(record))
+
+    def test_actions_on_the_same_comment_are_distinguished(self):
+        keys = {script.action_key(a) for a in script.plan_actions(plan())}
+        self.assertEqual(len(keys), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
