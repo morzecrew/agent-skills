@@ -848,8 +848,12 @@ def cmd_wait(
     first_poll = True
 
     last_snapshot: dict = {"pending": [], "clean": [], "attention": [], "head": None}
+    # Survives the iteration, because the deadline usually arrives *inside* a
+    # call, before this poll has recomputed who is still absent. Reset per
+    # iteration, the timeout report forgets the reviewer it spent the whole
+    # wait naming and blames whichever request happened to be in flight.
+    missing: list[str] = []
     while True:
-        missing: list[str] = []
         try:
             # No floor: a positive minimum would start a call with no time left
             # for it, and the wait would then run past the deadline it was

@@ -856,6 +856,36 @@ class WaitWiringTest(unittest.TestCase):
         self.assertGreaterEqual(self.clock.slept, 90,
                                 "the window must run from when it was satisfied")
 
+    def test_a_timeout_names_the_reviewer_it_spent_the_wait_naming(self):
+        """Found by running it: the wait polled "waiting for codeant-ai" four
+        times and then reported it had timed out on *github*. The deadline
+        arrives inside a call, before the poll has recomputed who is absent, so
+        a per-iteration `missing` is empty exactly when the report needs it.
+        """
+        self.poll_returning(set())
+        script.cleanly_checked_apps = lambda *a: set()
+        code, out = self.wait(timeout=200)
+        self.assertEqual(code, 3)
+        self.assertEqual(out["timedOutWaitingFor"], "reviewers: coderabbitai")
+
+    def test_a_stall_inside_a_call_still_names_the_missing_reviewer(self):
+        """The same, on the path where a gh call runs out of budget rather than
+        the loop noticing the deadline itself."""
+        self.poll_returning(set())
+        script.cleanly_checked_apps = lambda *a: set()
+        calls = []
+
+        def stalling(*args):
+            calls.append(1)
+            if len(calls) > 1:
+                raise script.GhUnavailable("no time left for `gh pr view 8 -R …`")
+            return {"pending": [], "clean": [], "attention": [], "head": self.HEAD}
+
+        script.check_snapshot = stalling
+        code, out = self.wait(timeout=200)
+        self.assertEqual(code, 3)
+        self.assertIn("coderabbitai", out["timedOutWaitingFor"])
+
     def test_naming_nobody_serves_the_window_rather_than_guessing(self):
         self.poll_returning(set())
         code, _ = self.wait(expect=())
