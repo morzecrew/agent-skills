@@ -1189,6 +1189,13 @@ def load_receipt(path: str | None) -> dict:
         return {}
     except (OSError, ValueError) as broken:
         sys.exit(f"error: cannot read the receipt at {path}: {broken}")
+    if not isinstance(stored, dict) or "applied" not in stored:
+        # A receipt is this tool's own output and is rewritten in place, so
+        # pointing --receipt at anything else destroys it. `--receipt plan.json`
+        # is one slipped word away from `--plan plan.json`, and the rewrite now
+        # happens before the first post rather than after it.
+        sys.exit(f"error: {path} exists and is not a receipt — refusing to overwrite it. "
+                 "Point --receipt at a new file, or at one an earlier run wrote.")
     return {action_key(record): record for record in stored.get("applied") or []}
 
 

@@ -10,12 +10,12 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import subprocess
 import time
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import ClassVar
-
-import subprocess
 
 from support import load_script, run_script
 
@@ -1475,6 +1475,28 @@ class MalformedPlanTest(unittest.TestCase):
     def test_a_missing_receipt_is_simply_a_first_run(self):
         self.assertEqual(script.load_receipt("/nonexistent/receipt.json"), {})
         self.assertEqual(script.load_receipt(None), {})
+
+    def test_a_file_that_is_not_a_receipt_is_never_overwritten(self):
+        """`--receipt plan.json` is one slipped word from `--plan plan.json`,
+        and the receipt is rewritten in place before the first post."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            path = f"{room}/plan.json"
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(plan(), handle)
+            before = Path(path).read_text(encoding="utf-8")
+            with self.assertRaises(SystemExit) as caught:
+                script.load_receipt(path)
+            self.assertIn("refusing to overwrite", str(caught.exception))
+            self.assertEqual(Path(path).read_text(encoding="utf-8"), before)
+
+    def test_a_receipt_an_earlier_run_wrote_is_accepted_even_when_empty(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as room:
+            path = f"{room}/receipt.json"
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump({"applied": []}, handle)
+            self.assertEqual(script.load_receipt(path), {})
 
 
 class ResolveRailTest(unittest.TestCase):
