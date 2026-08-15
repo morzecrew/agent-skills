@@ -1,6 +1,6 @@
 # EXECUTION-LOG.md template
 
-Copy the skeleton below into `rfcs/EXECUTION-LOG.md` the first time a departure needs recording — not when the RFC directory is created, because an empty log is one more file that teaches readers the practice is decorative.
+Copy the skeleton below into `rfcs/EXECUTION-LOG.md` when the first execution unit completes — whether or not it departed from anything, since `Drift count: 0` is a claim worth recording. Not when the RFC directory is created: nothing has executed yet, so the file would carry no claim at all.
 
 The classes table is reproduced *inside* the log on purpose. The log is read by people who are not executing anything — reviewers, the RFC author, whoever picks the work up in six months — and a class name whose test lives in a skill file they do not have is a label they cannot check.
 
@@ -51,14 +51,18 @@ Branch `<branch>`. <Which RFCs and phases this unit covered.>
 **Deliberately not applied:** <what the RFC sketches that was not built, and why
 the existing code stands.>
 
-## Proposed decision rows — **accepted and appended <YYYY-MM-DD>**
+## Decision-row outcomes — <YYYY-MM-DD>
 
-<What the author accepted, refused, or superseded. Superseded rows stay in the
-RFC struck through, naming the row that replaced them.>
+<What the author accepted, refused, or superseded. A refusal is recorded here
+and nowhere else, so it must be distinguishable from an acceptance at a glance
+— otherwise a proposal that was turned down reads as an RFC row that exists.
+Superseded rows stay in the RFC struck through, naming the row that replaced
+them; `Row` is empty where nothing was appended.>
 
-| RFC | Row | Grade | Decision | From |
-|---|---|---|---|---|
-| <NNNN> | <N> | `<GRADE>` | <the decision, one dense sentence> | D-001 |
+| RFC | Row | Outcome | Grade | Decision | From |
+|---|---|---|---|---|---|
+| <NNNN> | <N> | Accepted | `<GRADE>` | <the decision, one dense sentence> | D-001 |
+| <NNNN> | — | Refused | — | <what was proposed, and the author's reason> | D-002 |
 
 ## Audit findings — <YYYY-MM-DD>
 

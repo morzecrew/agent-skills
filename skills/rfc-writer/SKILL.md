@@ -37,7 +37,7 @@ RFCs here are working documents, not bureaucracy: they exist so that decisions s
 
 If the directory exists but has a `README.md` in this role, treat it as the index. If asked to set up fresh, use `INDEX.md` — copy `references/index-template.md`.
 
-**One non-numbered resident: `EXECUTION-LOG.md`.** `flag-dont-flip` writes it, and it holds what execution found wherever the code and these designs disagreed. It is not an RFC — no number, no status, no row in the index table — so `rfc_index.py` ignores it along with anything else not named `NNNN-*.md`. Where it exists, the index links to it in prose above the table, because a reader who is deciding which RFC to open needs to know that the document they are about to trust has a companion recording where it turned out to be wrong. Do not create it: it appears on the first departure, and an empty one teaches readers the practice is decorative.
+**One non-numbered resident: `EXECUTION-LOG.md`.** `flag-dont-flip` writes it, and it holds what execution found wherever the code and these designs disagreed. It is not an RFC — no number, no status, no row in the index table — so `rfc_index.py` ignores it along with anything else not named `NNNN-*.md`. Where it exists, the index links to it in prose above the table, because a reader who is deciding which RFC to open needs to know that the document they are about to trust has a companion recording where it turned out to be wrong. Do not create it here: it is written by the first completed execution unit, which records its drift count even at zero. Creating it alongside an empty directory would give it nothing to claim.
 
 ## Numbering and filenames
 
@@ -165,7 +165,7 @@ Run `rfc_index.py check` — it reports every file without an index row and vice
 1. Create `rfcs/` (unless the user wants `rfc/` or one already exists).
 2. Create `INDEX.md` from `references/index-template.md`, filling in the project name and setting the next free number to `0001`.
 3. Do not touch `.gitignore` — mention that committing vs. ignoring the directory is the user's choice.
-4. Do not create `EXECUTION-LOG.md`. It is `flag-dont-flip`'s, and it appears when the first departure needs recording; the index gains its pointer at the same time.
+4. Do not create `EXECUTION-LOG.md`. It is `flag-dont-flip`'s, and the first completed execution unit writes it; the index gains its pointer at the same time.
 
 ## References
 

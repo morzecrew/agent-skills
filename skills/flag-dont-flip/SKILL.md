@@ -95,11 +95,13 @@ The log is one file, and `references/execution-log-template.md` is its skeleton.
 
 Propose decision-table rows back to the RFC. Do not write them silently, and **never edit the RFC to match what was built** — that launders the flip and destroys the record that a decision changed at all. The append-only table is the point.
 
-When the author accepts them, record the acceptance in the log — a dated table of `RFC | row | grade | decision | from` — and have each new RFC row cite the entry it came from (`Added by execution <date> — see EXECUTION-LOG.md D-001`). That back-link is what makes the round trip auditable in both directions: from the row to the evidence, and from the entry to whether anything came of it. An entry whose proposal was never accepted or refused is visible as such, which is the state a log without acceptance records cannot show.
+Record what the author decided in the log — a dated table of `RFC | row | outcome | grade | decision | from`, carrying refusals as well as acceptances, since a refusal is written down nowhere else — and have each new RFC row cite the entry it came from (`Added by execution <date> — see EXECUTION-LOG.md D-001`). That back-link is what makes the round trip auditable in both directions: from the row to the evidence, and from the entry to whether anything came of it. An entry whose proposal was never accepted or refused is visible as such, which is the state a log without acceptance records cannot show.
 
 ## Where the log lives
 
 `rfcs/EXECUTION-LOG.md`, beside the documents it records departures from. Where there is no RFC directory, put it next to the design doc being executed, under that name.
+
+**The first completed execution unit creates it** — not the first departure, and not the directory's creation. A unit that departed from nothing still executed, and `Drift count: 0` is the claim that says so; a log that only appears once something goes wrong cannot distinguish a clean run from an unexamined one, which is the distinction it exists for. Creating it while initializing an RFC directory is the case to avoid: nothing has been executed yet, so the file would carry no claim at all.
 
 Three properties, each load-bearing:
 

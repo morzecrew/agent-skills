@@ -120,10 +120,13 @@ style is fine if the workstreams are named in §5.>
   "📝 Draft (execution-ready — one PR)", "📝 Draft — design locked, **not
   scheduled**", "✅ Complete — Shipped 2026-06-29: …; only P5 remains".
   Prefer an annotated true status over a clean false one.
-- **Amendments over rewrites:** once an RFC leaves Draft, record divergences
-  as dated notes in the status line or the affected section. The decision
-  table is append-only — a reversed decision gets a new row citing the row it
-  reverses, not an edit. History someone relied on stays readable.
+- **Amendments over rewrites:** once an RFC leaves Draft, the decision table
+  is append-only — a reversed decision gets a new row citing the row it
+  reverses, not an edit. History someone relied on stays readable. A change of
+  mind by the *author* may carry a dated note in the status line or the
+  affected section; what **execution** found does not, since that already lives
+  in `EXECUTION-LOG.md` and reaches the RFC as an appended row citing its
+  entry. Restating the log's narrative here guarantees the two disagree later.
 - **Index row:** written at the same time as the RFC. The one-liner is a
   routing description, not a summary — one sentence saying which design this
   is, so a reader knows whether to open the file. What it decided belongs in

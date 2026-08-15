@@ -11,7 +11,8 @@ Design proposals for <project>. <If applicable: **This directory is
 gitignored** (`.gitignore` → `rfcs/`) — these are local working notes, not
 pushed to the repo.>
 
-<Once EXECUTION-LOG.md exists — not before:
+<Once EXECUTION-LOG.md exists — written by the first completed execution
+unit, not by this template:
 [EXECUTION-LOG.md](EXECUTION-LOG.md) holds what execution found wherever the
 code and these designs disagreed, with the decision rows it puts forward in
 response. Entries are only ever added. It is not a design, so it has no number
