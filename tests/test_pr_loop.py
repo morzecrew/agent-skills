@@ -709,11 +709,21 @@ class HeadSpeakersTest(unittest.TestCase):
         )
         self.assertEqual(spoke, {"greptile-apps"})
 
-    def test_an_unknown_head_falls_back_rather_than_blocking_forever(self):
+    def test_neither_signal_falls_back_rather_than_blocking_forever(self):
+        """Only a direct caller reaches this: `cmd_wait` always passes a start
+        time, so an unknown head there keeps the time scope rather than
+        dropping to the unscoped question."""
         spoke = script.head_speakers(
             [self.comment("coderabbitai[bot]", "2026-08-15T13:00:00Z")], [], [], None, None
         )
         self.assertEqual(spoke, {"coderabbitai"})
+
+    def test_an_unknown_head_still_scopes_by_time(self):
+        started = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
+        stale = [self.comment("coderabbitai[bot]", "2026-08-15T13:00:00Z")]
+        self.assertEqual(script.head_speakers(stale, [], [], None, started), set())
+        fresh = [self.comment("coderabbitai[bot]", "2026-08-15T14:30:00Z")]
+        self.assertEqual(script.head_speakers(fresh, [], [], None, started), {"coderabbitai"})
 
     def test_undated_items_do_not_crash_the_scoping(self):
         started = datetime(2026, 8, 15, 14, 0, tzinfo=timezone.utc)
@@ -1597,6 +1607,114 @@ class CommandLineTest(unittest.TestCase):
         listing = self.cli("--help")
         for name in ("respond", "account", "collect", "wait"):
             self.assertIn(name, listing.stdout)
+
+
+class ReviewFindingsTest(unittest.TestCase):
+    """Round one of PR #8, where this branch's tooling reviewed itself.
+
+    Every case here was reproduced against the shipped code before it was
+    fixed, and each names the reviewer that found it.
+    """
+
+    def test_a_since_without_a_timezone_is_refused_before_any_api_call(self):
+        """codeant-ai: `fromisoformat` accepts a naive timestamp, and the
+        comparison against GitHub's aware ones raises — after every page of
+        every surface has already been fetched."""
+        with self.assertRaises(SystemExit) as caught:
+            script.parse_since("2026-08-15T14:00:00")
+        self.assertIn("names no timezone", str(caught.exception))
+        for good in ("2026-08-15T14:00:00Z", "2026-08-15T14:00:00+03:00"):
+            self.assertIsNotNone(script.parse_since(good).tzinfo, good)
+
+    def test_an_unparseable_since_is_still_refused(self):
+        with self.assertRaises(SystemExit) as caught:
+            script.parse_since("last tuesday")
+        self.assertIn("not an ISO-8601 timestamp", str(caught.exception))
+
+    def test_a_corrected_reply_is_posted_rather_than_read_as_already_applied(self):
+        """codeant-ai: the receipt keyed on the target but not on what was
+        said, so a rerun of a corrected plan skipped the correction."""
+        first = script.plan_actions(plan(reply="Fixed in abc — wrong sha"))[1]
+        second = script.plan_actions(plan(reply="Fixed in def — the right sha"))[1]
+        self.assertNotEqual(script.action_key(first), script.action_key(second))
+        self.assertEqual(script.action_key(first),
+                         script.action_key(dict(first, payload=script.payload_digest(first))))
+
+    def test_an_unchanged_plan_still_keys_the_same(self):
+        """The correction must post; the rerun must not. Both, or neither
+        property is worth anything."""
+        once = script.plan_actions(plan())
+        twice = script.plan_actions(plan())
+        self.assertEqual([script.action_key(a) for a in once],
+                         [script.action_key(a) for a in twice])
+
+    def test_a_flipped_verdict_repost_its_reaction_too(self):
+        up = script.plan_actions(plan())[0]
+        down = script.plan_actions(plan(verdict="refuted", evidence="e", commit=None))[0]
+        self.assertNotEqual(script.action_key(up), script.action_key(down))
+
+    def test_a_thread_i_opened_is_not_mine_once_a_reviewer_speaks_in_it(self):
+        """codeant-ai: classifying a thread by its first comment alone put a
+        reviewer's later finding under `mine`, where nothing counts it."""
+        collected = {"fence": "F", "reviews": [], "issueComments": [], "reviewThreads": [
+            {"threadId": "PRRT_x", "isResolved": False, "path": "a.py", "line": 1,
+             "comments": [{"databaseId": 1, "author": "Misery7100"},
+                          {"databaseId": 2, "author": "coderabbitai[bot]"}]}]}
+        ledger = script.account({"findings": []}, collected, mine="Misery7100")
+        self.assertEqual(ledger["tally"]["unaccounted"], 1)
+        self.assertEqual(ledger["tally"]["mine"], 0)
+
+    def test_a_thread_only_i_spoke_in_is_still_mine(self):
+        collected = {"fence": "F", "reviews": [], "issueComments": [], "reviewThreads": [
+            {"threadId": "PRRT_x", "isResolved": False, "path": "a.py", "line": 1,
+             "comments": [{"databaseId": 1, "author": "Misery7100"},
+                          {"databaseId": 2, "author": "Misery7100"}]}]}
+        ledger = script.account({"findings": []}, collected, mine="Misery7100")
+        self.assertEqual(ledger["tally"]["mine"], 1)
+
+    def test_one_integer_on_two_surfaces_is_two_different_objects(self):
+        """coderabbitai: review comments, review bodies and issue comments come
+        from separate id sequences, so a bare integer is not an identity."""
+        collected = {"fence": "F", "reviewThreads": [], "reviews": [],
+                     "issueComments": [{"id": 4321, "author": "codeant-ai[bot]",
+                                        "body": "<F>\na real finding\n</F>"}]}
+        ledger = script.account(plan(anchors=[{"surface": "review", "commentId": 4321}]),
+                                collected)
+        self.assertEqual([i["id"] for i in ledger["unaccounted"]], [4321],
+                         "a review-comment anchor must not answer an issue comment")
+
+    def test_the_matching_surface_still_answers(self):
+        collected = {"fence": "F", "reviewThreads": [], "reviews": [],
+                     "issueComments": [{"id": 4321, "author": "codeant-ai[bot]",
+                                        "body": "<F>\na real finding\n</F>"}]}
+        ledger = script.account(plan(anchors=[{"surface": "issue", "commentId": 4321}]),
+                                collected)
+        self.assertEqual([i["id"] for i in ledger["answered"]], [4321])
+
+    def test_two_surfaces_sharing_an_integer_are_not_a_verdict_conflict(self):
+        document = {"findings": [
+            {"id": "A", "verdict": "fixed", "commit": "a", "reply": "x",
+             "anchors": [{"surface": "review", "commentId": 4321}]},
+            {"id": "B", "verdict": "refuted", "evidence": "e", "reply": "y",
+             "anchors": [{"surface": "issue", "commentId": 4321}]}]}
+        self.assertEqual(script.plan_problems(document), [])
+
+    def test_the_same_comment_twice_is_still_a_conflict(self):
+        document = {"findings": [
+            {"id": "A", "verdict": "fixed", "commit": "a", "reply": "x",
+             "anchors": [{"surface": "review", "commentId": 4321}]},
+            {"id": "B", "verdict": "refuted", "evidence": "e", "reply": "y",
+             "anchors": [{"surface": "review", "commentId": 4321}]}]}
+        self.assertIn("one finding, one verdict", " ".join(script.plan_problems(document)))
+
+    def test_a_review_body_is_dismissed_by_id_with_its_reason(self):
+        collected = {"fence": "F", "reviewThreads": [], "issueComments": [],
+                     "reviews": [{"id": 900, "author": "coderabbitai[bot]",
+                                  "body": "<F>\na nitpick\n</F>"}]}
+        document = plan()
+        document["noise"] = [{"id": 900, "reason": "answered on thread PRRT_a"}]
+        ledger = script.account(document, collected)
+        self.assertEqual([i["id"] for i in ledger["dismissed"]], [900])
 
 
 class UnfenceTest(unittest.TestCase):

@@ -659,6 +659,24 @@ def parse_ts(value) -> datetime | None:
         return None
 
 
+def parse_since(text: str) -> datetime:
+    """`--since`, or a usage error naming the two forms that work.
+
+    A bare `2026-08-15T14:00:00` parses happily into a naive datetime, and
+    GitHub's timestamps are offset-aware, so the comparison raises — after
+    every page of every surface has already been fetched. Assuming a timezone
+    would be worse than refusing: silently reading it as UTC moves the window
+    by however far the caller's clock is from it.
+    """
+    when = parse_ts(text)
+    if when is None:
+        sys.exit(f"error: --since {text!r} is not an ISO-8601 timestamp")
+    if when.tzinfo is None:
+        sys.exit(f"error: --since {text!r} names no timezone, and GitHub's timestamps "
+                 "carry one. Write it as 2026-08-15T14:00:00Z or 2026-08-15T14:00:00+03:00.")
+    return when
+
+
 def item_time(item: dict) -> datetime | None:
     """When GitHub says this comment last changed."""
     for key in ("updated_at", "submitted_at", "created_at"):
@@ -695,9 +713,11 @@ def head_speakers(
     committer's clock, and this repository's own history has commits recorded
     out of push order after an amend.
 
-    With neither signal available — an unknown head on a first poll — this
-    falls back to the unscoped question rather than blocking forever, and
-    `wait` reports the missing scope instead of implying it had one.
+    With neither signal available — no head *and* no start time, which only a
+    direct caller can produce — this falls back to the unscoped question rather
+    than blocking forever. `cmd_wait` always supplies a start time, so an
+    unknown head there narrows to "posted since the wait began" and says so on
+    stderr, rather than implying a scope it did not have.
     """
     if not head and not started:
         return speakers([*review_comments, *issue_comments, *reviews])
@@ -1129,18 +1149,22 @@ def plan_problems(plan: dict) -> list[str]:
                 problems.append(f"{at}: threadId must be a non-empty string")
             if thread and surface == "issue":
                 problems.append(f"{at}: an issue comment has no thread to resolve")
-            for ident in (comment_id, thread):
-                if ident is None or not isinstance(ident, (int, str)):
+            # Qualified by surface, because the id alone is not an identity:
+            # a review comment and an issue comment can carry the same integer
+            # from different GitHub sequences, and reporting them as one
+            # comment with two verdicts blocks a plan that was fine.
+            for ident in ((surface, comment_id), ("thread", thread) if thread else None):
+                if ident is None or not isinstance(ident[1], (int, str)):
                     continue
                 owner, other = verdict_of.get(ident, (None, None))
                 if owner is None:
                     verdict_of[ident] = (name, verdict)
                 elif owner == name:
-                    problems.append(f"{at}: {ident!r} is anchored twice by {name}")
+                    problems.append(f"{at}: {ident[1]!r} is anchored twice by {name}")
                 else:
                     problems.append(
-                        f"{at}: {ident!r} already carries the {other!r} verdict from {owner} — "
-                        "one finding, one verdict, everywhere it was reported"
+                        f"{at}: {ident[1]!r} already carries the {other!r} verdict from "
+                        f"{owner} — one finding, one verdict, everywhere it was reported"
                     )
 
     for spot, entry in enumerate(plan.get("noise") or []):
@@ -1173,10 +1197,29 @@ def plan_actions(plan: dict) -> list[dict]:
     return actions
 
 
+def payload_digest(action: dict) -> str:
+    """What this action would actually say, condensed."""
+    said = json.dumps({field: action.get(field) for field in ("reaction", "body")},
+                      sort_keys=True)
+    return hashlib.sha256(said.encode("utf-8")).hexdigest()[:12]
+
+
 def action_key(action: dict) -> str:
-    """Identity of one write, stable across runs so a receipt can skip it."""
-    return "|".join(str(action.get(field) or "") for field in
-                    ("finding", "action", "surface", "commentId", "threadId"))
+    """Identity of one write, stable across runs so a receipt can skip it.
+
+    The payload is part of the identity, not just the target. A plan corrected
+    between runs — the reply now cites the right commit, the verdict flipped
+    after a second look — reuses the finding id and the anchor, so keying on
+    those alone lets the run read its own earlier record and call the
+    correction already applied. A second reply is visible in the thread and can
+    be answered; a correction that never posts is neither.
+
+    A record carries the digest it was written with, so a receipt keys the same
+    way the action did.
+    """
+    stamp = action.get("payload") or payload_digest(action)
+    return "|".join([*(str(action.get(field) or "") for field in
+                       ("finding", "action", "surface", "commentId", "threadId")), stamp])
 
 
 def load_receipt(path: str | None) -> dict:
@@ -1264,6 +1307,7 @@ def cmd_respond(owner: str, repo: str, pr: int, plan: dict, receipt: str | None,
 
         record = {field: action.get(field) for field in
                   ("finding", "verdict", "action", "surface", "commentId", "threadId")}
+        record["payload"] = payload_digest(action)
         try:
             if action["action"] == "react":
                 outcome = cmd_react(owner, repo, action["surface"], action["commentId"],
@@ -1354,12 +1398,16 @@ def account(plan: dict, collected: dict, mine: str | None = None) -> dict:
     No network, no bodies in the output. The bodies are third-party text; what
     is needed to act is the surface, the id and the author.
     """
+    # Surface-qualified, the way `cmd_respond` keys the same anchor. GitHub
+    # draws review comments, review bodies and issue comments from separate id
+    # sequences, so a bare integer names three different objects and a plan
+    # answering one could mark another as accounted for.
     anchored: set = set()
     for finding in plan.get("findings") or []:
         for anchor in finding.get("anchors") or []:
-            anchored.add(anchor.get("commentId"))
+            anchored.add((anchor.get("surface"), anchor.get("commentId")))
             if anchor.get("threadId"):
-                anchored.add(anchor["threadId"])
+                anchored.add(("thread", anchor["threadId"]))
     reasons = {entry.get("id"): entry.get("reason")
                for entry in plan.get("noise") or [] if isinstance(entry, dict)}
     fence = collected.get("fence") or ""
@@ -1371,13 +1419,18 @@ def account(plan: dict, collected: dict, mine: str | None = None) -> dict:
     yours: list[dict] = []
     empty = 0
 
-    def place(entry: dict, ids: set) -> None:
-        if normal and (entry.get("author") or "").lower().removesuffix("[bot]") == normal:
+    def place(entry: dict, ids: set, authors: set | None = None) -> None:
+        # "Mine" means every voice in it is mine. A thread I opened that a
+        # reviewer later added a finding to is not my comment, and filing it
+        # under `mine` is how a real claim disappears from the ledger.
+        speaking = {(name or "").lower().removesuffix("[bot]")
+                    for name in (authors or {entry.get("author")})}
+        if normal and speaking == {normal}:
             yours.append(entry)
         elif ids & anchored:
             answered.append(entry)
-        elif [reasons[i] for i in ids if i in reasons]:
-            dismissed.append({**entry, "reason": next(reasons[i] for i in ids if i in reasons)})
+        elif dismissals := [reasons[bare] for _, bare in ids if bare in reasons]:
+            dismissed.append({**entry, "reason": dismissals[0]})
         else:
             unaccounted.append(entry)
 
@@ -1390,7 +1443,9 @@ def account(plan: dict, collected: dict, mine: str | None = None) -> dict:
              "path": thread.get("path"), "line": thread.get("line"),
              "author": (comments[0] if comments else {}).get("author"),
              "url": (comments[0] if comments else {}).get("url")},
-            {thread.get("threadId"), *(c.get("databaseId") for c in comments)},
+            {("thread", thread.get("threadId")),
+             *(("review", c.get("databaseId")) for c in comments)},
+            authors={c.get("author") for c in comments} or {None},
         )
 
     for surface, key in (("review", "reviews"), ("issueComment", "issueComments")):
@@ -1400,8 +1455,12 @@ def account(plan: dict, collected: dict, mine: str | None = None) -> dict:
                 # makes for a reply, and it is nobody's finding.
                 empty += 1
                 continue
+            # A review body has no anchor an agent could name — it cannot be
+            # replied to in place — so it is answered elsewhere and listed
+            # under `noise` with the thread that carries the answer.
             place({"surface": surface, "id": item.get("id"), "author": item.get("author"),
-                   "url": item.get("url")}, {item.get("id")})
+                   "url": item.get("url")},
+                  {("issue" if surface == "issueComment" else surface, item.get("id"))})
 
     return {"unaccounted": unaccounted, "answered": answered, "dismissed": dismissed,
             "mine": yours, "emptyBodies": empty,
@@ -1545,9 +1604,7 @@ def main() -> int:
     if args.cmd == "status":
         print(json.dumps(cmd_status(owner, repo, args.pr), indent=2))
     elif args.cmd == "collect":
-        since = parse_ts(args.since)
-        if args.since and since is None:
-            sys.exit(f"error: --since {args.since!r} is not an ISO-8601 timestamp")
+        since = parse_since(args.since) if args.since else None
         collected = collect_all(owner, repo, args.pr, args.unresolved_only, since)
         print(json.dumps(collected, indent=2))
         report_injection(collected["injectionFindings"])
