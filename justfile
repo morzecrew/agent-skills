@@ -13,7 +13,7 @@ check: lint validate test
 lint:
     # Quoted: the shell has no globstar by default, so an unquoted **
     # would silently skip skills/*/references/*.md.
-    markdownlint README.md AGENTS.md 'skills/**/*.md'
+    markdownlint README.md AGENTS.md 'skills/**/*.md' '.github/**/*.md'
 
 # Structural validation of the skill collection — no LLM, no network
 validate:

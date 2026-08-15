@@ -1,4 +1,8 @@
+<!-- markdownlint-disable-file MD041 -->
 <!--
+A PR template must not open with an H1 — the PR title is the heading — so
+MD041 is disabled for this file rather than for the directory it lives in.
+
 Title: <gitmoji> <type>[scope][!]: <description>   (gitmoji-conventional)
 e.g.  ✨ feat(skills): add error-taxonomy
 -->
@@ -35,16 +39,19 @@ Skills touched: <!-- skills/<name> — new / edited / removed -->
 
 ## Repo sync
 
-- [ ] README "Available Skills" entry added or updated (summary, Use when,
-      Categories covered)
-- [ ] `skills-lock.json` regenerated
-- [ ] markdownlint clean
+- [ ] README "Available Skills" entry added or updated — one row, `| Skill |
+      What it does |`; "Use when" and "Categories covered" live in the SKILL.md
+- [ ] `just check` passed (lint + validate + tests) — everything CI runs
+- [ ] `skills-lock.json` regenerated, if a vendored skill moved
+- [ ] For a new skill, `npx skills add morzecrew/agent-skills@<name>` verified
 - [ ] Any `scripts/` are executable, dependency-light, and do no network I/O
       on import
 
 ## Evals
 
-- [ ] Eval added or updated under `evals/`
-- [ ] Ran it
+- [ ] If behaviour changed, an eval under `evals/` was added or updated
+- [ ] If so, ran `python3 evals/run.py` **locally** — never in CI, and no LLM
+      API key enters this repository
+- [ ] If not applicable (docs, config, tooling), say so below instead of ticking
 
 Before / after:
