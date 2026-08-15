@@ -46,7 +46,7 @@ Skills cross-reference each other in their "Related skills" sections. Every skil
 | Skill | What it does |
 | --- | --- |
 | [self-audit](skills/self-audit/) | Adversarial pass over your own finished work, walking the ten places author blind spots concentrate. |
-| [flag-dont-flip](skills/flag-dont-flip/) | Executes an RFC without silently changing it — plan gate first, halt on LOCKED decisions, every departure logged. |
+| [flag-dont-flip](skills/flag-dont-flip/) | Executes an RFC without silently changing it — plan gate first, halt on LOCKED decisions, every departure logged in `rfcs/EXECUTION-LOG.md`. |
 | [pr-review-loop](skills/pr-review-loop/) | Works AI and human PR feedback to convergence — deduped findings, evidence-backed verdicts, one push per round. |
 | [ratchet-what-you-build](skills/ratchet-what-you-build/) | Ranks every guard on an enforcement ladder; anything still sitting at "convention" is an open finding. |
 | [drift-to-gate](skills/drift-to-gate/) | Turns a rule that keeps being broken into a program that refuses — then runs that control's whole lifecycle. |
