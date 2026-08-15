@@ -13,6 +13,8 @@ check: lint validate test
 lint:
     # Quoted: the shell has no globstar by default, so an unquoted **
     # would silently skip skills/*/references/*.md.
+    # Keep this list and `.github/workflows/validate.yml`'s `globs:` identical
+    # — they are two copies of one rule, and CI is the one that blocks.
     markdownlint README.md AGENTS.md 'skills/**/*.md' '.github/**/*.md'
 
 # Structural validation of the skill collection — no LLM, no network
