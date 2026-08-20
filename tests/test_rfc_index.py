@@ -31,11 +31,29 @@ The next free number is **0003**.
 - 📝 **Draft**
 """
 
-ALPHA = "# RFC 0001 — Alpha\n\n- **Status:** 📝 Draft\n- **Scope:** x\n"
-BETA = "# RFC 0002 — Beta\n\n- **Status:** ✅ Complete — shipped 2026-01-01; only P5 remains\n"
+# Every RFC carries a graded decision table: `cmd_check` requires it, because
+# it is the one section the skill says a minimal RFC still keeps.
+DECISIONS = """
+## 11. Decisions
+
+| # | Grade | Decision |
+|---|---|---|
+| 1 | `LOCKED` | The thing is done the way it is done. |
+"""
+
+ALPHA = "# RFC 0001 — Alpha\n\n- **Status:** 📝 Draft\n- **Scope:** x\n" + DECISIONS
+BETA = ("# RFC 0002 — Beta\n\n- **Status:** ✅ Complete — shipped 2026-01-01; "
+        "only P5 remains\n" + DECISIONS)
 
 
-class RfcCollectionTest(unittest.TestCase):
+class Collection:
+    """The throwaway collection every group below works against.
+
+    Deliberately not a TestCase: subclassing one re-runs every inherited test
+    in each subclass, which triples the suite's runtime to prove the same
+    things three times.
+    """
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
@@ -54,6 +72,8 @@ class RfcCollectionTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             return script.cmd_check(self.rfcs)
 
+
+class RfcCollectionTest(Collection, unittest.TestCase):
     def test_healthy_collection_passes(self):
         self.assertEqual(self.check(), 0)
 
@@ -62,18 +82,19 @@ class RfcCollectionTest(unittest.TestCase):
         self.assertEqual(script.status_emoji(BETA), "✅")
 
     def test_file_without_index_row(self):
-        (self.rfcs / "0009-orphan.md").write_text("# RFC 0009 — Orphan\n\n- **Status:** 📝 Draft\n", encoding="utf-8")
+        (self.rfcs / "0009-orphan.md").write_text(
+            "# RFC 0009 — Orphan\n\n- **Status:** 📝 Draft\n" + DECISIONS, encoding="utf-8")
         self.assertEqual(self.check(), 2)
 
-    def test_the_execution_log_is_not_an_rfc(self):
-        """`rfcs/` holds one non-numbered resident, written by `flag-dont-flip`.
-        The skill now documents that it needs no index row and takes no number;
-        that used to be incidental — `RFC_FILENAME` requires a 4-digit prefix —
-        and a documented behaviour with no test is one an unrelated change to
-        the glob can silently break."""
+    def test_a_non_numbered_file_is_not_an_rfc(self):
+        """Only `NNNN-*.md` files are RFCs. Anything else in the directory — a
+        README, a diagram, notes — needs no index row and takes no number. That
+        used to be incidental (`RFC_FILENAME` requires a 4-digit prefix), and a
+        documented behaviour with no test is one an unrelated change to the
+        glob can silently break."""
         before = script.next_number(self.rfcs)
-        (self.rfcs / "EXECUTION-LOG.md").write_text(
-            "# Execution log\n\n# Wave 0\n\n**Drift count: 0.**\n", encoding="utf-8")
+        (self.rfcs / "NOTES.md").write_text(
+            "# Notes\n\nScratch, not a design.\n", encoding="utf-8")
         self.assertEqual(self.check(), 0, "it is not an orphan RFC")
         self.assertEqual(script.next_number(self.rfcs), before,
                          "it must not consume a number")
@@ -498,6 +519,108 @@ class EmptyCollectionTest(unittest.TestCase):
             self.assertTrue((rfcs / "0001-first.md").is_file())
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(script.cmd_check(rfcs), 0)
+
+
+class ContentFixture(Collection):
+    def write_alpha(self, body: str) -> None:
+        (self.rfcs / "0001-alpha.md").write_text(
+            "# RFC 0001 — Alpha\n\n- **Status:** 📝 Draft\n" + body, encoding="utf-8")
+
+    def problems(self) -> str:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            script.cmd_check(self.rfcs)
+        return buffer.getvalue()
+
+
+class DecisionTableTest(ContentFixture, unittest.TestCase):
+    """`check` reads the RFC's contents, not only its filename and status."""
+
+    def test_a_graded_table_passes(self):
+        self.assertEqual(self.check(), 0)
+
+    def test_no_decisions_section_fails(self):
+        self.write_alpha("\n## 5. Design\n\nSome design.\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("no Decisions section", self.problems())
+
+    def test_an_empty_decisions_table_fails(self):
+        self.write_alpha("\n## 11. Decisions\n\n| # | Grade | Decision |\n|---|---|---|\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("no rows", self.problems())
+
+    def test_an_ungraded_row_fails(self):
+        self.write_alpha(DECISIONS.replace("`LOCKED`", "probably fine"))
+        self.assertEqual(self.check(), 2)
+        self.assertIn("not one of LOCKED", self.problems())
+
+    def test_a_row_graded_with_an_invented_word_fails(self):
+        self.write_alpha(DECISIONS.replace("`LOCKED`", "`SETTLED`"))
+        self.assertEqual(self.check(), 2)
+
+    def test_every_grade_in_the_vocabulary_passes(self):
+        for grade in script.GRADES:
+            with self.subTest(grade=grade):
+                self.write_alpha(DECISIONS.replace("`LOCKED`", f"`{grade}`"))
+                self.assertEqual(self.check(), 0)
+
+    def test_a_bold_grade_passes(self):
+        self.write_alpha(DECISIONS.replace("`LOCKED`", "**LOCKED**"))
+        self.assertEqual(self.check(), 0)
+
+    def test_the_section_number_does_not_matter(self):
+        self.write_alpha(DECISIONS.replace("## 11. Decisions", "## Decisions"))
+        self.assertEqual(self.check(), 0)
+
+    def test_a_following_section_does_not_contribute_rows(self):
+        # A table under a later heading must not be read as more decisions.
+        # Three columns on purpose: a narrower table cannot match the row
+        # pattern at all, so it would pass whether the boundary held or not.
+        self.write_alpha(DECISIONS + "\n## 12. Phasing\n\n"
+                         "| P | Lands | Gated on |\n|---|---|---|\n| 1 | the store | nothing |\n")
+        self.assertEqual(self.check(), 0)
+
+
+class LinkTargetTest(ContentFixture, unittest.TestCase):
+    def test_a_resolving_link_passes_quietly(self):
+        (self.root / "src").mkdir()
+        (self.root / "src" / "real.py").write_text("x\n", encoding="utf-8")
+        self.write_alpha(DECISIONS + "\nSee [the code](src/real.py).\n")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_dangling_link_in_a_draft_is_a_warning(self):
+        # A design may cite a file it proposes to create.
+        self.write_alpha(DECISIONS + "\nSee [the code](src/planned.py).\n")
+        self.assertEqual(self.check(), 0)
+        self.assertIn("link target", self.problems())
+
+    def test_a_dangling_link_in_a_complete_rfc_is_a_problem(self):
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\nSee [the code](src/never_built.py).\n", encoding="utf-8")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("RFC is Complete", self.problems())
+
+    def test_external_urls_are_not_checked(self):
+        self.write_alpha(DECISIONS + "\n[spec](https://example.invalid/x) [mail](mailto:a@b.c)\n")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_bare_anchor_is_not_checked(self):
+        self.write_alpha(DECISIONS + "\n[above](#decisions)\n")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_an_anchor_on_a_real_file_resolves_to_the_file(self):
+        self.write_alpha(DECISIONS + "\n[beta](0002-beta.md#decisions)\n")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_link_relative_to_the_repo_root_resolves(self):
+        (self.root / "README.md").write_text("x\n", encoding="utf-8")
+        self.write_alpha(DECISIONS + "\n[readme](README.md)\n")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
 
 
 if __name__ == "__main__":
