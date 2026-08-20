@@ -18,6 +18,10 @@ that already appears in SKILL.md; none of them invents a rule.
               (a warning: a proposal made today may simply not be answered
               yet, while a log where none is ever answered is the failure
               mode SKILL.md names last)
+  backlinks   with --rfc-dir, an RFC row citing `EXECUTION-LOG.md D-NNN`
+              resolves to an entry that exists. This is the direction that
+              rots quietly: renumbering an entry — which a merge between two
+              units forces — leaves the citation pointing at a stranger
 
 Deliberately NOT checked: whether an entry's grade matches the RFC's decision
 table today. The log records the grade that was in force when the executor
@@ -70,6 +74,7 @@ CITES_RFC = re.compile(r"RFC\s+(\d{1,4})\b")
 CITES_ROW = re.compile(r"row\s+(\d+)", re.I)
 RFC_ROW = re.compile(r"^\|\s*(\d+)\s*\|")
 MENTIONS_D = re.compile(r"\bD-(\d+)\b")
+MENTIONS_LOG = re.compile(r"EXECUTION-LOG", re.I)
 
 
 class Problem:
@@ -302,6 +307,41 @@ def check_citations(entries: list[dict], rfc_dir: Path) -> list[Problem]:
     return problems
 
 
+def check_backlinks(entries: list[dict], rfc_dir: Path, log: Path) -> list[Problem]:
+    """The other direction: an RFC row cites a log entry that exists.
+
+    `log_check` otherwise reads the log and looks outward. This reads the RFCs
+    and looks back, because that is the side that rots without anyone noticing.
+    Numbers get renumbered — a merge between two units that both claimed the
+    next one forces it — and a row still citing the old number now points at
+    a stranger's entry, which reads as provenance and is not.
+
+    Only lines that name the log are searched, so an RFC free to use `D-` for
+    anything else keeps that freedom.
+    """
+    known = {entry["n"] for entry in entries}
+    problems = []
+    for rfc in sorted(rfc_dir.glob("*.md")):
+        if rfc.resolve() == log.resolve() or rfc.name.upper().startswith("EXECUTION-LOG"):
+            continue  # the log cites its own numbers on nearly every line
+        try:
+            lines = rfc.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for number, line in enumerate(lines, start=1):
+            if not MENTIONS_LOG.search(line):
+                continue
+            for cited in MENTIONS_D.findall(line):
+                if int(cited) not in known:
+                    problems.append(Problem(
+                        f"{rfc.name}:{number}",
+                        f"cites EXECUTION-LOG D-{int(cited):03d}, which this log has no "
+                        "entry for — a citation that resolves to nothing reads as "
+                        "provenance and carries none",
+                    ))
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -309,7 +349,8 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path("."),
                         help="resolve evidence paths against this directory")
     parser.add_argument("--rfc-dir", type=Path,
-                        help="also check that cited RFCs and rows exist")
+                        help="also check citations in both directions: cited RFCs "
+                             "and rows exist, and RFC rows citing D-NNN resolve")
     parser.add_argument("--strict", action="store_true",
                         help="treat warnings as failures")
     args = parser.parse_args()
@@ -328,6 +369,7 @@ def main() -> int:
     problems += check_proposals(entries, answered)
     if args.rfc_dir:
         problems += check_citations(entries, args.rfc_dir)
+        problems += check_backlinks(entries, args.rfc_dir, args.log)
 
     errors = [p for p in problems if not p.warning]
     warnings = [p for p in problems if p.warning]

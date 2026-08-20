@@ -304,6 +304,51 @@ class CitationTest(Case):
         self.assertEqual(code, 0, out)
 
 
+class BacklinkTest(Case):
+    """The direction that rots without anyone noticing.
+
+    A merge between two units that both claimed the next number forces one of
+    them to renumber, and every RFC row citing the old one now points at a
+    stranger's entry — which reads as provenance and carries none.
+    """
+
+    def cite(self, text: str) -> None:
+        rfc = self.root / "rfcs" / "0014-retry-handling.md"
+        rfc.write_text(rfc.read_text(encoding="utf-8") + text, encoding="utf-8")
+
+    def test_a_row_citing_a_real_entry_passes(self):
+        self.cite("\n| 5 | `ASSUMED` | Per-batch budget. Added by execution "
+                  "2026-08-21 — see [EXECUTION-LOG.md](EXECUTION-LOG.md) D-001. |\n")
+        code, out = self.check(log(), "--rfc-dir", str(self.root / "rfcs"))
+        self.assertEqual(code, 0, out)
+
+    def test_a_row_citing_an_entry_that_does_not_exist_fails(self):
+        self.cite("\n| 5 | `ASSUMED` | Per-batch budget. Added by execution "
+                  "2026-08-21 — see [EXECUTION-LOG.md](EXECUTION-LOG.md) D-024. |\n")
+        code, out = self.check(log(), "--rfc-dir", str(self.root / "rfcs"))
+        self.assertEqual(code, 1)
+        self.assertIn("D-024", out)
+        self.assertIn("0014-retry-handling.md:", out, "the row has to be locatable")
+
+    def test_a_d_number_on_a_line_that_never_names_the_log_is_left_alone(self):
+        """An RFC is free to use `D-` for its own purposes."""
+        self.cite("\nSee diagram D-024 in the appendix.\n")
+        code, out = self.check(log(), "--rfc-dir", str(self.root / "rfcs"))
+        self.assertEqual(code, 0, out)
+
+    def test_the_log_is_not_scanned_against_itself(self):
+        """It cites its own numbers on nearly every line."""
+        (self.root / "rfcs" / "EXECUTION-LOG.md").write_text(
+            "see EXECUTION-LOG.md D-999\n", encoding="utf-8")
+        code, out = self.check(log(), "--rfc-dir", str(self.root / "rfcs"))
+        self.assertEqual(code, 0, out)
+
+    def test_backlinks_are_only_checked_when_the_rfcs_are_named(self):
+        self.cite("\nsee [EXECUTION-LOG.md](EXECUTION-LOG.md) D-024\n")
+        code, out = self.check(log())
+        self.assertEqual(code, 0, out)
+
+
 class CommandLineTest(Case):
     def test_an_unreadable_log_exits_two_rather_than_pretending_it_passed(self):
         done = run_script("flag-dont-flip", "log_check.py", str(self.root / "nope.md"))

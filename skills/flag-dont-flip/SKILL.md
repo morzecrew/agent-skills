@@ -126,6 +126,22 @@ Three properties, each load-bearing:
 - **One file for the whole collection, not one per RFC.** Departures cross documents: the run that executes RFC 0006 is the run that finds RFC 0005 was built wrong. A per-RFC log has nowhere to put that, and splitting it hides exactly the cross-document findings that are hardest to find any other way.
 - **It carries no number and is not an RFC.** It is not a design, it has no status, and it never appears in the index table. `INDEX.md` links to it in prose instead.
 
+**Concurrent units race on the number, not just on the file.** Two branches
+appending at once both take the next `D-NNN`, and the collision is only textual
+on the surface: the duplicate gets caught, but the repair — renumbering the
+later unit — silently breaks every RFC row already citing what it used to be.
+So the merge is: keep both units, renumber the later one, and fix the citations
+that pointed at its old number. `log_check.py --rfc-dir` reads that direction
+too, so a citation left behind fails rather than quietly pointing at a
+stranger's entry.
+
+Splitting the log per task does not solve this, which is the reason not to reach
+for it first: the numbers stay global and still race, so a textual conflict is
+traded for a silent one. A collection that genuinely runs units in parallel
+should depart to unit-scoped identifiers — `W2-D003` — which removes the shared
+counter rather than hiding it. That is a departure worth logging when it
+arrives, not a redesign to do in advance.
+
 ## Log structure
 
 Entries are grouped by **execution unit** — the branch, wave, or phase the work shipped as. Each group opens with what it covered and the number the whole practice is measured by:
@@ -230,6 +246,12 @@ declares a drift count and that count matches the entries classed `drift`, and
 a proposed row no outcomes table has answered is reported as a warning. Exit 0
 or 1, `--strict` to fail on the warning too. Paths in evidence resolve against
 `--root`, which defaults to the working directory.
+
+`--rfc-dir` checks citations in both directions: the RFC and row an entry cites
+exist, and an RFC row citing `EXECUTION-LOG.md D-NNN` resolves to an entry. The
+second is the one that rots unwatched — nothing else looks at it, and a row
+citing an entry that no longer carries that number reads as provenance while
+carrying none.
 
 **One thing it deliberately does not check: whether an entry's grade still
 matches the RFC's decision table.** The log records the grade that was in force
