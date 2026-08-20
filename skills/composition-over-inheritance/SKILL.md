@@ -1,6 +1,9 @@
 ---
 name: composition-over-inheritance
-description: Prefer composition and interfaces over class inheritance - apply the GoF principle and Effective Java's composition-plus-forwarding to avoid fragile base classes, run the Liskov behavioral is-a test, and recognize the narrow cases (framework hooks, sealed hierarchies, exceptions) where inheritance is right. Use when designing or refactoring class hierarchies, reviewing OOP code, deciding between extending and wrapping a class, or whenever inheritance, subclassing, extends, base/abstract classes, mixins, is-a vs has-a, overriding, or composition come up.
+description: Use when designing or refactoring a class hierarchy, deciding between extending and wrapping a class, or reviewing subclasses that override methods to disable them. Not for implementing an interface, or for a framework's documented subclass hook.
+roles: [implement, review]
+gate: none
+gate_reason: the is-a judgement is about domain meaning, which no static rule decides
 ---
 
 # Composition Over Inheritance
@@ -13,19 +16,6 @@ Composition is **black-box reuse** through well-defined interfaces, and it can b
 reconfigured at runtime, while an `extends` clause is fixed at compile time. The
 default that survives change is *has-a* plus interfaces; inheritance is the
 deliberate exception.
-
-## Use this skill when
-
-- Designing a new class relationship and tempted to `extends`/subclass.
-- Refactoring a deep or rigid hierarchy, or a base class nobody dares touch.
-- Reviewing code where subclasses inherit methods that don't apply to them, or override methods to disable them.
-- Deciding whether "X is-a Y" justifies subclassing.
-
-## Do not use this skill when
-
-- A framework mandates subclassing its documented extension point.
-- You're implementing an interface/protocol/ABC — that's the abstraction half only, not implementation inheritance.
-- You're modeling a closed set of variants as a sealed hierarchy (see the table below — that's inheritance done right).
 
 ## Why inheritance is fragile: the self-use trap
 

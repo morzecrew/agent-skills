@@ -24,7 +24,7 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 ## Code Style
 
 - **Markdown:** Follow `.markdownlint.yml` (default rules disabled; extend as needed).
-- **SKILL.md:** Use YAML frontmatter (`name`, `description`), clear headings, and explicit "Use when" / "Categories covered" sections where applicable.
+- **SKILL.md:** YAML frontmatter carries `name`, `description`, `roles`, and `gate`. The description is triggers only — when to use, when not to — and is capped at 300 characters, because every description is in context in every session whether its skill fires or not. `roles` is any of `implement`, `review`, `revert`, `author`. `gate` names the enforcing check, or is `none` with a `gate_reason`. Do not restate the triggers as a body section; the validator rejects it.
 - **Naming:** Skill folders use kebab-case (e.g. `keep-a-changelog`).
 
 ## Testing Instructions
@@ -47,8 +47,10 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 ## Adding a New Skill
 
 1. Create `skills/<skill-name>/SKILL.md`.
-2. Include YAML frontmatter with `name` and `description`.
-3. Document when the skill applies ("Use when") and what it covers ("Categories covered").
+2. Include YAML frontmatter with `name`, `description` (≤300 chars, triggers only), `roles`, and `gate` (or `gate: none` plus `gate_reason`).
+3. Write the body as rules, not argument — one clause of rationale per rule, and a body budget of ~1,500 tokens. Everything longer goes to `references/`, loaded on demand.
 4. Add the skill to README.md under "Available Skills" — one table row, `| [<name>](skills/<name>/) | one-line summary |`, in the theme group it belongs to.
 5. Run `python3 scripts/validate_skills.py` — it enforces 1-4.
 6. If the skill bundles `scripts/`, mention each script in `SKILL.md` (the validator requires it) and add tests under `tests/`.
+
+Before adding a skill at all, ask whether a **gate** would do instead. A gate refuses; a skill hopes. See `drift-to-gate`.

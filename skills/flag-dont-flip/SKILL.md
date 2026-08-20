@@ -1,6 +1,9 @@
 ---
 name: flag-dont-flip
-description: Executes work against an existing RFC or design doc without silently changing its decisions. Produces a reviewable file-by-file plan before writing code, halts on conflicts with LOCKED decisions instead of resolving them, and records every departure in an append-only execution log — `rfcs/EXECUTION-LOG.md` — classified by whether it was knowable at design time, with a drift count per unit of work and the decision rows it proposes back. Use this whenever implementing against an RFC, spec, ADR, or design doc — including when the user says "implement RFC-N", "execute the plan", "build what we agreed", or starts coding in a repo with an `rfcs/` directory. Also use when a design decision needs to change mid-implementation, when the code has drifted from its spec, or when someone asks why the implementation doesn't match the doc.
+description: Use when implementing against an RFC, spec, ADR, or design doc that carries graded decisions; when a decision needs to change mid-implementation; or when code has drifted from its spec. Not for authoring the design, and not for changes with no design document.
+roles: [implement, revert]
+gate: none
+gate_reason: step 3 of this refactor replaces this with the decisions-reported gate
 ---
 
 # Flag, Don't Flip
@@ -10,19 +13,6 @@ An RFC stops being useful the moment the code silently disagrees with it. Not be
 This skill makes the diff locally reviewable: every departure from the RFC is either announced or a defect. Nothing in between.
 
 **The rule:** when execution meets a decision the RFC settled differently, flag it. Never flip it in place and move on.
-
-## Use this skill when
-
-- Implementing against an RFC, spec, ADR, or design doc — "implement RFC-014", "build the retry handling we agreed on"
-- A design decision needs to change mid-implementation
-- The implementation has drifted from the document describing it
-- Deciding whether an under-specified RFC is ready to execute at all
-
-## Do not use this skill when
-
-- *Authoring* the design — that's `rfc-writer`; this skill starts once a document exists
-- The change has no design document and no meaningful design surface — a typo fix does not need a plan gate, and a plan gate on a two-line change is friction that gets the whole practice switched off
-- A bug needs fixing against no spec — that's `reproduce-then-fix`
 
 If work is underway, no RFC exists, and the change is clearly load-bearing, say so and hand off to `rfc-writer` rather than inventing decisions inside the implementation.
 

@@ -1,6 +1,8 @@
 ---
 name: drift-to-gate
-description: Converts a rule that keeps being broken into a program that refuses, and then runs that control's whole lifecycle — proving it can say no, logging its refusals, widening its vocabulary into buckets rather than into the accept set, failing loud instead of silently, and metering itself so it can be retired. Use when the same rule is violated a second time, when a standing agreement lives only in prose or a memory file, when a check you wrote catches your own change, when a gate rejects a state that is actually legitimate, when a gate goes green and the thing it watched became less visible, or when someone asks whether an enforcement check is worth keeping.
+description: Use when the same rule is violated a second time, when a standing agreement lives only in prose or a memory file, when a gate rejects something genuinely legitimate, or when deciding whether an enforcement check still earns its keep. Not for a first violation.
+roles: [implement, review]
+gate: gate-selftest
 ---
 
 # Drift to Gate
@@ -13,21 +15,6 @@ That is the whole argument. Prose loses to a plausible-sounding local argument, 
 
 But writing the check is maybe a fifth of the work. A control has a lifecycle, and every clause below is here because skipping it produced a control that ran, stayed green, and protected nothing.
 
-## Use this skill when
-
-- The same rule has been violated a second time — especially when it was *read* and then reasoned around
-- A standing agreement, cadence, threshold, or convention lives only in prose, a README, or an agent memory file
-- A check you wrote fails on your own change and an exception entry is tempting
-- A gate is rejecting a state that is genuinely correct, and the vocabulary needs a new word
-- A gate went green and you cannot say whether the thing it watched got better or just got quieter
-- Deciding whether an enforcement check has earned its keep, or has become paperwork
-
-## Do not use this skill when
-
-- The rule has been broken once and the cause was a genuine one-off — gate the *second* occurrence; a gate per incident is how a shop ends up with fifty checks nobody reads
-- The mechanism being gated does not exist yet — build it first (`ratchet-what-you-build` covers moving an existing guard up the enforcement ladder; this skill is about one control's construction and pathology)
-- The rule is a preference with no measurable cost when broken — enforcement cost is real and gets paid every run
-
 ## What actually earns a gate
 
 Two questions, both required:
@@ -36,6 +23,10 @@ Two questions, both required:
 2. **Is the violation reachable by reasoning?** Rules that get broken by forgetting can sometimes be fixed by a checklist. Rules that get broken by *argument* — "just this once", "the situation is different", "waiting is safer" — cannot. Those are the ones that need a program, because the program does not participate in the argument.
 
 The tell for the second kind: the violating reply quotes the rule correctly.
+
+Gate the *second* occurrence, not the first. One violation with a genuine
+one-off cause buys a fix; a gate per incident is how a shop ends up with fifty
+checks nobody reads, which costs more enforcement than the rules were worth.
 
 ## The gate's own contract
 

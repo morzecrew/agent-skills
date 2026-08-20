@@ -1,6 +1,9 @@
 ---
 name: dependency-diligence
-description: Evaluate a dependency before adopting it — check the project's architectural invariants first (one violated constraint rules out a whole family), weigh capability against total cost, and choose among adopt-behind-a-seam, take-the-idea-not-the-dep, or reject-with-a-recorded-verdict. Use when about to add a package or library, when asked "should we use X", when reviewing a PR that adds a dependency, when comparing libraries for a capability, or when the user mentions dependencies, third-party libraries, vendoring, supply chain, or "is there a library for this".
+description: Use when about to add a package, library, or tool; when asked "should we use X" or "X vs Y"; or when reviewing a PR whose lockfile grows. Not for upgrading an already-adopted dependency, and not for choosing the platform itself.
+roles: [implement, author]
+gate: none
+gate_reason: scripts/dep_health.py fetches evidence; the adopt-or-reject verdict is a judgement it cannot make
 ---
 
 # Dependency Diligence
@@ -8,19 +11,6 @@ description: Evaluate a dependency before adopting it — check the project's ar
 A dependency is a capability bought with a permanent liability: its bugs become your bugs, its release cadence becomes your upgrade treadmill, its transitive tree becomes your supply chain, and its API shape leaks into your design. Agents (and people) reach for a library reflexively — the evaluation discipline is what stands between "there's a package for that" and a dependency tree nobody chose on purpose.
 
 The evaluation has a strict order, because the cheapest checks are the most decisive: constraints first, cost-per-capability second, health third. Most candidates die on the first two, before a single benchmark or changelog is read.
-
-## Use this skill when
-
-- About to add a package/library/tool to a project
-- Asked "should we use X?" or "X vs Y?" for a capability
-- Reviewing a PR whose lockfile diff adds dependencies
-- A recurring "maybe library Z would help here" question deserves a settled answer
-- Periodically auditing an existing dependency tree
-
-## Do not use this skill when
-
-- The dependency is the platform (the language runtime, the framework the project is built on) — that's an architecture decision for an RFC, not a diligence pass
-- Pinning/upgrading versions of an already-adopted dependency — that's maintenance; diligence happens at adoption
 
 ## Step 1 — The principled-constraint test
 

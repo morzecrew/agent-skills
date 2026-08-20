@@ -1,6 +1,8 @@
 ---
 name: negative-result-taxonomy
-description: Turns a failed attempt into something diagnosed rather than abandoned — each one is labelled FAMILY_DEAD (allowed only where the approach's best case was measured and missed), DESIGN_DEAD (what you write by default, owing a rebuild ticket with an established cause and the cheapest settling test), or INSTRUMENT_VOID (the apparatus failed to decide, which is never an idea failing), while a result too coarse to call owes a costed route to an answer. Use when an experiment, candidate, prototype, spike, benchmark, or hypothesis fails and someone is about to move on; when writing up a negative result; when a whole approach is about to be abandoned; when triaging a backlog of dead attempts; or when the same idea keeps dying and nobody has measured its ceiling.
+description: Use when an experiment, candidate, prototype, spike, or benchmark fails and the next move is to start something else; when writing up a negative result; when triaging a backlog of dead attempts; or when a whole approach is about to be abandoned. Not when nothing was measured.
+roles: [author, review]
+gate: kill-ledger
 ---
 
 # Negative Result Taxonomy
@@ -14,21 +16,6 @@ The loop worked. Almost nothing required it.
 There is a second lesson sitting on top of the first. The founding document's headline count of what had been built and measured turned out to be wrong in both directions — a later census, the deliberate read across every attempt, found more work had reached measurement than the headline claimed *and* more loops had already run than anyone had credited, because nobody had written them down as loops. **The census is the mechanism, and it corrected its own charter within a day of that charter being written.**
 
 That is the shape of the problem: taken singly, every abandonment looked careful — specification first, thresholds written down, an honest verdict — and nothing about it is visible from inside any one attempt. It only appears when you count across attempts, which is why the count has to be mandatory rather than occasional.
-
-## Use this skill when
-
-- An experiment, candidate, prototype, spike, benchmark, or A/B fails and the natural next move is to start something else
-- Writing up a negative result — internal report, RFC amendment, postmortem, research note
-- Someone proposes abandoning an entire approach ("learned models don't work here", "caching won't help")
-- Triaging a backlog of dead attempts to find which ones are actually unfinished
-- The same idea has died more than once and nobody has measured what it could do at its best
-- A result came back *undecidable* and is about to be quietly parked
-
-## Do not use this skill when
-
-- Nothing was measured — there is no negative result yet, only an abandoned start. Ship the measurement or record it as not-attempted; do not launder a stall into a kill.
-- The failure is an ordinary bug in something that is supposed to work — that is `reproduce-then-fix`
-- The attempt was explicitly a throwaway probe whose only deliverable was information, and it delivered it
 
 ## The classes
 
@@ -68,6 +55,11 @@ A rebuild ticket, stored next to the verdict it belongs to:
 `measured_cause` is where the value sits. "It probably needed more data" is a hunch; *"the scoring function weights the repaired signal at zero, so no decision anywhere in the replay changed"* is a cause, and it points straight at its own remedy.
 
 `cheapest_test` is what keeps this affordable. A rebuild with a known cause inherits the harness, the data, and the thresholds already in place, so it usually costs a fraction of starting over — which is the case for diagnosing rather than restarting, stated in the currency the work is actually billed in.
+
+**Nothing measured is not a negative result.** An attempt that stalled before it
+produced a number is an abandoned start: ship the measurement, or record it as
+not-attempted. A stall laundered into a kill spends the taxonomy's credibility
+to close a ticket.
 
 ## An obligation has states, and "budgeted" is not "finished"
 

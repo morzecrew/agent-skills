@@ -1,6 +1,9 @@
 ---
 name: self-documenting-code
-description: Decide when to refactor a comment away and when a comment is required - express the "what" through names, extracted predicates, constants, and types, and reserve comments for what code cannot say - intent, invariants, units, ranges, and interface contracts. Use when writing or reviewing comments, deciding whether a comment is needed, deleting or fixing stale or redundant comments, refactoring hard-to-follow logic, or when the user mentions comments, docstrings, self-documenting code, code clarity, or readability.
+description: Use when writing or reviewing comments, when a comment seems needed to explain what a line does, when deciding whether to keep or delete an existing one, or when refactoring dense logic. Not for teaching codebases, and not to delete a comment that is merely inconvenient.
+roles: [implement, review]
+gate: none
+gate_reason: no check distinguishes a comment that earns its place from one that restates the code
 ---
 
 # Self-Documenting Code
@@ -15,19 +18,6 @@ This is not "never comment." Ousterhout's *A Philosophy of Software Design* is
 the sharp counterpoint to comment-minimalism: "comments should describe things
 that aren't obvious from the code" — and for interfaces, plenty isn't. The
 skill is telling redundant comments from load-bearing ones.
-
-## Use this skill when
-
-- Writing or reviewing comments in a diff.
-- A comment seems needed to explain what a line or condition does.
-- Deciding whether to keep, delete, or rewrite an existing comment.
-- Refactoring dense logic that is hard to follow.
-- The user mentions comments, docstrings, self-documenting code, or readability.
-
-## Do not use this skill when
-
-- The user explicitly wants explanatory/teaching comments (tutorials, examples, learning codebases).
-- You'd delete a comment because it's *inconvenient* rather than redundant — a wrong comment gets fixed, not removed.
 
 ## Refactor the "what" into the code
 

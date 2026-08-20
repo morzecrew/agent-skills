@@ -1,6 +1,8 @@
 ---
 name: gitmoji-conventional
-description: Format git commit messages and Pull Request titles as Conventional Commits 1.0.0 with a deterministic gitmoji prefix, including breaking changes (💥 + ! + BREAKING CHANGE footer) and reverts. Use whenever generating or suggesting a commit message or PR title — "commit this", "write a commit", "commit message", "create PR", "open PR", "draft PR", "PR title", "squash and merge", "release commit" — even if the user never mentions gitmoji or Conventional Commits.
+description: Use whenever generating or suggesting a git commit message or Pull Request title, even when the user mentions neither gitmoji nor Conventional Commits. Not when the repository enforces a conflicting convention, and not when the user dictates the message verbatim.
+roles: [implement, author]
+gate: check-commit-msg
 ---
 
 # Gitmoji + Conventional Commits
@@ -16,20 +18,6 @@ The part after the emoji is plain [Conventional Commits 1.0.0](https://www.conve
 🐛 fix(auth): handle expired refresh tokens
 ♻️ refactor(cache): extract eviction policy
 ```
-
-## Use this skill when
-
-- Generating or suggesting a git commit message, for any prompt like "commit this", "write a commit", "commit message"
-- Generating or suggesting a Pull Request title — "create PR", "open PR", "draft PR", "what should the title be"
-- Preparing a release plan or PR summary that includes a commit message or title
-
-Apply it even when the user mentions neither gitmoji nor Conventional Commits.
-
-## Do not use this skill when
-
-- The repository enforces a conflicting convention (commitlint config, CONTRIBUTING.md) — follow the repository
-- The user dictates the exact message verbatim
-- Writing changelog entries — use `keep-a-changelog`
 
 ## Deterministic choice
 

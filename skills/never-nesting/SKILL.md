@@ -1,6 +1,9 @@
 ---
 name: never-nesting
-description: Flatten deeply nested code using guard clauses, early return/continue, function extraction, and error-handling redesign - and recognize when nesting should stay (symmetric branches, RAII/defer cleanup idioms). Use when writing or refactoring code with deep indentation, pyramid-of-doom or arrow-shaped if/else, nested loops or try/catch blocks, a buried happy path, or when the user mentions nesting, indentation, guard clauses, early returns, flattening or simplifying conditionals, or cyclomatic/cognitive complexity.
+description: Use when a function is growing nested if/for/try blocks, when refactoring arrow-shaped code, when the happy path sits several indents deep, or when a complexity metric trips. Not when both branches are equally normal, and not where manual cleanup makes early return leak.
+roles: [implement, review]
+gate: none
+gate_reason: a complexity metric flags depth; whether flattening helps is a read
 ---
 
 # Never Nesting
@@ -17,20 +20,6 @@ program."
 Treat **three levels as a soft ceiling** and a fourth as a refactoring signal,
 not a formatting problem. The moves below flatten code; the last section covers
 the cases where flattening makes code worse.
-
-## Use this skill when
-
-- Writing a function that is growing nested `if`/`for`/`try` blocks.
-- Refactoring arrow code / pyramid-of-doom conditionals (`if { if { if { ... }}}`).
-- The happy path sits several indents deep with error handling wrapped around it.
-- Reviewing code for readability or a complexity-metric violation.
-- The user mentions nesting, guard clauses, early returns, or flattening conditionals.
-
-## Do not use this skill when
-
-- The user explicitly wants the existing structure preserved.
-- Both branches of a conditional are equally normal behavior (see "When not to flatten").
-- Manual resource cleanup makes early returns leak (see "When not to flatten").
 
 ## The move-set
 

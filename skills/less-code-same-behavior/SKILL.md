@@ -1,6 +1,9 @@
 ---
 name: less-code-same-behavior
-description: Deep divergence and DRY audit that shrinks a codebase without changing behavior — find copy-paste, same-concern-drift, scattered responsibilities, type-lying configs, wrong abstractions, and bloated public surfaces, then consolidate (or unwind) while respecting the project's declared layers and import contracts. Use when the user asks to deduplicate, DRY up, consolidate, converge divergent code, do a divergence analysis, shrink or simplify a codebase, reduce code size, or wants "less code with the same functionality".
+description: Use when asked to deduplicate, DRY up, consolidate, or converge divergent code, or to shrink a codebase without changing behavior. Not when behavior is meant to change, and not for reviewing a single fresh diff.
+roles: [implement]
+gate: none
+gate_reason: scripts/usage_census.py answers who calls this; whether two things are one concern is the judgement
 ---
 
 # Less Code, Same Behavior
@@ -8,19 +11,6 @@ description: Deep divergence and DRY audit that shrinks a codebase without chang
 A divergence-and-DRY audit hunts for places where a codebase spends more code than its behavior requires — the same block pasted N times, the same concern hand-rolled in N different shapes, one responsibility scattered across a dozen files, public surfaces exporting three times what anyone imports — and consolidates them into less code with **identical** behavior.
 
 Two disciplines make this safe instead of destructive. First, every consolidation must respect the project's declared architecture: its layers, import contracts, and package boundaries are hard constraints, not obstacles. Second, the audit must be able to conclude **"leave it"** — a DRY pass that cannot reject its own findings produces churn, not consolidation.
-
-## Use this skill when
-
-- The user asks to deduplicate, DRY up, consolidate, or "converge" code
-- The user asks for a divergence analysis — same concern implemented differently in several places
-- A codebase or subsystem should get smaller without behavior change
-- Reviewing structure: scattered modules, bloated facades, config surfaces that grew by accretion
-
-## Do not use this skill when
-
-- Behavior is supposed to change — that's a feature or fix, and mixing it with consolidation makes both unverifiable
-- Reviewing a single fresh diff — use a diff-scoped review; this skill audits an existing body of code
-- The duplication is across repositories with independent release cycles — extracting a shared dependency is an architecture decision for the user, not a refactor
 
 ## Map the constraints before proposing anything
 
@@ -72,6 +62,11 @@ Exit 3 means nothing references it (a deletion candidate — the report then nam
 - Extracted shared code lives in the **lowest layer that every consumer may legally import** — a neutral leaf with minimal dependencies. Shared vocabulary types (value objects used across packages) belong in the contract/shared layer, exported from one canonical location, not re-exported per consumer.
 - **Never invert a layer or create a cycle to dedup.** If two copies can only be unified by violating a boundary, the duplication is the correct current state — record it, and surface the boundary question to the user as an architecture decision, separately from the refactor.
 - A helper too small to justify its home is a smell in the other direction: don't mint a new top-level package for two classes when an existing leaf module fits.
+
+Duplication **across repositories with independent release cycles** is out of
+scope. Extracting a shared dependency there couples two release trains, which is
+an architecture decision for the user to take in an RFC, not a refactor to
+perform inside one.
 
 ## Churn containment
 

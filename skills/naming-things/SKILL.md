@@ -1,6 +1,9 @@
 ---
 name: naming-things
-description: Choose clear names for variables, functions, classes, and modules - length proportional to scope, problem-domain vocabulary, honest booleans, units in names or types - and catch the anti-patterns (single letters, abbreviations, Hungarian type prefixes, negated booleans, Base/Abstract, Utils/Helper grab-bags, vague Manager/Handler words). Use when naming or renaming anything in code, reviewing identifiers in a diff, or when the user mentions naming, identifiers, variable names, renames, readability, "what should I call this", or that a name feels off.
+description: Use when naming or renaming a variable, function, class, type, or module, or when reviewing a diff where an identifier reads unclear, abbreviated, generic, or misleading. Not when the name is dictated by an external contract or an ecosystem convention.
+roles: [implement, review]
+gate: none
+gate_reason: a linter enforces casing; whether a name means what it says is a read
 ---
 
 # Naming Things in Code
@@ -11,18 +14,6 @@ the declaration. Most good naming is achievable by following a few positive
 rules and refusing a known catalog of anti-patterns — and when a good name
 still won't come, that difficulty is design feedback: the **structure**, not
 the vocabulary, is usually the real problem.
-
-## Use this skill when
-
-- Naming new variables, functions, classes, types, or modules.
-- Renaming during a refactor or cleanup.
-- Reviewing a diff where a name reads unclear, abbreviated, generic, or misleading.
-- The user mentions naming, identifiers, readability, or asks what to call something.
-
-## Do not use this skill when
-
-- A name is dictated by an external contract (serialized field, API schema, protocol) you cannot change.
-- A convention is enforced by the ecosystem (`i`/`j` in a tight numeric loop, `T` for a generic type parameter, `self`/`this`).
 
 ## Positive rules
 

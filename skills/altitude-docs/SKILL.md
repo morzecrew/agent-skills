@@ -1,6 +1,9 @@
 ---
 name: altitude-docs
-description: Write, polish, review, or align documentation pages to a production-grade standard using the altitude model (a deliberate high-level to low-level descent), Diátaxis-based page contracts, a shared consistency layer, and a ship rubric. Use when writing or restructuring any docs page — tutorial, quickstart, how-to guide, reference, explanation, concept page, landing page — when reviewing docs for consistency or flow, when deciding whether content is a tutorial vs a how-to or where a new page belongs, when a page mixes teaching with lookup and needs splitting, or when the user mentions documentation structure, docs review, Diátaxis, or "this docs page feels off".
+description: Use when writing, restructuring, polishing, or reviewing a documentation page — tutorial, quickstart, how-to, reference, explanation, landing page — or when deciding which archetype new content belongs in. Not for docstrings, RFCs, or changelogs.
+roles: [author]
+gate: none
+gate_reason: page quality is a rubric a reader applies, with no artifact a program can refuse
 ---
 
 # Altitude docs
@@ -19,24 +22,6 @@ covers its range and never inverts or skips a band.
 This skill is repo-agnostic. It governs *how* a page is built, not *what is
 true*. Every API name, symbol, and behavior must be verified against the source
 of truth in the current repository (see Accuracy).
-
-## Use this skill when
-
-- Writing a new documentation page.
-- Polishing or reviewing an existing page for consistency, depth, or flow.
-- Aligning a whole archetype directory (e.g. all tutorials) to one standard.
-- Deciding which archetype — and therefore which directory — new content belongs in.
-
-## Do not use this skill when
-
-- Writing docstrings inside code — use `python-google-docstrings` or
-  `python-rest-docstrings`; this skill governs the pages, not the API comments
-  they may be generated from.
-- Writing a design proposal or RFC — use `rfc-writer`; design docs argue for a
-  decision, documentation pages serve a reader's need.
-- Maintaining a changelog — use `keep-a-changelog`.
-- Writing marketing copy outside the docs tree — the appeal layer below covers
-  docs front doors only.
 
 Two modes:
 

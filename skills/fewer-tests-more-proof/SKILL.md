@@ -1,23 +1,14 @@
 ---
 name: fewer-tests-more-proof
-description: Consolidate and optimize a test suite so it proves more with fewer, stronger tests — shared conformance batteries over per-implementation copies, differential and property-based testing over hand-enumerated examples, deterministic control instead of flake-retry volume, sabotage-proven deletion of ritual and subsumed tests, all under an honesty floor that promise coverage never drops. Use when the user asks to consolidate, optimize, dedupe, or clean up tests, shrink suite size or runtime, fix a slow or flaky suite without losing coverage, improve coverage efficiency, or make conformance/parity testing cheaper.
+description: Use when asked to consolidate, dedupe, optimize, or clean up a test suite, to shrink its size or runtime without losing coverage, or to set up conformance testing across implementations of one contract. Not for writing missing tests, and not for deleting flaky ones.
+roles: [implement]
+gate: none
+gate_reason: the honesty floor is the project's own coverage gate; this skill has no separate artifact to refuse
 ---
 
 # Fewer Tests, More Proof
 
 The unit of value in a test suite is a **promise proven**, not a test counted. A suite optimized under that metric gets smaller and stronger at once: each promise tested exactly once, with its strongest assertion, in every implementation and state where it applies — and nothing else. "Fewer tests" is the side effect, never the goal; the moment a consolidation would trade proof for count, it stops.
-
-## Use this skill when
-
-- The user asks to consolidate, optimize, deduplicate, or clean up a test suite
-- Per-implementation test files repeat the same scenarios against each backend/adapter/variant
-- Suite runtime or maintenance cost is the complaint, and coverage must not drop
-- Setting up conformance/parity testing across implementations of one contract
-
-## Do not use this skill when
-
-- Coverage is missing, not duplicated — that's test *writing*; consolidation assumes there is overlap to spend
-- The user wants to delete slow or flaky tests to make CI green — that is losing proof, not consolidating it; fix the flakiness (see deterministic control below) or say plainly what proof the deletion loses
 
 ## Inventory: map tests to promises
 
@@ -69,6 +60,11 @@ Sabotage is mutation testing by hand, and tools like PIT and Stryker automate th
 - **Promise coverage is monotone.** Keep the before/after promise inventory; every deleted test's promise must appear against a surviving test. Test count and runtime go down; the inventory does not.
 - **Measure patch and branch coverage with the full test profile** — a single profile (unit-only) can undercount by half and misdirect the consolidation. Watch **detection branches** especially: code that only runs when a bug is present is exactly the code consolidation must not orphan.
 - **Failures must still name their cause.** Label every parametrized assertion with the implementation and case under test, so a battery failure says *which* implementation disagreed on *what*. A consolidation that produces unreadable failures went one step too far.
+
+**Deleting a flaky test is not consolidation.** It removes proof and leaves the
+promise untested, and the suite gets greener for exactly that reason. Fix the
+flake with deterministic control, or say plainly which promise the deletion
+stops proving and let someone else decide.
 
 ## Ratchet it
 

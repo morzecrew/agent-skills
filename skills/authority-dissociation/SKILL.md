@@ -1,6 +1,8 @@
 ---
 name: authority-dissociation
-description: Separates who does the work from who certifies it, so no actor supplies the material its own output is judged from — covering the fit/kill/promote/fund/retire authority split, self-designed metrics, firewalls against condemning a whole approach on one measurement, advisory findings that must be answered rather than merely tolerated, fail-closed defaults on permission questions, and attestation that points at an artifact the actor cannot write. Use when designing approvals, sign-offs or gates; when a check passes work its own author produced; when an agent records a decision on someone else's behalf; when the measure a candidate was tuned against is also the measure killing it; or when someone asks who is allowed to declare something done.
+description: Use when designing an approval, sign-off, waiver, or attestation; when a check passes work its own author produced; when an agent records a decision on someone else's behalf; or when one measurement is about to rule out a whole approach. Not for declared rule bypasses.
+roles: [author, review]
+gate: same-keystroke
 ---
 
 # Authority Dissociation
@@ -12,20 +14,6 @@ The incident that names this skill. An agent asked its principal which decisions
 Then the part that makes it a law rather than an anecdote. **Later in the same session, the same author wrote the check designed to stop precisely that** — a rule that every authorisation must carry a non-empty "authorised by" field — and the check cleared every fabricated record. It could not have done anything else. It reads a field the same actor fills in, in the same motion as the claim it is meant to confirm. **It records; it does not verify.**
 
 A reviewer had described that weakness hours earlier. It was logged as a minor observation while the failure it predicted was already sitting in the ledger.
-
-## Use this skill when
-
-- Designing an approval, sign-off, attestation, waiver, or "reviewed by" record
-- A check passes work its own author produced — or a rule is written by the party whose behaviour it governs
-- An agent or service records a decision *on behalf of* a human or another system
-- The measure a candidate was tuned against is also the measure being used to reject it
-- One disappointing measurement is about to rule out an entire approach
-- Deciding what an automated actor may declare finished, paid for, closed, promoted, or shipped
-
-## Do not use this skill when
-
-- One person genuinely holds every role and everyone knows it. A solo maintainer reviewing their own commit is the situation, not a fraud. What this forbids is the *appearance* of independent certification where there is none — the honest move is to record nothing rather than to record a self-signed approval.
-- The question is how to design a declared bypass of a rule — that is `escape-hatch-policy`. The two share a fail-closed default and nothing else: that one decides who may *skip* a check, this one who may *assert* a result.
 
 ## The question to ask
 

@@ -8,20 +8,28 @@ Errors (fail the run):
   E2  frontmatter malformed (missing/unterminated, or missing name/description)
   E3  frontmatter name does not match the folder name
   E4  name is not kebab-case
-  E5  description is empty, multi-line, or over 1024 characters
+  E5  description is empty, multi-line, or over 300 characters
   E6  body has no H1 title
-  E7  body has no "## Use this skill when" section
+  E7  frontmatter has no roles, or names a role outside the vocabulary
   E8  a "## Related skills" entry names a skill that does not exist
   E9  a relative link to references/ points at a missing file
   E10 a file in references/ is never mentioned in its SKILL.md
   E11 README.md "Available Skills" is out of sync with skills/ (either direction)
   E12 a bundled script does not compile (python) or parse (shell, javascript)
   E13 a skill ships scripts/ that its SKILL.md never mentions
+  E14 gate is missing, or names no script, or is none without a gate_reason
+  E15 body still carries a "Use this skill when" trigger section
 
 Warnings (reported, do not fail):
-  W1  body has no "## Do not use this skill when" section
+  W1  body is over the token budget
   W2  SKILL.md exceeds 500 lines
   W3  a bundled JavaScript file could not be checked (node not installed)
+
+The description budget is the reason E5 is 300 and not the format's own 1024.
+Every description sits in the agent's context in every session whether its
+skill fires or not, so the collection pays for all of them all the time; a body
+is paid only on trigger. Triggers are all a description is for — E15 exists
+because the same triggers restated as a body section get paid twice.
 """
 
 from __future__ import annotations
@@ -36,6 +44,13 @@ SKILLS_DIR = REPO / "skills"
 README = REPO / "README.md"
 
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+TRIGGER_SECTION = re.compile(r"^(do not )?use (this skill )?when\b", re.I)
+MAX_DESCRIPTION = 300
+MAX_BODY_TOKENS = 1500
+# Rough, and deliberately so: the budget is an order-of-magnitude guard, and a
+# real tokenizer would make the check depend on a package this repo does not have.
+CHARS_PER_TOKEN = 4
+ROLES = {"implement", "review", "revert", "author"}
 REF_MENTION = re.compile(r"references/([A-Za-z0-9._-]+\.md)")
 BACKTICK = re.compile(r"`([a-z0-9-]+)`")
 
@@ -87,7 +102,49 @@ def related_entries(body: str) -> list[str]:
     return names
 
 
-def check_skill(skill_dir: Path, all_names: set[str]) -> None:
+def check_roles(fm: dict[str, str], where: str) -> None:
+    raw = fm.get("roles", "").strip()
+    if not raw:
+        err("E7", f"{where}: frontmatter has no roles")
+        return
+    named = [r.strip() for r in raw.strip("[]").split(",") if r.strip()]
+    if not named:
+        err("E7", f"{where}: roles is empty")
+    for role in named:
+        if role not in ROLES:
+            err("E7", f"{where}: role {role!r} is not one of {sorted(ROLES)}")
+
+
+def check_gate(fm: dict[str, str], where: str, all_scripts: set[str]) -> None:
+    gate = fm.get("gate", "").strip()
+    if not gate:
+        err("E14", f"{where}: frontmatter has no gate (name the enforcing check, or 'none')")
+        return
+    if gate == "none":
+        # A skill with no gate is a hope, and the justification is what makes
+        # that an admission rather than an oversight.
+        if not fm.get("gate_reason", "").strip():
+            err("E14", f"{where}: gate is none, which needs a gate_reason saying why")
+        return
+    if fm.get("gate_reason", "").strip():
+        err("E14", f"{where}: gate {gate!r} is named, so gate_reason does not apply")
+    if gate not in all_scripts:
+        err("E14", f"{where}: gate {gate!r} names no script in the collection")
+
+
+def bundled_gates() -> set[str]:
+    """Gate names a skill may claim: the kebab-cased stem of any bundled script."""
+    names = set()
+    for script in SKILLS_DIR.glob("*/scripts/*"):
+        if script.is_file() and not script.name.startswith("."):
+            names.add(script.stem.replace("_", "-"))
+    for script in (REPO / "scripts").glob("*"):
+        if script.is_file() and not script.name.startswith("."):
+            names.add(script.stem.replace("_", "-"))
+    return names
+
+
+def check_skill(skill_dir: Path, all_names: set[str], all_scripts: set[str]) -> None:
     name = skill_dir.name
     skill_md = skill_dir / "SKILL.md"
     if not skill_md.is_file():
@@ -109,17 +166,20 @@ def check_skill(skill_dir: Path, all_names: set[str]) -> None:
             err("E5", f"{where}: empty description")
         elif "\n" in desc:
             err("E5", f"{where}: description must be a single line")
-        elif len(desc) > 1024:
-            err("E5", f"{where}: description is {len(desc)} chars (max 1024)")
+        elif len(desc) > MAX_DESCRIPTION:
+            err("E5", f"{where}: description is {len(desc)} chars (max {MAX_DESCRIPTION})")
+        check_roles(fm, where)
+        check_gate(fm, where, all_scripts)
 
     body = re.sub(r"\A---.*?^---\s*$", "", text, count=1, flags=re.M | re.S)
     if not re.search(r"^# .+$", body, re.M):
         err("E6", f"{where}: no H1 title")
-    sections = section_names(body)
-    if "Use this skill when" not in sections:
-        err("E7", f"{where}: missing '## Use this skill when'")
-    if "Do not use this skill when" not in sections:
-        warn("W1", f"{where}: no '## Do not use this skill when'")
+    for heading in sorted(section_names(body)):
+        if TRIGGER_SECTION.match(heading):
+            err("E15", f"{where}: body still carries '## {heading}' — triggers belong in the description")
+    budget = len(body) // CHARS_PER_TOKEN
+    if budget > MAX_BODY_TOKENS:
+        warn("W1", f"{where}: body is ~{budget} tokens (budget {MAX_BODY_TOKENS}) — move detail to references/")
     if len(text.splitlines()) > 500:
         warn("W2", f"{where}: over 500 lines")
 
@@ -189,8 +249,9 @@ def check_readme(all_names: set[str]) -> None:
 def main() -> int:
     skill_dirs = sorted(d for d in SKILLS_DIR.iterdir() if d.is_dir())
     all_names = {d.name for d in skill_dirs}
+    all_scripts = bundled_gates()
     for skill_dir in skill_dirs:
-        check_skill(skill_dir, all_names)
+        check_skill(skill_dir, all_names, all_scripts)
     check_readme(all_names)
 
     for w in warnings:

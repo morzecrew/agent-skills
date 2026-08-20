@@ -1,6 +1,9 @@
 ---
 name: escape-hatch-policy
-description: Decide when an abstraction earns a raw/bypass/override escape hatch and how to design one that stays safe — the two-question test (un-modelable long tail vs cross-cutting invariants bypassed), declared-not-silent opt-outs, and hatch usage as a feature-gap signal. Use when someone asks for raw access, a passthrough field, a bypass flag, or a config override; when designing an API tempted to add a "just pass anything" parameter; when reviewing an opt-out or unsafe-mode flag; or when the user mentions escape hatches, raw queries, passthrough, bypass, overrides, or "let me just do it directly".
+description: Use when someone asks for raw access, a passthrough field, a bypass flag, or a config override; when an API is tempted by a "pass anything" parameter; or when an existing hatch's usage is quietly growing. Not for feature flags or sanctioned lower layers.
+roles: [implement, author]
+gate: none
+gate_reason: whether a hatch is earned turns on the long tail it serves, which no counter can see
 ---
 
 # Escape-Hatch Policy
@@ -8,19 +11,6 @@ description: Decide when an abstraction earns a raw/bypass/override escape hatch
 Every abstraction eventually meets the request: "just let me bypass it." The answer must be a policy, not a mood — because a hatch granted casually is permanent (removal is a breaking change), invisible to every future invariant ("does encryption cover *raw* writes?"), and habit-forming (each use is a vote against ever extending the structured surface). But a blanket "no" is also wrong: some domains genuinely have long tails no neutral API will ever model, and refusing a hatch there just pushes users to fork or wrap you.
 
 The policy: decide *whether* with a two-question test, decide *where* by layer, and make every granted hatch declared, scoped, and watched.
-
-## Use this skill when
-
-- A user or teammate asks for raw access, a passthrough parameter, or a bypass flag
-- Designing an API and tempted to add a "raw options" / "extra params" / `dict[str, Any]` field
-- Reviewing a diff that adds an opt-out, unsafe mode, or "advanced" override
-- Deciding whether to extend a structured surface or punch through it
-- An existing hatch's usage is growing and nobody decided that
-
-## Do not use this skill when
-
-- The "bypass" is a sanctioned lower layer used openly (calling the database client directly in a script, outside the abstraction's guarantees) — that's layering, not a hatch; a hatch is a bypass *embedded in* the abstraction's own surface
-- Designing feature flags for rollout — those are lifecycle switches, not opt-outs from invariants
 
 ## The two-question test
 

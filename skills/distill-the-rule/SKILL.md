@@ -1,6 +1,9 @@
 ---
 name: distill-the-rule
-description: Convert surprising findings into durable one-line rules — after a debugging session, audit finding, review surprise, or incident, strip the specifics down to the transferable mechanism and file it where future work will actually recall it. Use when a session ends with a hard-won discovery, when a defect's shape will clearly recur, when a sabotage or test passes unexpectedly, after a postmortem, when the user says "remember this" or "lesson learned", or when the same class of mistake shows up a second time.
+description: Use when a session ends in a genuine surprise, when a defect's shape will clearly recur, when a sabotage or test passes unexpectedly, after a postmortem, or when the same mistake class shows up twice. Not for one-off trivia, or anything the repo already records.
+roles: [author]
+gate: none
+gate_reason: whether a finding generalises is the judgement; a check counting rules would reward writing more of them
 ---
 
 # Distill the Rule
@@ -8,20 +11,6 @@ description: Convert surprising findings into durable one-line rules — after a
 Findings are perishable; rules compound. A debugging session that ends with "fixed it" has produced one repaired instance. The same session ending with *"any suffix/subset helper needs its empty case decided explicitly"* has produced a check that prevents the whole class — in every future codebase, forever, for the cost of one sentence. Distillation is the deliberate last step of any surprising piece of work: strip the finding's specifics down to the transferable mechanism, phrase it as a one-line rule with its trigger, and file it where future work will actually meet it.
 
 This is how individual experience becomes leverage — and for an agent with persistent memory, it is the difference between having sessions and having judgment.
-
-## Use this skill when
-
-- A debugging session, audit, or review ends with a genuine surprise ("huh — I didn't expect that")
-- A defect turns out to be an instance of a shape that will recur (wrapper × state, empty case, drifted invariant)
-- A sabotage/mutation passes, a test fails to fail, or anything transitions unexplained-then-explained
-- Closing an incident or postmortem — the corrective actions want a distilled rule each
-- The user says "remember this", "lesson learned", or you notice the same mistake class twice
-
-## Do not use this skill when
-
-- The finding is one-off trivia with no recurring shape (a typo, a vendor's quirk you'll never meet again)
-- The repo already records it — code comments, CLAUDE.md, existing rules; check before writing (a duplicate rule dilutes the collection it joins)
-- The "rule" would just restate what happened — if it can't outlive its incident, it isn't a rule yet (see the test below)
 
 ## What qualifies
 

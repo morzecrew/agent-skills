@@ -1,24 +1,13 @@
 ---
 name: reproduce-then-fix
-description: Fix bugs by reproduction and root cause, never by plausible patch — no fix ships without a red reproduction seen failing first, an explained mechanism, and the repro kept as a regression test. Use when fixing any bug, flaky test, or incident; when asked to "just patch it" or "make the error go away"; when a fix is proposed without a failing test; when debugging something that "works on my machine"; or when the user mentions bug fixing, root cause, RCA, regression, reproduction, or "why did this break".
+description: Use when fixing any bug, flaky test, or incident; when a fix is proposed with no failing reproduction; when asked to just patch it; or when an error disappeared and nobody can say why. Not for triaging whether something is a bug at all.
+roles: [implement, revert]
+gate: verified-red
 ---
 
 # Reproduce, Then Fix
 
 A fix you can't watch fail is a guess, and a fix you can't explain is a coincidence. Both regress. The discipline that prevents this is one loop, applied to every bug regardless of size: **reproduce red → minimize → explain the mechanism → fix the cause → watch red turn green → keep the repro.** Each step exists because skipping it produces a specific, well-known failure: patches that mask symptoms, "fixed" bugs that were never the bug you saw, and regression tests that would pass with the bug still present.
-
-## Use this skill when
-
-- Fixing any bug — from a failing test to a production incident
-- A fix is being proposed (by you or anyone) without a failing reproduction
-- A test is flaky and someone wants to retry, skip, or delete it
-- The error is gone but nobody can say why ("it works now")
-- Investigating "works on my machine" / environment-dependent behavior
-
-## Do not use this skill when
-
-- The defect is a typo-level mistake whose mechanism is self-evident from the diff — write the regression test, but skip the ceremony
-- Triaging *whether* something is a bug — that's investigation; this skill starts once a wrong behavior is established
 
 ## The loop
 
@@ -64,6 +53,12 @@ Exit 2 means not certified, and says which half broke — a red run that *passes
 ### 6. Keep the reproduction
 
 The minimized repro becomes a permanent regression test, named after the behavior it pins (not the ticket number), asserting the discriminating detail — the specific wrong value or error kind, not merely "doesn't crash" (`reading-isnt-proof` has the assertion table). Then audit the fix itself: a fix is new code written under pressure, with the same defect rate as any code written under pressure (`self-audit` pass 8 — what did the fix move, and what does its new position break?).
+
+**Typo-level defects skip the ceremony, not the test.** Where the mechanism is
+self-evident from the diff — a transposed argument, an inverted comparison —
+write the regression test and move on without the minimize-and-explain passes.
+The test is what stops the defect returning; the ceremony is what explains a
+mechanism that here needs no explaining.
 
 ## No unexplained transitions
 

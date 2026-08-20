@@ -1,6 +1,9 @@
 ---
 name: reading-isnt-proof
-description: Never close a test gap in a multi-implementation contract on the strength of a code read - when one contract has two or more implementations and you are about to say "nothing tests X", write the shared conformance battery and run it, even when you believe there is no defect. Use when auditing ports/interfaces/adapters with several backends, verifying a mock or fake against the real implementation it stands in for, reporting a test gap, or when the user mentions conformance, parity, differential testing, "do they behave the same", or cross-backend behavior.
+description: Use when one contract has two or more implementations — adapters, backends, clients, or a fake standing in for the real thing — and you are about to report that nothing tests something. Not for a single implementation, and not where a shared battery already exists.
+roles: [implement, review]
+gate: none
+gate_reason: the battery this demands is the gate; it lives in the project under audit, not here
 ---
 
 # Reading Isn't Proof
@@ -12,27 +15,12 @@ decide.
 
 If a gap is worth naming out loud, it is worth the ~30 minutes the battery costs.
 
-## Use this skill when
-
-Both of these hold:
-
-1. **One contract, two or more implementations.** A port with several adapters, an
-   interface with several backends, a spec with several clients. A mock/fake plus
-   one real implementation counts — and is the best case, because that pair is
-   what everyone else's tests are silently trusting.
-2. **You are about to say "no test covers X"** — whatever you currently believe
-   about X.
-
-Also reach for it when: auditing adapter parity, verifying a mock against a real
-backend, or the user says "conformance", "differential", "parity", or "do they
-behave the same?".
-
-## Do not use this skill when
-
-- The code has **one** implementation. A promise with one implementation is a
-  definition, not a claim that can diverge — this rule does not license writing
-  batteries for everything.
-- A shared battery for that contract already exists — extend it, don't fork it.
+**One implementation is out of scope, and that is not a hedge.** A promise with a
+single implementation is a definition, not a claim that can diverge — this rule
+does not license writing batteries for everything. Two is the threshold, and a
+fake plus the real thing it stands in for is the best case of two, because that
+pair is what everyone else's tests are silently trusting. Where a shared battery
+for the contract already exists, extend it rather than fork it.
 
 ## The rule
 

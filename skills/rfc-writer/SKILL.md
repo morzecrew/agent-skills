@@ -1,6 +1,8 @@
 ---
 name: rfc-writer
-description: Author and maintain numbered RFC design documents in a project's rfcs/ directory, tracked by an INDEX.md. Use whenever the user asks to write an RFC, design proposal, design doc, technical spec, or architecture proposal; wants to record a design decision, its alternatives, or why an approach was rejected before building; asks to update an RFC's status after shipping; or asks to set up / clean up an rfcs/ directory or its index.
+description: Use when asked to write an RFC, design proposal, design doc, technical spec, or architecture proposal; to record a decision and the alternatives it beat before building; to update an RFC's status after shipping; or to set up an rfcs/ directory. Not for user-facing documentation.
+roles: [author]
+gate: rfc-index
 ---
 
 # RFC Authoring and Maintenance
@@ -8,20 +10,6 @@ description: Author and maintain numbered RFC design documents in a project's rf
 This skill authors and maintains lightweight RFCs — numbered Markdown design proposals that live in the repository next to the code they describe. An RFC captures a design *before* (or while) it is built: the problem, the current state of the code, the locked decisions with their rationale, and what is deliberately out of scope. The collection is tracked by a single `INDEX.md` so the whole design history is scannable in one table.
 
 RFCs here are working documents, not bureaucracy: they exist so that decisions survive context loss, so that a picked-up design is "a single small PR, nothing more", and so that rejected alternatives don't get re-litigated.
-
-## Use this skill when
-
-- The user asks to write an RFC, design doc, design proposal, technical spec, or architecture proposal
-- The user wants to record or lock a design decision — with the alternatives it beat, or why an approach was rejected — before implementing it
-- The user asks to update an RFC (status change, execution notes, marking it shipped or rejected)
-- The user asks to create, index, or reorganize an `rfcs/` (or `rfc/`) directory
-- A large feature discussion should be captured as a durable document
-
-## Do not use this skill when
-
-- The user wants product documentation, a README, or user-facing docs (not a design proposal)
-- The user wants an ADR in a repo that already has an established ADR convention — follow that convention instead
-- The change is trivial enough that a commit message or PR description carries it
 
 ## Directory and index
 

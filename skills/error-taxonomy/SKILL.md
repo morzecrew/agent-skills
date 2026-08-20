@@ -1,6 +1,9 @@
 ---
 name: error-taxonomy
-description: Design and enforce an error contract — a small closed set of error kinds, each with a decided transport mapping, message exposure, and retryability — and classify every raise site against it. Use when designing error handling for an API or module, deciding what exception to raise or what status an error maps to, reviewing raise sites or catch blocks, classifying errors as retryable, cleaning up inconsistent error handling, or when the user mentions error codes, error kinds, exception hierarchy, "which status should this return", or error-handling hygiene.
+description: Use when designing error handling for an API or module, deciding what to raise or what status an error maps to, reviewing raise sites and catch blocks, or sweeping a codebase where everything is a 500. Not for user-facing error copy.
+roles: [implement]
+gate: none
+gate_reason: scripts/error_census.py finds and counts raise sites; which kind each one belongs to is the judgement
 ---
 
 # Error Taxonomy
@@ -8,19 +11,6 @@ description: Design and enforce an error contract — a small closed set of erro
 Errors are contract surface. The **kind** of an error — not its message — is what callers branch on, what transports map to status codes, what retry loops consult, and what tests assert. A codebase without a decided taxonomy makes these calls ad hoc at every raise site, and the result is the same client mistake returning 500 from one endpoint and 400 from another, retry loops spinning on misconfiguration, and callers string-matching messages because nothing else is stable.
 
 The fix is a small closed set of kinds, each carrying three attributes **decided once, at design time**: transport mapping, message exposure, and retryability. Classification happens at the raise site; every consequence (status, visibility, retry) follows mechanically from the kind.
-
-## Use this skill when
-
-- Designing error handling for a new API, module, or service
-- Deciding what to raise, what status code an error maps to, or whether it's retryable
-- Reviewing a diff's raise sites and catch blocks
-- Sweeping an existing codebase for misclassified errors ("everything is a 500")
-- Callers or tests are string-matching error messages
-
-## Do not use this skill when
-
-- Writing user-facing error *copy* — that's UX writing; this skill governs the contract underneath it
-- A throwaway script where the only consumer is the person running it
 
 ## The taxonomy
 

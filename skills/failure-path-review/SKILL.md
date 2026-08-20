@@ -1,6 +1,9 @@
 ---
 name: failure-path-review
-description: Systematically review the unhappy paths of asynchronous and background systems — consumers, workers, queues, retry loops, schedulers, shutdown — where poison messages, misclassified retries, crash-redelivery, and abandoned in-flight work hide because failure code only runs when things go wrong. Use when writing or reviewing message consumers, background loops, job runners, retry/backoff logic, or shutdown handling; after an incident involving stuck, lost, or duplicated work; or when the user mentions poison messages, DLQ, redelivery, graceful shutdown, drain, backpressure, or "review the failure paths".
+description: Use when writing or reviewing a consumer, worker, background loop, job runner, retry or backoff path, or shutdown handling; or after an incident involving stuck, lost, or duplicated work. Not for synchronous handlers, and not for diagnosing one live failure.
+roles: [review]
+gate: none
+gate_reason: a sweep of unhappy paths produces findings, not a pass/fail artifact
 ---
 
 # Failure-Path Review
@@ -8,19 +11,6 @@ description: Systematically review the unhappy paths of asynchronous and backgro
 Happy paths verify themselves: development exercises them, demos exercise them, the first day in production exercises them. Failure paths run only when things go wrong — which is rare, unobserved, and usually concurrent with an incident — so they rot silently. A multi-package review of five broker/durable integrations found exactly this split: *every* happy path sound, and a defect list consisting entirely of poison handling, redelivery, shutdown, and recovery. Review the unhappy paths as their own deliberate pass, because nothing else will.
 
 The review targets any system that processes work it didn't synchronously receive: message consumers, queue workers, background loops, schedulers, relays, durable workflows.
-
-## Use this skill when
-
-- Writing or reviewing a consumer, worker, background loop, or job runner
-- Adding retry, backoff, or dead-letter behavior
-- Implementing or reviewing shutdown, restart, or deploy handling
-- After an incident involving stuck, lost, duplicated, or infinitely-retried work
-- The user asks to "review the failure paths" or harden an async system
-
-## Do not use this skill when
-
-- The code is a synchronous request handler with no background or queued work — `error-taxonomy` covers its error contract
-- Diagnosing one specific live failure — that's `reproduce-then-fix`; this skill is the systematic sweep that prevents the next one
 
 ## The review passes
 

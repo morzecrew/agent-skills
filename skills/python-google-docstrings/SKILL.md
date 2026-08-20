@@ -1,6 +1,9 @@
 ---
 name: python-google-docstrings
-description: Write Google-style Python docstrings — Args/Returns/Raises/Attributes sections that render under Sphinx Napoleon and read well in IDE tooltips. Use whenever writing, editing, or reviewing Python docstrings or API documentation, documenting functions, classes, modules, or constants, or when the user mentions docstrings, Google style, Napoleon, or asks to "document this code".
+description: Use when writing, editing, or reviewing Python docstrings in a project that uses Google style — Args:/Returns:/Raises:/Attributes: sections under Sphinx Napoleon. Not for reST field lists, not for NumPy style, and not for prose documentation.
+roles: [implement, author]
+gate: none
+gate_reason: a linter can demand a docstring exists; whether it states the contract is a read
 ---
 
 # Python Docstrings — Google Style
@@ -10,19 +13,6 @@ side effects, and failure conditions. Google style expresses those as indented
 sections (`Args:`, `Returns:`, `Raises:`) that Sphinx Napoleon compiles into the same
 field lists reST uses — so write for two readers at once: a human scanning a tooltip
 and Sphinx rendering API docs.
-
-## Use this skill when
-
-- Writing or editing Python docstrings in a project that uses Google style (`Args:` sections)
-- Documenting new Python functions, classes, methods, modules, or constants
-- Reviewing or fixing docstrings for Sphinx Napoleon rendering
-- Standardizing drifting or mixed docstring conventions toward one consistent style
-
-## Do not use this skill when
-
-- The project writes reST field lists (`:param x:`) — use python-rest-docstrings instead
-- The project uses NumPy style (section names underlined with dashes)
-- Writing READMEs, guides, or comments — docstrings state API contracts, not narratives
 
 ## Canonical shape
 

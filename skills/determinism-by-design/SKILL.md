@@ -1,6 +1,8 @@
 ---
 name: determinism-by-design
-description: Treat every source of nondeterminism — time, randomness, ID generation, iteration order, concurrency schedule, environment — as an injected dependency behind a seam, so tests are hermetic, failures replay from a seed, and simulations are byte-identical. Use when writing code that touches clocks, timeouts, random values, UUIDs, retries with jitter, or concurrent tasks; when a test is flaky or timing-dependent; when building replayable simulations or record/replay debugging; or when the user mentions determinism, seeds, flaky tests, frozen time, fake clocks, reproducibility, or "make this testable".
+description: Use when code reads a clock, sleeps, generates random values or IDs, retries with jitter, or spawns concurrent tasks; when a test is flaky or timing-dependent; or when building replay or simulation. Not where the nondeterminism is the product, such as key generation.
+roles: [implement]
+gate: unseamed-calls
 ---
 
 # Determinism by Design
@@ -8,19 +10,6 @@ description: Treat every source of nondeterminism — time, randomness, ID gener
 Nondeterminism is a dependency. Code that calls the wall clock, the OS entropy pool, or the scheduler directly has hard-wired an uncontrollable input — and everything downstream inherits it: tests that need sleeps and retries, failures that vanish under observation, "run it 100 times" as a verification strategy. The fix is the same as for any dependency: **inject it**. Route every nondeterministic source through a seam the caller controls, wire the real source in production, and wire a controlled one everywhere reproducibility matters.
 
 What this buys compounds: hermetic tests that cannot flake, failures that replay from a single seed, forced interleavings that turn race conditions into on-demand reproductions, and differential runs where two implementations see byte-identical inputs.
-
-## Use this skill when
-
-- Writing code that reads time, sleeps, generates random values or IDs, retries with jitter, or spawns concurrent tasks
-- A test is flaky, timing-dependent, or passes only in isolation
-- Building simulation, record/replay, or deterministic-testing infrastructure
-- Reviewing a diff that calls clock/RNG/entropy APIs directly in logic that has a seam
-- Two runs of "the same thing" produce different outputs and that surprises someone
-
-## Do not use this skill when
-
-- The nondeterminism *is* the product (cryptographic key generation must use OS entropy — a seam there is a vulnerability, not a convenience; keep secure randomness on its own dedicated, non-seeded path)
-- One-off scripts with no tests and no replay need
 
 ## The seams
 
@@ -61,6 +50,13 @@ A hermetic test touches no real time, no real randomness, no network, no shared 
 - **No sleeps in tests, ever.** A sleep is a bet about scheduling; virtual time replaces the bet with a fact. Same for "retry the assertion for 5 s" polling loops.
 - **A flake is a reproduction you haven't forced yet.** When a test is flaky, the move is not retry/quarantine — it's finding which unseamed source (real time, real scheduling, shared state, unordered iteration) lets runs differ, and seaming it. This is step 1 of `reproduce-then-fix` for concurrency bugs, and forced interleaving turns "fails one run in 500" into "fails every run under schedule (A, A, B, B)".
 - Determinism also collapses test *volume*: one forced schedule per interesting interleaving replaces run-it-many-times probabilistic families (`fewer-tests-more-proof`).
+
+## Where a seam is the vulnerability
+
+Secure randomness is the exception the seams do not get. Cryptographic key
+material, tokens, and nonces must read the OS entropy pool directly, on a
+dedicated non-seeded path: an injection point there is a way to make the values
+predictable, which is the whole attack. Everything else routes through a seam.
 
 ## The honesty boundary
 

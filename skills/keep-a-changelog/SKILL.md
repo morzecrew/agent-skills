@@ -1,25 +1,13 @@
 ---
 name: keep-a-changelog
-description: Maintain CHANGELOG.md in Keep a Changelog 1.1.0 format — sort changes into Added/Changed/Deprecated/Removed/Fixed/Security, keep the Unreleased section current, cut version sections, and handle breaking changes, reverts, and yanked releases. Use when asked to "update the changelog", "add to the changelog", "write release notes", "cut/prepare a release section", "bump the version", or when user-facing changes land that CHANGELOG.md should record.
+description: Use when asked to update CHANGELOG.md, add an entry, write release notes, or cut a version section; or when user-facing changes land that it should record. Not when the file is auto-generated in another format, and not for performing the release itself.
+roles: [author]
+gate: validate-changelog
 ---
 
 # Keep a Changelog Assistant
 
 Changelogs are for humans, not machines. A good changelog lets a user answer one question fast: "what does upgrading do to me?" This skill keeps `CHANGELOG.md` in [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) format: the agent maintains `## [Unreleased]` and, when explicitly asked, prepares version sections. The human decides when and how to actually cut, tag, and publish a release.
-
-## Use this skill when
-
-- The user asks to update or maintain `CHANGELOG.md`, or says "update the changelog", "add to changelog"
-- Landed changes are user-facing and `CHANGELOG.md` should record them
-- The user wants changes categorized into `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`
-- The user asks to turn accumulated `Unreleased` notes into a versioned section ("cut a release", "prepare 1.2.0")
-
-## Do not use this skill when
-
-- There is no `CHANGELOG.md`, or it deliberately follows a different format (e.g. auto-generated release notes)
-- The changes are purely internal and invisible to users — nothing to record
-- The user wants the release itself performed (tagging, publishing) — that stays with the human
-- The user wants commit messages or PR titles — use `gitmoji-conventional`
 
 ## The Keep a Changelog spec
 

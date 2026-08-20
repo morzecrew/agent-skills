@@ -1,6 +1,9 @@
 ---
 name: python-rest-docstrings
-description: Write reST Python docstrings — Sphinx info field lists (:param/:returns/:raises) and cross-reference roles (:class:/:meth:/:func:) that render natively in Sphinx and IDE tooltips. Use whenever writing, editing, or reviewing Python docstrings or API documentation, documenting functions, classes, modules, or constants, or when the user mentions docstrings, reST, reStructuredText, Sphinx roles, or asks to "document this code".
+description: Use when writing, editing, or reviewing Python docstrings in a project that uses reST field lists — :param:/:returns:/:raises: and Sphinx cross-reference roles. Not for Google-style sections, not for NumPy style, and not for prose documentation.
+roles: [implement, author]
+gate: none
+gate_reason: a linter can demand a docstring exists; whether it states the contract is a read
 ---
 
 # Python Docstrings — reST Style
@@ -10,19 +13,6 @@ side effects, and failure conditions. reST style expresses those in Sphinx's nat
 language — info field lists (`:param:`, `:returns:`, `:raises:`) and cross-reference
 roles — so write for two readers at once: a human scanning a tooltip and Sphinx
 rendering API docs with real links.
-
-## Use this skill when
-
-- Writing or editing Python docstrings in a project that uses reST field lists (`:param x:`)
-- Documenting new Python functions, classes, methods, modules, or constants
-- Reviewing or fixing docstrings for Sphinx rendering and cross-linking
-- Standardizing drifting or mixed docstring conventions toward one consistent style
-
-## Do not use this skill when
-
-- The project writes Google-style sections (`Args:`) — use python-google-docstrings instead
-- The project uses NumPy style (section names underlined with dashes)
-- Writing READMEs, guides, or comments — docstrings state API contracts, not narratives
 
 ## Canonical shape
 

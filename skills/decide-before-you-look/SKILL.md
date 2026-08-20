@@ -1,6 +1,8 @@
 ---
 name: decide-before-you-look
-description: Pre-registers what a run will decide before the data exists — a six-line call block with a predicted number, an 80% interval required to be tighter than the range the decision turns on, a probability of surviving, the likeliest reason to be wrong, and the artifact already on hand that could answer it without running anything. Covers frozen thresholds and append-only amendments, refusing to lower a bar after seeing results, pre-committing where a null sends the effort, reporting a leaning alongside the deciding measurement, never adjusting a run in flight, and where a stakeholder's multiplier belongs. Use before any experiment, benchmark, A/B, spike, or evaluation; when a threshold is being changed after results are visible; when a run is producing an inconvenient answer; or when someone asks for "N times better".
+description: Use before any experiment, benchmark, A/B, spike, or evaluation; when a threshold is set or moved after results are visible; when a run is producing an inconvenient answer; or when someone asks for "3x better". Not for exploration that decides nothing.
+roles: [author, implement]
+gate: call-block
 ---
 
 # Decide Before You Look
@@ -8,20 +10,6 @@ description: Pre-registers what a run will decide before the data exists — a s
 Thresholds move after the results arrive, and whoever moves them experiences it as having understood the problem better. That is not weakness to be resisted harder — it is what seeing an outcome does to someone who was hoping for a particular one. The only dependable remedy is to write the decision down while the answer is still unknown, somewhere that cannot be quietly revised.
 
 The core is one short artifact. Everything else here is what it costs to skip it.
-
-## Use this skill when
-
-- Designing any experiment, benchmark, A/B test, spike, kill-test, or evaluation
-- Any threshold or success criterion is being set — or changed once results are visible
-- A run is underway and producing an inconvenient answer
-- A stakeholder asks for "3× better", "half the latency", or any multiplier on an outcome
-- Reporting a partial result while the measurement that decides is still running
-- Reviewing whether a finished evaluation actually settled anything
-
-## Do not use this skill when
-
-- The work carries no decision — exploratory reading, or a spike whose only output is a description of the terrain. Say so explicitly: an exploration relabelled as a test once it produces a pleasing number is the precise failure this prevents.
-- The measurement is free and instantly repeatable, so being wrong costs another few seconds
 
 ## The call block
 

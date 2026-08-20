@@ -1,24 +1,14 @@
 ---
 name: pr-review-loop
-description: Work a pull request's review loop to convergence — wait for AI reviewers (CodeRabbit, Greptile, and similar) and humans, dedup comments into findings, give each an evidence-backed verdict, fix what's valid, refute what's wrong, react and resolve coherently, meet the coverage floor, push, repeat — without ever merging. Use when a PR has review comments to address, when the user says "handle the review feedback", "address PR comments", "work the PR", "respond to the reviewers", "fix what CodeRabbit found", or after opening a PR that AI reviewers will annotate.
+description: Use when a pull request has reviewer comments — AI or human — waiting to be addressed, or when a coverage gate is failing on one. Not for reviewing someone else's PR, not for pre-PR polishing, and never for merging.
+roles: [implement]
+gate: none
+gate_reason: this governs how comments are answered; scripts/pr_loop.py drives the loop but certifies nothing
 ---
 
 # PR Review Loop
 
 This skill runs the *author's* side of code review: taking a PR through rounds of AI and human reviewer feedback until everything is fixed, answered, or honestly escalated. Two failure modes make the discipline necessary. **Sycophancy** — fixing everything reviewers say, including wrong suggestions, degrading the code to appease bots. **Defensiveness** — refuting everything, shipping the bugs the reviewers correctly caught. The loop's core is therefore an evidence-backed verdict per finding, with the same honesty rules as any audit: a fix requires a reproduced problem, a refutation requires a demonstrated non-problem, and neither is decided by how confident the comment sounded.
-
-## Use this skill when
-
-- A PR has reviewer comments (AI or human) waiting to be addressed
-- The user says "handle the review", "address the comments", "work the PR loop"
-- A PR was just opened and AI reviewers (CodeRabbit, Greptile, Codeant, cubic, …) will report
-- A coverage gate (codecov or similar) is failing on a PR
-
-## Do not use this skill when
-
-- *Performing* a review of someone else's PR — that's a code-review flow, the other side of the table
-- The user wants the PR merged — merging is explicitly outside this skill (see the rails)
-- There is no PR: pre-PR polishing of a branch is `self-audit` territory
 
 ## Hard rails (read first, never bend)
 

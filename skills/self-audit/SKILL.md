@@ -1,6 +1,8 @@
 ---
 name: self-audit
-description: Adversarially audit your own just-finished work — a branch after RFC/feature execution, a fix series, a document set — hunting for defects you introduced, before merge or handoff. Use whenever the user says "do self-audit", "audit your work", "self-audit this branch", "check your own changes", "double-check what you built", "review your own diff", or asks to find the bugs in work you produced before merging or handing it off; also applicable to non-code deliverables (docs, configs, infra).
+description: Use when a branch, fix series, or document set of your own is finished and about to be merged or handed off, or when the user says "self-audit", "audit your work", or "check your own changes". Not for reviewing someone else's code, and not mid-flight.
+roles: [implement]
+gate: audit-scope
 ---
 
 # Self-Audit
@@ -8,19 +10,6 @@ description: Adversarially audit your own just-finished work — a branch after 
 A self-audit is a deliberate post-execution pass where you become the adversary of your own work. The deliverable is finished — the RFC executed, the fix series written, the document drafted — and before it merges or ships, you re-enter it with one assumption: **it contains defects, and your job is to find them.** Not to confirm correctness, not to summarize what was done — to find what's wrong.
 
 This works because the author's blind spots are systematic, not random. The same few places hide defects every time, so an audit that walks those places deliberately finds real bugs that the writing pass — and often the test suite — missed. A clean audit is a valid outcome — but on substantial branches (thousands of lines) it is rare, so it must arrive as a report carrying its evidence: the scope walked, the checks actually performed, and what remains uncertain (see Fixing and reporting). Never manufacture a finding to avoid reporting clean.
-
-## Use this skill when
-
-- The user says "do self-audit", "self-audit", "audit your work", or similar
-- A branch is complete (RFC execution, feature, fix series) and about to be merged
-- A multi-commit body of your own work needs a defect hunt before handoff
-- The user asks you to double-check work you produced earlier in the session or in prior sessions
-
-## Do not use this skill when
-
-- Reviewing *someone else's* PR or code — use a code-review flow; self-audit's leverage comes from auditing the author's own blind spots
-- The user wants a summary or changelog of what was done — that's reporting, not auditing
-- Work is still mid-flight — audit a finished unit, otherwise findings and WIP blur
 
 ## Establish the scope first
 
