@@ -111,6 +111,6 @@ tweaks before measurement — those still wait for the profiler.
 
 ## Related skills
 
-- `never-nesting`, `naming-things`, `self-documenting-code` — keep code clear first; optimize measured hotspots second.
+- `readable-code` — keep code clear first; optimize measured hotspots second. Absent it, the ordering is the rule that matters: an unreadable hotspot is optimized blind.
 - `composition-over-inheritance` — the adaptability whose small indirection cost is usually worth paying.
 - `reading-isnt-proof` — a benchmark you ran beats a speedup you inferred from reading the code.

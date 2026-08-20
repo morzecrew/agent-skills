@@ -1,12 +1,6 @@
----
-name: self-documenting-code
-description: Use when writing or reviewing comments, when a comment seems needed to explain what a line does, when deciding whether to keep or delete an existing one, or when refactoring dense logic. Not for teaching codebases, and not to delete a comment that is merely inconvenient.
-roles: [implement, review]
-gate: none
-gate_reason: no check distinguishes a comment that earns its place from one that restates the code
----
+# Comments
 
-# Self-Documenting Code
+What to refactor away, and what no rewrite can express.
 
 The test for any comment: **does it say something at the same level of
 abstraction as the code next to it?** If yes, it duplicates the code — refactor
@@ -126,18 +120,3 @@ A clean one-sentence comment is evidence of a clean abstraction.
 | What a public function does for callers | Keep — interface contract |
 | Why this design / workaround / tuning | Keep — rationale |
 | Corrects a misleading name | Fix the name, then delete |
-
-## Quick checklist
-
-- Could a reader reconstruct this comment from the code alone? Delete it (refactor first if needed).
-- Commented condition or literal? Extract a predicate / name the constant.
-- Could a type enforce the claim? Encode it there.
-- Does the declaration leave units, bounds, or invariants open? Add the precision comment.
-- Public interface without a caller-level summary? Write one, free of implementation detail.
-- Hard to write that summary in a sentence? Suspect the abstraction, not the prose.
-
-## Related skills
-
-- `naming-things` — precise names are the primary mechanism for deleting "what" comments.
-- `never-nesting` — extracted, well-named functions document structure that comments would otherwise narrate.
-- `python-google-docstrings` / `python-rest-docstrings` — formats for the interface documentation this skill says to keep.

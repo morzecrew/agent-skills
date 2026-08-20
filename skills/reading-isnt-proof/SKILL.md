@@ -164,7 +164,8 @@ State three things: what the battery covers, what it found, and what you changed
   owns the battery craft.
 - `self-audit` — its verification-honesty pass is where this rule fires during a
   branch audit.
-- `self-documenting-code`, `naming-things` — check names are the battery's
-  documentation; each one states its claim.
+- `readable-code` — check names are the battery's documentation; each one
+  states its claim. Absent it, name each check for the promise it tests, not
+  for the function it calls.
 - `rfc-writer` — when the battery surfaces a contract question too big to settle
   in the fix.

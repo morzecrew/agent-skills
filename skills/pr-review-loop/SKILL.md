@@ -83,7 +83,7 @@ From round two, pass `--since` with the previous round's finish. `--unresolved-o
 
 Four verdicts, each with an obligation:
 
-- **Valid → fix it.** For a claimed bug, reproduce it red first (`reproduce-then-fix`) — reviewers hallucinate, and a fix for an unreproduced claim is speculative. For a claimed test gap in a shared contract, write and run the battery instead of agreeing from a read (`reading-isnt-proof`). Bring in whatever applicable skill the fix touches (`error-taxonomy` for misclassified raises, `never-nesting`/`naming-things` for style findings, …).
+- **Valid → fix it.** For a claimed bug, reproduce it red first (`reproduce-then-fix`) — reviewers hallucinate, and a fix for an unreproduced claim is speculative. For a claimed test gap in a shared contract, write and run the battery instead of agreeing from a read (`reading-isnt-proof`). Bring in whatever applicable skill the fix touches (`error-taxonomy` for misclassified raises, `readable-code` for style findings, …).
 - **Valid but out of scope → acknowledge.** Say it's real, say where it goes (issue, follow-up PR), don't silently expand this PR.
 - **In a file this repo doesn't own → answer it and hand it upstream.** Resolve only if a bot opened the thread; see below.
 - **Wrong / irrelevant → refute.** The refutation must cite something checkable — the code path that handles the case, the test that pins it, the doc that decided it. "Disagree" without evidence is not a verdict.

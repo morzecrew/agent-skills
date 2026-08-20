@@ -202,5 +202,5 @@ def register(self, op: str, *, inplace: bool = False) -> Self | None:
 ## Related skills
 
 - python-google-docstrings — the same rules expressed as Google-style sections via Sphinx Napoleon
-- self-documenting-code — better names and structure shrink what docstrings must explain
+- `readable-code` — better names and structure shrink what a docstring must explain. Absent it, the boundary still holds: a docstring states the contract, not the implementation.
 - altitude-docs — deciding what belongs in docstrings vs higher-level documentation

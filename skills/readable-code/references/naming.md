@@ -1,12 +1,8 @@
----
-name: naming-things
-description: Use when naming or renaming a variable, function, class, type, or module, or when reviewing a diff where an identifier reads unclear, abbreviated, generic, or misleading. Not when the name is dictated by an external contract or an ecosystem convention.
-roles: [implement, review]
-gate: none
-gate_reason: a linter enforces casing; whether a name means what it says is a read
----
+# Naming
 
-# Naming Things in Code
+A name is read far more often than its definition. Its job is to tell the
+reader what something *is* and *means* at the point of use, without a jump to
+the declaration.
 
 A name is read far more often than its definition. Its job is to tell the
 reader what something *is* and *means* at the point of use, without a jump to
@@ -114,19 +110,3 @@ read the difficulty as feedback. A function you can only call
 `DataManager` has no single responsibility: reshape it. A variable you can
 only call `temp` or `result2` marks a computation that should be its own named
 step or function.
-
-## Quick checklist
-
-- Would this name still be clear at its farthest point of use? Scale length to scope.
-- Would a domain expert recognize the vocabulary? Prefer problem-domain words.
-- Does every boolean read as a positive true/false claim at the `if` site?
-- Does every unit-bearing number carry its unit in name or type?
-- Same concept, same word everywhere? Pairs symmetric?
-- Does the name promise exactly what the code does — no hidden creation, mutation, I/O?
-- Any entry from the anti-pattern table? Apply its fix.
-- Still stuck after real effort? Change the structure, not just the name.
-
-## Related skills
-
-- `never-nesting` — extraction creates functions that need names; an unnameable block isn't ready to extract.
-- `self-documenting-code` — precise names are the main tool that makes "what" comments deletable.

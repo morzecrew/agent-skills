@@ -128,6 +128,5 @@ built to be extended is unsafe to extend across a package boundary.
 
 ## Related skills
 
-- `naming-things` — `Base`/`Abstract`/`Common` parent names often signal reuse-driven inheritance.
-- `self-documenting-code` — an interface documents a contract better than a parent class's method bodies.
+- `readable-code` — `Base`/`Abstract`/`Common` parent names often signal reuse-driven inheritance. Absent it, the tell still holds: a parent named for its position in a hierarchy was named by the mechanism, not the domain.
 - `measure-before-optimizing` — delegation's indirection cost is a non-problem until measured otherwise.
