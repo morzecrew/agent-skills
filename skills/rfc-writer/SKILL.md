@@ -25,7 +25,7 @@ RFCs here are working documents, not bureaucracy: they exist so that decisions s
 
 If the directory exists but has a `README.md` in this role, treat it as the index. If asked to set up fresh, use `INDEX.md` — copy `references/index-template.md`.
 
-**One non-numbered resident: `EXECUTION-LOG.md`.** `flag-dont-flip` writes it, and it holds what execution found wherever the code and these designs disagreed. It is not an RFC — no number, no status, no row in the index table — so `rfc_index.py` ignores it along with anything else not named `NNNN-*.md`. Where it exists, the index links to it in prose above the table, because a reader who is deciding which RFC to open needs to know that the document they are about to trust has a companion recording where it turned out to be wrong. Do not create it here: it is written by the first completed execution unit, which records its drift count even at zero. Creating it alongside an empty directory would give it nothing to claim.
+**Where execution's findings live: `logs/<task-id>.md`, outside this directory.** `flag-dont-flip` writes one per task, holding what execution found wherever the code and these designs disagreed. They are not RFCs — no number, no status, no row in the index table — and `rfc_index.py` ignores anything not named `NNNN-*.md`. Once any of them exist, the index links to `logs/` in prose above the table, because a reader deciding which RFC to open needs to know the document they are about to trust has a companion recording where it turned out to be wrong. Do not create them here: a task log is written by the task that executed.
 
 ## Numbering and filenames
 
@@ -96,11 +96,11 @@ Every row in the Decisions table carries a grade. The grade tells whoever execut
 
 ## Reconciling what execution learned
 
-Execution finds things the design could not. When it does, the executor **proposes** rows — in `EXECUTION-LOG.md`, with the evidence that produced them — and the author appends them. Three rails:
+Execution finds things the design could not. When it does, the executor **proposes** rows — in its task log, with the evidence that produced them — and the author appends them. Three rails:
 
 - **The decision table is append-only.** A superseded row stays, marked superseded, naming the row that replaced it. The history of a decision is the part that stops it being re-litigated.
 - **Never amend the RFC's prose to match what was built.** It reads as tidying, and it destroys the only evidence that a decision changed at all — which is precisely what a later reader needs in order to trust the document. Record the change; don't erase the disagreement.
-- **An accepted row cites the log entry it came from** — `Added by execution 2026-08-14 — see [EXECUTION-LOG.md](EXECUTION-LOG.md) D-001` at the end of the row. The row states the decision; the entry holds what was actually found, what was built instead, and what it cost. Without the link the row reads as something the author thought of, which loses the one fact that makes it credible: it was forced by contact with the code.
+- **An accepted row cites the log entry it came from** — `Added by execution 2026-08-14 — see logs/T-0142.md (D-3, attempt 2)` at the end of the row. Task-log entries carry no identifiers of their own, so the handle is the file plus the decision the entry cites plus its attempt; that triple is unique and nothing about it has to be renumbered. The row states the decision; the entry holds what was actually found, what was built instead, and what it cost. Without the link the row reads as something the author thought of, which loses the one fact that makes it credible: it was forced by contact with the code.
 
 An RFC whose prose has been quietly retrofitted is worse than one that is visibly out of date: the second tells you to check, the first does not.
 
@@ -140,7 +140,7 @@ python3 scripts/rfc_index.py new "Title" --number 42   # a reserved number, or r
 ### B — Update an existing RFC
 
 1. When work ships partially or fully, update the `**Status:**` line — and annotate it with what shipped and when ("Shipped 2026-06-29: …; only P5 remains").
-2. If execution diverged from the design, the divergence is already in `EXECUTION-LOG.md`; what lands here is the decision row it proposed, appended and citing its entry. Don't silently rewrite history, and don't restate the log's narrative in the RFC — the row is the contract, the entry is the evidence, and duplicating one into the other means they will disagree later.
+2. If execution diverged from the design, the divergence is already in that task's log; what lands here is the decision row it proposed, appended and citing its entry. Don't silently rewrite history, and don't restate the log's narrative in the RFC — the row is the contract, the entry is the evidence, and duplicating one into the other means they will disagree later.
 3. Mirror the status in the index table. Leave the one-liner alone unless the RFC's *subject* changed — shipping, phasing and amendments are the RFC's history, not the index's.
 4. Rejected designs get ❌ and stay in the directory.
 
@@ -153,7 +153,7 @@ Run `rfc_index.py check` — it reports every file without an index row and vice
 1. Create `rfcs/` (unless the user wants `rfc/` or one already exists).
 2. Create `INDEX.md` from `references/index-template.md`, filling in the project name and setting the next free number to `0001`.
 3. Do not touch `.gitignore` — mention that committing vs. ignoring the directory is the user's choice.
-4. Do not create `EXECUTION-LOG.md`. It is `flag-dont-flip`'s, and the first completed execution unit writes it; the index gains its pointer at the same time.
+4. Do not create anything under `logs/`. Task logs are `flag-dont-flip`'s, written by the task that executed; the index gains its pointer once any of them exist.
 
 ## References
 
@@ -162,7 +162,7 @@ Run `rfc_index.py check` — it reports every file without an index row and vice
 
 ## Related skills
 
-- `flag-dont-flip` — executes an RFC against its grades, owns `EXECUTION-LOG.md`, and proposes the rows execution turned up
+- `flag-dont-flip` — executes an RFC against its grades, owns the task logs, and proposes the rows execution turned up. Absent it, an accepted row still cites where the finding came from; an uncited row reads as something the author thought of.
 - `altitude-docs` — the user-facing documentation that ships after the design; the RFC's Docs section points at it
 - `self-audit` — adversarial review of the branch that executed an RFC, before merge
 - `keep-a-changelog` — records what shipped; the RFC records why it was built that way

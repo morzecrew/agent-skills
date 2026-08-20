@@ -88,12 +88,12 @@ The passes generalize: spec fidelity (§1) and prose honesty (§7) apply verbati
 - **Fix as you find, on the same branch.** The work is your own and unmerged — clear defects get fixed immediately, then re-audited (§8). Leave open only what genuinely needs the user's decision (a spec change, a scope call), and say so.
 - **Report findings, not activities.** For each finding: where, what's wrong, why it matters (the concrete failure it causes), and its status — fixed or open. Rank by severity.
 - **State the scope and the residue.** What was audited, what wasn't, and what you'd still distrust. A no-findings audit is reported the same way: the scope, the checks actually performed, the evidence they produced, and the remaining uncertainty — that report is what lets a reader tell clean from shallow.
-- **Where the work executed an RFC, the report has a durable home:** a dated findings section in `EXECUTION-LOG.md` (`flag-dont-flip`). These findings are departures the executor did not notice, and filing them apart from the ones they did means nobody ever counts the two together.
+- **Where the work executed a spec, the report has a durable home:** a dated findings section in that task's log, `logs/<task-id>.md` (`flag-dont-flip`). These findings are departures the executor did not notice, and filing them apart from the ones they did means nobody ever counts the two together. The log's checker reads only the fenced entries, so a prose findings section sits there without disturbing it.
 - **Distill rules.** When a finding generalizes, record it as a one-line rule ("any suffix/subset helper needs its empty case decided explicitly"; "test a wrapper against every state of the vocabulary it wraps") — these compound across future work. If the project keeps notes or memory, put them there.
 
 ## Related skills
 
 - `reading-isnt-proof` — pass 9's discipline expanded into a full method for multi-implementation contracts
 - `fewer-tests-more-proof` — when the audit's real finding is the suite itself: ritual tests, per-backend copies, flake-retry volume
-- `flag-dont-flip` — owns `EXECUTION-LOG.md`, the log pass 10 audits against, and grades the decisions it checks
+- `flag-dont-flip` — owns the task logs pass 10 audits against, and grades the decisions it checks. Absent it, pass 10 still runs: diff the branch against the decision table and report every unlogged departure as a finding.
 - `less-code-same-behavior` — pass 6 at codebase scale, with the same NO ACTION discipline
