@@ -39,6 +39,9 @@ Branch `<branch>`. <Which RFCs and phases this unit covered.>
   the decision table covers this — it was unlisted.>
 - **RFC said:** <the claim, quoted where the wording matters>
 - **Built:** <what exists instead>
+- **Action:** <halted | departed | decided — must be the one the grade allows>
+- **Evidence:** <path:line, or a command and enough of its output to re-run it.
+  Not a claim: `Because` is where claims go.>
 - **Because:** <the mechanism that forced it — not "cleaner", not "more idiomatic">
 - **Class:** `<class>`. <Why that class and not the neighbouring one.>
 - **Consequence:** <what is now true that the RFC's reader would not expect,
@@ -106,6 +109,15 @@ by a later unit against an earlier one is named here explicitly.>
 
 ## Notes
 
+- **`Action:` is checked against the grade, not just recorded.** `LOCKED` admits
+  only `halted`, `ASSUMED` only `departed`, `OPEN` only `decided`. It is the one
+  pairing a tool can decide, and `scripts/log_check.py` fails the log on any
+  other combination — in both directions, since escalating a row you were
+  licensed to decide costs a round-trip the grading existed to avoid.
+- **`Evidence:` is resolved, not read.** A `path:line` reference that points at
+  nothing, or a line range past the end of the file, fails the check; so does
+  evidence too short to re-run. An entry nobody can verify without redoing the
+  work is worth roughly what an unwritten one is.
 - **`Built:` becomes `Found:` when nothing was built.** Some departures are discoveries about what already existed — the RFC said a module does not exist and it does. "Built" would be a small lie in the field a reader checks first.
 - **Numbering is continuous across the whole file.** `D-001` in unit 1, `D-002` in unit 2 — never reset per unit. RFC decision rows cite these identifiers, and a number that means two things breaks every citation that used it.
 - **Heading levels:** units at `#`, entries and unit-closing sections at `##`. The document has one `# Execution log` title and then reads as a sequence of units.

@@ -1,6 +1,6 @@
 ---
 name: flag-dont-flip
-description: Executes work against an existing RFC or design doc without silently changing its decisions. Produces a reviewable file-by-file plan before writing code, halts on conflicts with LOCKED decisions instead of resolving them, and records every departure in an append-only execution log — `rfcs/EXECUTION-LOG.md` — classified by whether it was knowable at design time, with a drift count per unit of work and the decision rows it proposes back. Use this whenever implementing against an RFC, spec, ADR, or design doc — including when the user says "implement RFC-N", "execute the plan", "build what we agreed", or starts coding in a repo with an `rfcs/` directory. Also use when a design decision needs to change mid-implementation, when the code has drifted from its spec, or when someone asks why the implementation doesn't match the doc.
+description: Executes work against an existing RFC or design doc without silently changing its decisions. Produces a reviewable file-by-file plan before writing code, halts on conflicts with LOCKED decisions instead of resolving them, and records every departure in an append-only execution log — `rfcs/EXECUTION-LOG.md` — classified by whether it was knowable at design time, with a drift count per unit of work and the decision rows it proposes back. Use this whenever implementing against an RFC, spec, ADR, or design doc — including when the user says "implement RFC-N", "execute the plan", "build what we agreed", or starts coding in a repo with an `rfcs/` directory. Also use when a design decision needs to change mid-implementation, when the code has drifted from its spec, or when someone asks why the implementation doesn't match the doc. Also when an execution log needs checking: the bundled checker fails it on an action the grade forbids, evidence resolving to nothing, or a missing drift count.
 ---
 
 # Flag, Don't Flip
@@ -30,11 +30,20 @@ If work is underway, no RFC exists, and the change is clearly load-bearing, say 
 
 The RFC's decision table carries a grade per row. `rfc-writer` owns the format; this skill owns the behavior.
 
-| Grade | Meaning | Executor behavior on conflict |
-|---|---|---|
-| `LOCKED` | Settled. Cost of reopening is high or consequences reach beyond this RFC. | **Halt.** Surface the conflict and wait. Do not implement either side. |
-| `ASSUMED` | Believed correct, not load-bearing. | Depart if execution shows it wrong. Log it. Continue. |
-| `OPEN` | Deliberately delegated to implementation. | Decide it. Log the decision and its rationale. Continue. |
+| Grade | Meaning | Executor behavior on conflict | Logged action |
+|---|---|---|---|
+| `LOCKED` | Settled. Cost of reopening is high or consequences reach beyond this RFC. | **Halt.** Surface the conflict and wait. Do not implement either side. | `halted` |
+| `ASSUMED` | Believed correct, not load-bearing. | Depart if execution shows it wrong. Log it. Continue. | `departed` |
+| `OPEN` | Deliberately delegated to implementation. | Decide it. Log the decision and its rationale. Continue. | `decided` |
+
+The last column is not decoration. It is the word the entry records, and the
+one pairing a tool can check: any other action against that grade is the
+failure this skill is named for, and `scripts/log_check.py` fails on it.
+
+The two failures are symmetric, and only one of them feels like caution:
+
+- **Flipping a lock.** A better design turned up and shipped. The document now describes something that does not exist, the next unit picks up a decision the code abandoned, and the one person who could say when it happened has moved on.
+- **Halting on an assumption.** A question the grade already answered goes back to a human anyway. That is not caution — it spends, twice, the round-trip that grading exists to spend once.
 
 An unlisted decision is not `OPEN`. `OPEN` means the author looked at it and chose not to settle it; unlisted means nobody looked. Treat unlisted decisions as gaps — they get logged with the same weight as a departure, because a gap filled silently is indistinguishable in the diff from a decision reversed silently.
 
@@ -70,6 +79,12 @@ Follow the approved plan. When reality diverges from it mid-execution, the same 
 
 ### 5. Log
 
+**Write the entry before you act on it.** An entry composed after the work is
+reconstructed from the code, so it describes what was built rather than what was
+decided — and at that distance `discovery` and `drift` become indistinguishable,
+including to the person writing it. Writing first is also what makes halting
+cheap: the entry is the deliverable, and nothing is spent that stopping wastes.
+
 Every departure gets a record, appended, never edited in place:
 
 ```markdown
@@ -78,6 +93,8 @@ Every departure gets a record, appended, never edited in place:
 - **Touches:** RFC 0014 §5.2, decisions row 4 (`ASSUMED`)
 - **RFC said:** per-message retry counter
 - **Built:** per-batch retry budget
+- **Action:** departed
+- **Evidence:** queue/consumer.py:88-104 — the counter is reset on redelivery
 - **Because:** redelivery resets per-message counters, so a per-message
   counter cannot bound total work for a poison message
 - **Class:** spec-gap
@@ -147,6 +164,44 @@ One question decides the class: **could this have been known before code existed
 
 `irreducible` is the one class where the correct move is to stop implementing. A throwaway implementation whose only deliverable is information is cheaper than a real one built on a guess, and much cheaper than the RFC amendment that follows discovering the guess was wrong.
 
+## Halting on a `LOCKED` row is a success
+
+A unit that stops with the code working and the task unfinished has done what
+the grade asked of it. Report that without hedging:
+
+> Halted on RFC 0014 row 3 (`LOCKED`): retry ceiling is per-topic. This broker
+> exposes no per-topic setting — `queue/consumer.py:88-104`. Entry D-007
+> written. The row needs a decision before the unit goes further.
+
+The version to watch for is the same report with the work already finished:
+*"went with a per-consumer ceiling, since the broker has no per-topic one — say
+if you'd prefer it the other way."* Everything after the dash is decoration. A
+side has been picked, the RFC still names the other one, and all the sentence
+adds is a record that the executor saw the conflict and kept going.
+
+## Evidence must be checkable
+
+Every entry carries an `Evidence:` line, and the checker resolves it rather than
+reading it: a `path:line` reference has to point at lines that exist, and a
+command has to arrive with enough of its output to be worth running again. Where
+it resolves to nothing, the reader has to reproduce the finding before they can
+review it — which is most of the work the entry existed to save them.
+
+Evidence:
+
+- `queue/consumer.py:88-104 — the counter resets on every redelivery`
+- ``` `just test tests/test_consumer.py` — 3 failed, no per-topic ceiling in the broker API ```
+
+Not evidence:
+
+- "the broker doesn't really support this"
+- "doing it the way the RFC describes would be impractical here"
+
+Both of those are claims, and the entry has a field for claims: `Because:`. The
+distinction pays off hardest on the two classes a reader is most likely to
+contest — `drift` is an accusation aimed at the executor, and `irreducible` is a
+request to fund a spike instead of shipping.
+
 ## Honesty floor
 
 - **A group is always opened in the log, even when it has no entries.** "Nothing departed" is a claim being made, not an absence. Omitting the group is not the same as asserting nothing changed, and reviewers cannot tell the two apart — the drift count exists to be written down at zero.
@@ -162,15 +217,39 @@ One question decides the class: **could this have been known before code existed
 - **Log as landfill.** An execution log nobody reads is overhead. It earns its cost only when it is periodically classified and distilled — see `distill-the-rule`. The per-group *Rules distilled* section is where that happens; a log with entries and no distilled rules is one nobody has re-read.
 - **The log with no proposals accepted.** Entries accumulate, `Proposed row` lines pile up, and no RFC ever gains a row. The reconciliation half is the half that changes the documents; without it the log is a private diary of disagreements with a spec that still says the old thing.
 
+## Checking the log
+
+```bash
+python3 scripts/log_check.py rfcs/EXECUTION-LOG.md --rfc-dir rfcs/
+```
+
+`scripts/log_check.py` enforces the rules above rather than adding any: every
+entry carries the fields a reader checks first, the action is legal for the
+grade, evidence resolves, `D-NNN` runs unique and continuous, every unit
+declares a drift count and that count matches the entries classed `drift`, and
+a proposed row no outcomes table has answered is reported as a warning. Exit 0
+or 1, `--strict` to fail on the warning too. Paths in evidence resolve against
+`--root`, which defaults to the working directory.
+
+**One thing it deliberately does not check: whether an entry's grade still
+matches the RFC's decision table.** The log records the grade that was in force
+when the executor acted, and grades change — comparing them would report an
+honest historical record as a defect. `--rfc-dir` checks that the cited RFC and
+row *exist*, which catches a broken citation without assuming a grade froze.
+
+A script that has to be remembered is still a convention. Wiring it into CI as
+the gate is the closing move, and that belongs to `ratchet-what-you-build`.
+
 ## References
 
 - `references/execution-log-template.md` — the log's skeleton, with the classes table and a worked entry; use when creating the file for the first time
+- `scripts/log_check.py` — the checker described above; stdlib only, no network
 
 ## Related skills
 
 - `rfc-writer` — authors the decision table and grades, and owns reconciliation
 - `self-audit` — adversarial pass at branch completion, including conformance to the decision table
 - `distill-the-rule` — turns a group's entries into the *Rules distilled* section that closes it
-- `ratchet-what-you-build` — moves the execution log off convention and into enforcement
+- `ratchet-what-you-build` — the gate ships here; making CI run it is the closing move
 - `pr-review-loop` — carries this unit's departures and drift count into review
 - `reading-isnt-proof` — a contract-class departure invalidates the shared battery until it is re-run
