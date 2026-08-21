@@ -19,7 +19,33 @@ Each case stages a throwaway temp project with the skill symlinked into `.claude
 - **`explicit`** — the prompt names the skill. Tests that the skill's *content* produces the required behavior. Pass/fail; a failure means the skill's instructions don't land.
 - **`implicit`** — the prompt does not name the skill. Tests *triggering* via the frontmatter description. Informational only: triggering is probabilistic, and a single-run miss is signal to investigate, not a build failure.
 
+A check may carry `"absent": true`, which passes when the pattern is **not** found. That is what makes a mis-trigger case possible: an `implicit` prompt the skill should stay out of, asserting its vocabulary does not appear. A suite whose every assertion is "this word showed up" cannot fail for a skill that fires when it should not — and a check that cannot fail proves nothing (`ratchet-what-you-build`).
+
 This harness suits **output-checkable skills**: deterministic formats (gitmoji-conventional), classifications with right answers (error-taxonomy), structured artifacts (rfc-writer's INDEX shape, keep-a-changelog sections). Deep judgment skills (self-audit, less-code-same-behavior) don't reduce to regexes — evaluating those means reading transcripts against the skill's own rubric, which stays a periodic manual exercise (the skill-creator tooling is the right harness for that). Don't force assertions onto judgment; a check that can't fail for a nameable reason is ritual.
+
+## Deciding whether a skill earns its place
+
+Some skills teach material a frontier model largely already has. Suspicion is not
+evidence, and neither is a passing suite — the question is whether the skill
+*changed* anything. The procedure:
+
+1. Write 5–10 `explicit` and `implicit` cases that should trigger, and 3–5 mis-trigger cases using `"absent": true`.
+2. Run `python3 evals/run.py --skill <name> --baseline`.
+3. Read the `BASE` lines. Every case whose baseline **also passes** is a case where the skill added nothing measurable.
+
+A suite where the baseline passes throughout is a null result, and the honest
+response is to delete the skill: it is paying description tax in every session to
+produce behaviour that was already there.
+
+Two things this harness does **not** measure, and §6 of the refactor asked for
+both: iterations-to-green on a real task, and tokens consumed. Both need a task
+harness rather than a single `claude -p` call. Treat a null result here as strong
+evidence and a positive result as sufficient to keep; treat neither as a
+measurement of what the skill costs to run.
+
+`composition-over-inheritance` and `measure-before-optimizing` have suites
+written for exactly this decision and have **not been run**. Run them before
+acting on either.
 
 ## Adding cases
 

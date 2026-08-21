@@ -37,29 +37,28 @@ Strip every specific that doesn't carry the mechanism — file names, project na
 
 One line, imperative, with its trigger condition built in — "when/any/before X, do Y" — so the rule fires on recognition, not on recall. Optionally: one sentence of *why* (the failure it prevents), and a link to the incident that produced it (the evidence is what separates a rule from an opinion, and the link keeps it re-examinable).
 
-## Where rules live — the escalation ladder
+## Filing it
 
-File the rule at the level matching its audience and authority; promote it when reality proves it out:
+A rule filed where nobody will meet it again has not been distilled, only
+written. The ladder — session note, project memory, `CLAUDE.md`, a skill, a check
+— and the maintenance that keeps the set worth reading are in
+[references/filing.md](references/filing.md).
 
-1. **Session note** — it dies with the context. Only for rules still being tested.
-2. **Durable memory / decision log** — the default landing place; recallable in future sessions, linkable from later findings.
-3. **Team convention** — CLAUDE.md/AGENTS.md, a review checklist, a skill: now it instructs everyone (and every agent), not just you.
-4. **Enforcement** — a lint rule, a CI gate, a fail-closed guard. The ultimate distillation is one that no longer relies on being remembered (`ratchet-what-you-build` — the rule's final form is a ratchet).
+The rule that decides the rung: **file it where the work that would break it
+happens.** A rule about commit messages belongs in the commit path, not in a
+document someone reads at onboarding.
 
-A rule that keeps firing usefully earns promotion up the ladder; the promotion itself is cheap because the rule is already phrased as a trigger + action.
+## Prefer a gate to a new rule
 
-## Maintenance — rules are claims
+Before writing the rule down, ask whether a **program could refuse instead**. A
+rule is a hope that the next reader remembers; a gate is a thing that says no.
+Where the leak is mechanically detectable — a format, a missing field, a check
+that was widened rather than satisfied — the distilled output is a check, and the
+one-line rule is its error message (`drift-to-gate`).
 
-- **Re-verify on contact.** When a rule fires, check it still matches reality before applying it; codebases move, and a stale rule confidently applied is worse than no rule (the recalled-memory problem — verify the flag/file/behavior still exists).
-- **Delete disproven rules.** A rule contradicted by evidence gets removed or rewritten *with the new evidence linked* — a collection that only grows becomes noise that buries its own best entries.
-- **Dedup before adding.** New finding, existing rule → link the finding as further evidence and sharpen the rule if needed; don't mint a near-duplicate (`error-taxonomy`'s canonical-codes discipline, applied to knowledge).
-
-## Anti-patterns
-
-- **The diary entry** — recording what happened instead of what transfers; activity logs are not rules.
-- **The platitude** — "test edge cases", "be careful with concurrency": no trigger, no action, fires never.
-- **Rule hoarding** — collecting rules into a pile nothing recalls from; a rule that can't be *met* (wrong file, no index, no trigger phrasing) might as well not exist.
-- **Distilling everything** — the three-property filter exists because a collection's value density is what makes it worth consulting; ten sharp rules beat two hundred observations.
+Rules are for what no program can decide. Writing one for something a gate could
+have caught is how a collection of rules grows past the point where anyone reads
+it, and every rule added after that dilutes the ones that were load-bearing.
 
 ## Related skills
 

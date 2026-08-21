@@ -1,0 +1,84 @@
+{
+  "skill": "composition-over-inheritance",
+  "cases": [
+    {
+      "id": "e1",
+      "mode": "explicit",
+      "prompt": "Use the composition-over-inheritance skill. A team has `class InstrumentedHashSet extends HashSet` that overrides both `add` and `addAll` to increment a counter, and `addAll` reports double the real count. In at most four sentences, name the specific mechanism that causes this and say what the fix is. Do not write code.",
+      "checks": [
+        { "pattern": "self[- ]use|calls (its own|itself)|internally calls|addAll[^\\n]{0,40}calls[^\\n]{0,20}add", "flags": "i" },
+        { "pattern": "forward|delegat|wrap|compos", "flags": "i" }
+      ]
+    },
+    {
+      "id": "e2",
+      "mode": "explicit",
+      "prompt": "Use the composition-over-inheritance skill. Answer with exactly one word per line, no explanations. For each, answer INHERIT or COMPOSE. (1) A Stack that needs push/pop, currently extending ArrayList. (2) A sealed set of AST node variants in a language with sealed hierarchies. (3) A CachingUserRepository that adds a cache in front of an existing UserRepository. (4) A subclass of a web framework's documented RequestHandler extension point. (5) An EmailNotifier and an SmsNotifier that share a template-rendering helper.",
+      "checks": [
+        { "pattern": "1\\D[^\\n]*compose", "flags": "i" },
+        { "pattern": "2\\D[^\\n]*inherit", "flags": "i" },
+        { "pattern": "3\\D[^\\n]*compose", "flags": "i" },
+        { "pattern": "4\\D[^\\n]*inherit", "flags": "i" },
+        { "pattern": "5\\D[^\\n]*compose", "flags": "i" }
+      ]
+    },
+    {
+      "id": "e3",
+      "mode": "explicit",
+      "prompt": "Use the composition-over-inheritance skill. A reviewer says \"Square should extend Rectangle, a square IS-A rectangle.\" In at most three sentences, say whether that reasoning is sufficient and what the actual test is. Do not write code.",
+      "checks": [
+        { "pattern": "liskov|substitut|behavio", "flags": "i" },
+        { "pattern": "setWidth|setHeight|mutable|invariant|vocabulary|English", "flags": "i" }
+      ]
+    },
+    {
+      "id": "e4",
+      "mode": "explicit",
+      "prompt": "Use the composition-over-inheritance skill. Someone proposes replacing a three-level class hierarchy with composition. In at most three sentences, name what that change actually costs — not why it is good. Do not write code.",
+      "checks": [
+        { "pattern": "boilerplate|forwarding method|delegat[^\\n]{0,30}(method|code)|verbos", "flags": "i" }
+      ]
+    },
+    {
+      "id": "e5",
+      "mode": "implicit",
+      "prompt": "I have a `ThrottledApiClient` that extends `ApiClient` and overrides `get` and `post` to add rate limiting. Some calls slip past the throttle. In four sentences or fewer, why? Do not write code.",
+      "checks": [
+        { "pattern": "self[- ]use|internally|its own|another method|bypass", "flags": "i" }
+      ]
+    },
+    {
+      "id": "e6",
+      "mode": "implicit",
+      "prompt": "Should `AdminUser` extend `User` in our system? Answer in at most three sentences.",
+      "checks": [
+        { "pattern": "substitut|liskov|behavio|is-a", "flags": "i" }
+      ]
+    },
+    {
+      "id": "n1",
+      "mode": "implicit",
+      "prompt": "Write a Python function that returns the nth Fibonacci number iteratively. Output only the function, no prose.",
+      "checks": [
+        { "pattern": "def ", "flags": "i" },
+        { "pattern": "composition|inherit|subclass|Liskov|fragile base", "flags": "i", "absent": true }
+      ]
+    },
+    {
+      "id": "n2",
+      "mode": "implicit",
+      "prompt": "What does the `-p` flag do in `curl -p`? Answer in one sentence.",
+      "checks": [
+        { "pattern": "composition|inherit|subclass|Liskov", "flags": "i", "absent": true }
+      ]
+    },
+    {
+      "id": "n3",
+      "mode": "implicit",
+      "prompt": "Our CSS grid layout collapses on mobile. Name two likely causes, one line each.",
+      "checks": [
+        { "pattern": "composition over inheritance|subclass|Liskov|fragile base", "flags": "i", "absent": true }
+      ]
+    }
+  ]
+}
