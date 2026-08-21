@@ -89,16 +89,39 @@ PLAIN_HAZARDS = (
     (re.compile(r"^[-?](?=\s|$)"), "a leading '-' or '?' starts a block sequence or a complex key"),
 )
 
+# A bare token YAML resolves to a bool, a null or a number is not text, and the
+# two parsers do not even agree on which tokens those are: `no` is a string
+# under YAML 1.2 (the installer) and False under YAML 1.1 (PyYAML). Refusing
+# the union means a value is text under both or refused under both.
+YAML_NOT_TEXT = re.compile(
+    r"""^(?:
+        true | false | yes | no | on | off | y | n |    # bool, 1.2 and 1.1
+        null | ~ |                                      # null
+        [-+]? (?: [0-9][0-9_]* (?:\.[0-9_]*)? | \.[0-9][0-9_]* ) (?:[eE][-+]?[0-9]+)? |
+        [-+]? 0[xX][0-9a-fA-F_]+ | [-+]? 0[oO][0-7_]+ |
+        [-+]? \.(?: inf | nan )
+    )$""",
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+# `roles` is the only field whose value is a collection. Every other field is
+# text, so a flow collection there is a value this validator measures as a
+# string and the installer loads as a list or a mapping.
+COLLECTION_FIELDS = frozenset({"roles"})
+
 
 def scalar_value(raw: str, where: str, key: str) -> str:
     """The text a YAML parser would read out of one frontmatter value.
 
     Quoted values are unquoted so the length and content checks measure the
-    description rather than its punctuation. Flow collections (`roles: [a, b]`)
-    are handed on untouched for their own checks to read. Anything left is
-    plain, and is refused if YAML would read it as structure.
+    description rather than its punctuation. `roles: [a, b]` is handed on
+    untouched for its own check to read. Anything left is plain, and is
+    refused if YAML would read it as something other than that text.
     """
-    if raw[:1] in "[{":
+    if raw[:1] in ("[", "{"):
+        if key not in COLLECTION_FIELDS:
+            err("E16", f"{where}: {key} is a YAML collection where text is required")
         return raw
     for quote in ("'", '"'):
         if not raw.startswith(quote):
@@ -116,6 +139,10 @@ def scalar_value(raw: str, where: str, key: str) -> str:
         if pattern.search(raw):
             err("E16", f"{where}: {key} is unquoted and {why} — quote the value")
             break
+    else:
+        if YAML_NOT_TEXT.match(raw):
+            err("E16", f"{where}: {key} is the bare token {raw!r}, which YAML types as a "
+                       "bool, a null or a number rather than text — quote it")
     return raw
 
 
@@ -125,8 +152,12 @@ def parse_frontmatter(text: str, where: str) -> dict[str, str] | None:
         err("E2", f"{where}: no frontmatter opener")
         return None
     raw: dict[str, str] = {}
+    blocks: set[str] = set()
     for line in lines[1:]:
         if line.strip() == "---":
+            for key in sorted(blocks):
+                err("E16", f"{where}: {key} has nothing after the colon and an indented "
+                           "block under it — YAML reads a list or a mapping, not text")
             # Scalars are read after the whole block, so a value continued onto
             # a second line is judged whole: judging the first line alone would
             # call a legal wrapped quote unterminated.
@@ -135,8 +166,13 @@ def parse_frontmatter(text: str, where: str) -> dict[str, str] | None:
         if m:
             raw[m.group(1)] = m.group(2).strip()
         elif line.startswith((" ", "\t")) and raw:
-            # continuation line -> the previous value was not single-line
-            raw[list(raw)[-1]] += "\n" + line.strip()
+            last = list(raw)[-1]
+            # An indented line continues a value only if there was a value. Under
+            # a bare `key:` it opens a nested collection, and joining it with a
+            # newline fabricates a scalar no parser will produce.
+            if not raw[last]:
+                blocks.add(last)
+            raw[last] += "\n" + line.strip()
     err("E2", f"{where}: frontmatter never closed")
     return None
 

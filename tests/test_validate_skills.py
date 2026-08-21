@@ -333,6 +333,90 @@ class ScalarTest(CheckTest):
         self.assertEqual(self.codes(), [])
 
 
+class TypedScalarTest(CheckTest):
+    """A value this validator measures as a string and YAML types as something
+    else is the same defect as the one this file was opened for, one layer in."""
+
+    def read(self, raw: str, key: str = "description") -> str:
+        return script.scalar_value(raw, "where", key)
+
+    def test_a_flow_sequence_is_not_text(self) -> None:
+        self.read("[x]")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_flow_mapping_is_not_text(self) -> None:
+        self.read("{text: x}")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_roles_is_the_one_field_that_takes_a_collection(self) -> None:
+        self.assertEqual(self.read("[implement, review]", key="roles"), "[implement, review]")
+        self.assertEqual(self.codes(), [])
+
+    def test_yaml_booleans_are_refused(self) -> None:
+        for token in ("true", "False", "TRUE", "yes", "no", "on", "off", "y", "N"):
+            with self.subTest(token=token):
+                script.errors.clear()
+                self.read(token)
+                self.assertEqual(self.codes(), ["E16"])
+
+    def test_yaml_nulls_are_refused(self) -> None:
+        for token in ("null", "Null", "~"):
+            with self.subTest(token=token):
+                script.errors.clear()
+                self.read(token)
+                self.assertEqual(self.codes(), ["E16"])
+
+    def test_yaml_numbers_are_refused(self) -> None:
+        for token in ("42", "-7", "3.14", "+0.5", "1e6", "0x1f", "0o17", ".inf", "-.NaN"):
+            with self.subTest(token=token):
+                script.errors.clear()
+                self.read(token)
+                self.assertEqual(self.codes(), ["E16"])
+
+    def test_none_is_text_and_stays_legal(self) -> None:
+        """`gate: none` is the collection's own convention — YAML reads it as
+        the string it looks like, and refusing it would fail half the skills."""
+        self.assertEqual(self.read("none", key="gate"), "none")
+        self.assertEqual(self.codes(), [])
+
+    def test_a_word_that_merely_starts_with_a_token_is_text(self) -> None:
+        for value in ("nothing to refuse", "yesterday's format", "onboarding docs"):
+            with self.subTest(value=value):
+                script.errors.clear()
+                self.read(value)
+                self.assertEqual(self.codes(), [])
+
+    def test_a_quoted_token_is_text_again(self) -> None:
+        self.assertEqual(self.read("'true'"), "true")
+        self.assertEqual(self.codes(), [])
+
+
+class IndentedBlockTest(CheckTest):
+    """`key:` with nothing after it and indented lines under it is a nested
+    collection. Joining those lines with a newline fabricates a scalar that no
+    parser produces, and a non-empty fabricated string satisfies E14."""
+
+    def frontmatter(self, gate_reason: str) -> str:
+        return ("---\nname: demo\ndescription: Use when demoing.\n"
+                "roles: [implement]\ngate: none\n" + gate_reason +
+                "\n---\n\n# Title\n\nBody.\n")
+
+    def test_an_indented_list_under_a_bare_key_is_refused(self) -> None:
+        self.assertEqual(
+            self.check(self.frontmatter("gate_reason:\n  - one\n  - two")), ["E16"])
+
+    def test_an_indented_mapping_under_a_bare_key_is_refused(self) -> None:
+        self.assertIn("E16", self.check(self.frontmatter("gate_reason:\n  why: because")))
+
+    def test_a_bare_key_with_no_block_is_left_to_its_own_check(self) -> None:
+        """Empty is not a block — E14 owns the missing reason, not E16."""
+        self.assertEqual(self.check(self.frontmatter("gate_reason:")), ["E14"])
+
+    def test_a_value_continued_onto_a_second_line_is_not_a_block(self) -> None:
+        text = skill_text(description="'Use when demoing\n  across two lines'")
+        self.assertEqual(self.check(text), ["E5"])
+
+
 class QuotedFrontmatterTest(CheckTest):
     def test_a_quoted_description_is_measured_without_its_quotes(self) -> None:
         """A 300-char description quoted is 302 on the page. Counting the
