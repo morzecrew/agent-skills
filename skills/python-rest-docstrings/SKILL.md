@@ -1,6 +1,6 @@
 ---
 name: python-rest-docstrings
-description: Use when writing, editing, or reviewing Python docstrings in a project that uses reST field lists — :param:/:returns:/:raises: and Sphinx cross-reference roles. Not for Google-style sections, not for NumPy style, and not for prose documentation.
+description: 'Use when writing, editing, or reviewing Python docstrings in a project that uses reST field lists — :param:/:returns:/:raises: and Sphinx cross-reference roles. Not for Google-style sections, not for NumPy style, and not for prose documentation.'
 roles: [implement, author]
 gate: none
 gate_reason: a linter can demand a docstring exists; whether it states the contract is a read

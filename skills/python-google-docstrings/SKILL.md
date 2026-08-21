@@ -1,6 +1,6 @@
 ---
 name: python-google-docstrings
-description: Use when writing, editing, or reviewing Python docstrings in a project that uses Google style — Args:/Returns:/Raises:/Attributes: sections under Sphinx Napoleon. Not for reST field lists, not for NumPy style, and not for prose documentation.
+description: 'Use when writing, editing, or reviewing Python docstrings in a project that uses Google style — Args:/Returns:/Raises:/Attributes: sections under Sphinx Napoleon. Not for reST field lists, not for NumPy style, and not for prose documentation.'
 roles: [implement, author]
 gate: none
 gate_reason: a linter can demand a docstring exists; whether it states the contract is a read
