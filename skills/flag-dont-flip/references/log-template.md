@@ -61,6 +61,21 @@ evidence: `rg -n "password" rfcs/0014-session-storage.md` — no match
 action: decided
 proposal: ASSUMED — a password change invalidates every session for that user
 ```
+
+```divergence
+decision: D-4
+grade: LOCKED
+kind: resolved
+at: 2026-08-20T15:02:11Z
+attempt: 2
+claim: touched the governed area; the decision was honored
+evidence: src/db/migrations.py:1-18
+action: decided
+```
+
+The last block is a close-out — compliant work in a touched `LOCKED` area,
+which the silence check demands an entry for. `kind` replaces `class` there;
+see entry-format.md.
 ````
 
 Notes that are easy to get wrong:

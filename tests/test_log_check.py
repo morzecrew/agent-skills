@@ -76,7 +76,7 @@ class SchemaTest(Fixture):
         self.assertEqual(self.codes(log(entry())), [])
 
     def test_a_missing_field_is_s3(self) -> None:
-        broken = entry().replace("class: spec-gap\n", "")
+        broken = entry().replace("attempt: 1\n", "")
         self.assertIn("S3", self.codes(log(broken)))
 
     def test_an_empty_field_is_s3(self) -> None:
@@ -549,6 +549,64 @@ class TemplateShapeTest(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertEqual(script.check_schema(line, fields), [])
                 self.assertEqual(script.check_legality(line, fields), [])
+
+
+class KindTest(Fixture):
+    """The `kind` axis (contradicted / departed / resolved / blocked) records
+    what happened to the decision; `class` records what it says about the
+    design process. One of the two is required; both may appear."""
+
+    @staticmethod
+    def kind_entry(kind: str, **kwargs: str) -> str:
+        # A kind-only entry: `kind` present, `class` absent.
+        return entry(extra=f"kind: {kind}\n", **kwargs).replace("class: spec-gap\n", "")
+
+    def test_a_kind_only_entry_passes_schema(self) -> None:
+        text = log(self.kind_entry("contradicted", grade="LOCKED", action="halted"))
+        self.assertEqual(self.codes(text), [])
+
+    def test_an_entry_with_neither_kind_nor_class_is_s10(self) -> None:
+        broken = entry().replace("class: spec-gap\n", "")
+        self.assertIn("S10", self.codes(log(broken)))
+
+    def test_an_unknown_kind_is_s11(self) -> None:
+        self.assertIn("S11", self.codes(log(entry(extra="kind: pondered\n"))))
+
+    def test_a_resolved_close_out_on_a_lock_passes(self) -> None:
+        # The compliance attestation the silence check can be satisfied with:
+        # LOCKED area touched, decision honored, action `decided`.
+        text = log(self.kind_entry("resolved", grade="LOCKED", action="decided"))
+        self.assertEqual(self.codes(text), [])
+
+    def test_a_resolved_close_out_may_not_halt(self) -> None:
+        text = log(self.kind_entry("resolved", grade="OPEN", action="halted"))
+        self.assertIn("L1", self.codes(text))
+
+    def test_blocked_licenses_halted_on_any_grade(self) -> None:
+        text = log(self.kind_entry("blocked", grade="ASSUMED", action="halted"))
+        self.assertEqual(self.codes(text), [])
+
+    def test_blocked_work_that_carries_on_is_l1(self) -> None:
+        text = log(self.kind_entry("blocked", grade="ASSUMED", action="departed"))
+        self.assertIn("L1", self.codes(text))
+
+    def test_a_kind_only_entry_never_counts_as_drift(self) -> None:
+        # Drift is a `class` judgement; an entry with no class cannot add to
+        # the declared count.
+        text = log(self.kind_entry("contradicted", grade="LOCKED", action="halted"), drift=0)
+        self.assertEqual(self.codes(text), [])
+
+    def test_a_resolved_close_out_satisfies_the_silence_check(self) -> None:
+        task = {"id": "T-0142", "decisions": [
+            {"id": "D-3", "grade": "LOCKED", "paths": ["infra/**"]},
+        ]}
+        close_out = self.kind_entry("resolved", grade="LOCKED", action="decided")
+        codes = self.codes(log(close_out), task=task, touched=["infra/compose.yaml"])
+        self.assertEqual(codes, [])
+
+    def test_both_axes_together_pass(self) -> None:
+        text = log(entry(extra="kind: contradicted\n"))
+        self.assertEqual(self.codes(text), [])
 
 
 if __name__ == "__main__":
