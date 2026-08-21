@@ -50,7 +50,7 @@ Agent Skills is a collection of skills for AI coding agents. Skills are packaged
 2. Include YAML frontmatter with `name`, `description` (≤300 chars, triggers only), `roles`, and `gate` (or `gate: none` plus `gate_reason`).
 3. Write the body as rules, not argument — one clause of rationale per rule, and a body budget of ~1,500 tokens. Everything longer goes to `references/`, loaded on demand.
 4. Add the skill to README.md under "Available Skills" — one table row, `| [<name>](skills/<name>/) | one-line summary |`, in the theme group it belongs to.
-5. Run `python3 scripts/validate_skills.py` — it enforces 1-4.
+5. Run `python3 scripts/validate_skills.py`. It enforces the frontmatter shape, the description budget, the body budget, references and scripts, and that the skill has *an* entry in README.md — not that the row is well formed or in the right theme group. Those two are on you.
 6. If the skill bundles `scripts/`, mention each script in `SKILL.md` (the validator requires it) and add tests under `tests/`.
 
 Before adding a skill at all, ask whether a **gate** would do instead. A gate refuses; a skill hopes. See `drift-to-gate`.

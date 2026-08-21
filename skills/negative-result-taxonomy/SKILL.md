@@ -26,7 +26,8 @@ it, or the apparatus:
 |---|---|---|
 | `FAMILY_DEAD` | The approach cannot work here | Its **best case** was measured and missed. Not this build's number — the ceiling. |
 | `DESIGN_DEAD` | This attempt failed | Always, and it is what you write by default. Owes a rebuild ticket. |
-| `INSTRUMENT_VOID` | The apparatus did not decide | The run could not distinguish the outcomes. Never an idea failing. |
+| `INSTRUMENT_VOID` | The apparatus was faulty | A control misbehaved, a baseline was borrowed, a variant was mislabelled. Never an idea failing. |
+| `UNDECIDABLE` | The apparatus was sound but too coarse | It could not separate an effect this size from noise. Also never an idea failing. |
 
 **`DESIGN_DEAD` is the default, and the asymmetry is deliberate.** Filing a
 family verdict without the ceiling measurement claims territory nobody surveyed,
@@ -34,9 +35,11 @@ and it is the expensive mistake: a `DESIGN_DEAD` mislabelled `FAMILY_DEAD` close
 a direction for everyone who reads the record afterwards, and nothing in the
 record says it was never measured.
 
-A result too coarse to call is `INSTRUMENT_VOID` and owes a costed route to an
-answer — not a quiet parking. Each class in full, with the failure modes that
-follow from skipping its evidence, is in
+The two no-conclusion classes are not interchangeable, because they owe
+different things: `INSTRUMENT_VOID` owes a **repaired apparatus and another
+run**, `UNDECIDABLE` owes a **power plan** costing the route to an answer.
+Filing an underpowered run as a broken one sends someone to fix an instrument
+that was working. Each class in full is in
 [references/the-classes.md](references/the-classes.md).
 
 ## A verdict is an obligation, not a label
@@ -46,7 +49,7 @@ without its obligation is the same stall it was before, with a name on it:
 
 - **`FAMILY_DEAD` owes the ceiling measurement** that authorised it. Without one it is not a family verdict at all — it is a `DESIGN_DEAD` claiming more territory than it measured.
 - **`DESIGN_DEAD` owes a rebuild ticket** naming an established cause and the cheapest test that would settle it. "We tried it and it didn't work" is a memory, not a record.
-- **`INSTRUMENT_VOID` owes a costed route to an answer.** The apparatus failing to decide is never an idea failing, and parking it quietly converts a measurement problem into a false kill.
+- **`INSTRUMENT_VOID` owes a repaired apparatus and another run**, and **`UNDECIDABLE` owes a costed route to an answer.** Neither is an idea failing, and parking either one quietly converts a measurement problem into a false kill.
 
 An obligation has states, and **budgeted is not finished** — an authorised but
 unrun ticket is not progress, and the outstanding list is printed on every run,
@@ -59,8 +62,8 @@ rule, and how the ledger is worked are in
 ## Checking the ledger
 
 ```bash
-python3 scripts/kill_ledger.py ledger.json --ruling-root .
-python3 scripts/kill_ledger.py --template family_dead     # a blank scaffold
+python3 skills/negative-result-taxonomy/scripts/kill_ledger.py ledger.json --ruling-root .
+python3 skills/negative-result-taxonomy/scripts/kill_ledger.py --template entry
 ```
 
 It answers the three questions individual verdicts cannot: which entries are

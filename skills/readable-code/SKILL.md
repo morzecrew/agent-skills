@@ -44,7 +44,7 @@ value is:
 
 - **Extraction needs a name.** A block you cannot name is not a coherent unit yet, so it is not ready to extract — flatten it with a guard clause instead.
 - **A precise name is what makes a "what" comment deletable.** Reach for the name first; a comment kept because the name is bad is a fix in the wrong place.
-- **A name that will not come is design feedback.** A function only callable `process_and_update` does two things. A class only callable `DataManager` has no single responsibility. Change the structure, not the vocabulary.
+- **A name that will not come is design feedback.** A function you can only name `process_and_update` is telling you it does two things; a class you can only name `DataManager` is telling you its responsibility has not been decided. Neither is proof on its own — it is the signal that sends you to look at the structure rather than the vocabulary.
 - **A misleading comment is fixed by fixing the name, then deleting the comment.** Correcting a bad name in prose leaves both.
 
 ## Checklist

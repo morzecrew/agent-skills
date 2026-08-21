@@ -19,11 +19,10 @@ before editing the file. `scripts/validate_changelog.py` enforces the mechanical
 half of it:
 
 ```bash
-python3 scripts/validate_changelog.py CHANGELOG.md                 # spec only
-python3 scripts/validate_changelog.py --house-rules CHANGELOG.md   # + local conventions
+python3 skills/keep-a-changelog/scripts/validate_changelog.py CHANGELOG.md
+python3 skills/keep-a-changelog/scripts/validate_changelog.py --house-rules CHANGELOG.md
 ```
 
-(From a repository root the script is at `skills/keep-a-changelog/scripts/validate_changelog.py`.)
 It never edits. What it cannot judge is the whole of what follows.
 
 ## Which changes earn an entry

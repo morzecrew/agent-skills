@@ -13,16 +13,13 @@ written by one careful author: it opens at the right height, descends from
 plain-language orientation to concrete detail **in order**, hands the reader on
 cleanly, and reaches for a component only when the component earns its place.
 
-The core idea is **altitude**: each page is a controlled descent through fixed
-bands, from "why this exists" down to "the exact edge case". Each kind of page is
-allowed a different *altitude range* — a tutorial stays high, a reference page
-sits low, an explanation traverses most of the span. "Balanced" means the page
-covers its range and never inverts or skips a band.
+The core idea is **altitude**: a controlled descent through fixed bands, from
+"why this exists" down to "the exact edge case". Each kind of page is allowed a
+different *range* — a tutorial stays high, a reference page sits low.
 
-This skill is repo-agnostic. It governs *how* a page is built, not *what is
-true*. Every API name, symbol, and behavior must be verified against the source
-of truth in the current repository — see the accuracy rules in
-[references/contracts.md](references/contracts.md).
+This skill governs *how* a page is built, not *what is true*. Every API name,
+symbol and behavior is verified against the current repository — see the
+accuracy rules in [references/contracts.md](references/contracts.md).
 
 Two modes:
 
@@ -55,9 +52,11 @@ source"), so substitute the project's real names as you go.
 
 ## The five bands
 
-Every page is a controlled descent through these, **in order**. It may start
-below band 1 and may stop early; it must never jump back up or skip a band on
-the way down.
+Every page is a controlled descent through these, **in order**. Each archetype
+declares which bands it *requires*; a page may start below band 1 and may stop
+early, and bands outside its declared range are simply not its job. What it must
+never do is jump back up, or skip a band its own archetype requires on the way
+down.
 
 | # | Band | Carries |
 |---|---|---|

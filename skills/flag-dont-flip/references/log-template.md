@@ -66,7 +66,15 @@ proposal: ASSUMED — a password change invalidates every session for that user
 Notes that are easy to get wrong:
 
 - **`Built:` becomes `Found:` in the `claim` when nothing was built.** Some departures are discoveries about what already existed — the spec said a module does not exist and it does.
-- **Never delete.** An entry that turns out to have been wrong gets a later entry saying so, not an edit. `attempt` is what distinguishes the two.
+- **Never delete, and never edit — including the drift count.** An entry that turns out to have been wrong gets a later entry saying so; a count that turns out to be wrong gets a new count line appended below the entry that changed it. The checker reads the last count in the file, so both stay readable:
+
+  ```markdown
+  **Drift count: 0.**
+  ...entries...
+  **Drift count: 1.** D-7 was drift against unit 1, found here.
+  ```
+
+- **`attempt` is what distinguishes a correction from a repeat.** Two entries citing one decision are a second look, not a duplicate.
 - **`decision` cites the spec's identifier**, not a per-log number. Log entries have no identifiers of their own, so there is nothing to renumber and nothing for a citation to lose.
 - **Prose between blocks is free.** The checker reads the fenced blocks and the drift count, and ignores everything else.
 

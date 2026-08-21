@@ -21,10 +21,10 @@ route every nondeterministic source through a seam the caller controls, wire the
 real source in production, and wire a controlled one wherever reproducibility
 matters.
 
-Six sources need seams — time, sleep/timeout, randomness, ID generation,
-iteration order, and the concurrency schedule — and each seam's shape, plus what
-a hermetic test looks like once they exist, is in
-[references/seams.md](references/seams.md).
+Seven sources need seams — time, sleep/timeout, randomness, ID generation,
+iteration order, the concurrency schedule, and the environment (locale,
+timezone, env vars, cwd) — and each seam's shape, plus what a hermetic test
+looks like once they exist, is in [references/seams.md](references/seams.md).
 
 ## The whole-system constraint
 
@@ -45,6 +45,12 @@ Secure randomness is the exception the seams do not get. Cryptographic key
 material, tokens, and nonces must read the OS entropy pool directly, on a
 dedicated non-seeded path: an injection point there is a way to make the values
 predictable, which is the whole attack. Everything else routes through a seam.
+
+The sanctioned path is `os.urandom` and the `secrets` module (`token_bytes`,
+`token_hex`, `token_urlsafe`, `choice`), or the platform equivalent — and
+`scripts/unseamed_calls.py` exempts them, because a gate that goes red for doing
+the secure thing teaches people to route key material through a seam to make the
+build green.
 
 ## The honesty boundary
 

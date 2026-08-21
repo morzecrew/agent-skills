@@ -13,7 +13,8 @@ Each source gets an injectable seam with the real implementation as the producti
 | Wall/monotonic time | Clock/time-source interface; no direct `now()` in logic | Simulated clock: time advances only when told |
 | Sleeps, timeouts, schedules | Built on the time seam, never on real sleeping | Virtual time: a 30 s timeout test runs in microseconds |
 | Randomness | An injected seeded generator; never module-level/global RNG | `Random(seed)` — the whole run derives from one seed |
-| IDs (UUIDs, nonces, request ids) | ID-provider seam | Seeded or sequential IDs — stable across replays |
+| IDs (UUIDs, request ids, correlation ids) | ID-provider seam | Seeded or sequential IDs — stable across replays |
+| **Cryptographic nonces, keys, tokens** | **No seam** | Direct OS entropy, always. A seam here is the attack |
 | Iteration order | Sorted or insertion-ordered collections at boundaries | Never hash/set order where order reaches an observable |
 | Concurrency schedule | Checkpoints/yield points a test can control | Forced interleaving: a conductor releases tasks one step at a time in a chosen order |
 | Environment | Injected config: locale, timezone, env vars, cwd | Pinned values in tests |

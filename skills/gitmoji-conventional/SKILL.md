@@ -16,9 +16,11 @@ gate: check-commit-msg
 ```
 
 The shape, the breaking-change signals, revert form, footers, SemVer mapping and
-PR-title rules are in [references/commit-format.md](references/commit-format.md);
-`scripts/check_commit_msg.py` enforces them. Load the reference when writing a
-message. What follows is the part no check can decide for you.
+PR-title rules are in [references/commit-format.md](references/commit-format.md).
+`check_commit_msg.py` enforces the commit-message half of that; **PR titles are
+unchecked** — it reads message files, literal messages and commit ranges, and a
+title never passes through it. Load the reference when writing either. What
+follows is the part no check can decide for you.
 
 ## Pick the dominant type
 
@@ -69,9 +71,9 @@ reporting a real finding.
 ## Checking
 
 ```bash
-python3 scripts/check_commit_msg.py --message "✨ feat(api): add OAuth login"
-python3 scripts/check_commit_msg.py --range main..HEAD    # audit a branch
-python3 scripts/check_commit_msg.py --file "$1"           # commit-msg hook
+python3 skills/gitmoji-conventional/scripts/check_commit_msg.py --message "✨ feat(api): add OAuth login"
+python3 skills/gitmoji-conventional/scripts/check_commit_msg.py --range main..HEAD   # audit a branch
+python3 skills/gitmoji-conventional/scripts/check_commit_msg.py --file "$1"          # commit-msg hook
 ```
 
 The body cap lives in the script rather than in prose here for a reason: it was

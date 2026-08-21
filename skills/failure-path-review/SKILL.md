@@ -19,13 +19,15 @@ the checklist form in [references/review-checklist.md](references/review-checkli
 What they all share: **failure code only runs when things go wrong,** so it is
 the code least likely to have been executed even once before it matters.
 
-The five questions each pass is an instance of:
+The seven questions each pass is an instance of:
 
 - **What happens to a message that can never succeed?** If the answer is "it is retried", the answer is "forever".
 - **Which failures are retryable, and who decided?** A blanket retry on a permanent error is an outage amplifier; a blanket give-up on a transient one is data loss.
 - **What happens to work in flight when the process dies?** Crash-redelivery is the normal case, not the exceptional one.
 - **Does shutdown drain or abandon?** A handler that stops accepting work but never finishes what it holds loses exactly the work that was in progress.
 - **What grows without bound?** Queues, retry counters, in-memory buffers, dead-letter stores.
+- **What restarts a loop that died?** A consumer that exits its own `while True` on an unhandled error stays dead, and nothing upstream necessarily notices.
+- **How would anyone know any of this happened?** A failure path with no signal is one that has been working perfectly since the day it was written, as far as anyone can tell.
 
 ## Verifying the review
 

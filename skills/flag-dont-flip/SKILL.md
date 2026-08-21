@@ -127,7 +127,10 @@ rather than the document — it is the class a reader cannot anticipate, which i
 what makes review expensive.
 
 **Write `Drift count: N` in every log, including at zero.** A missing count and
-an honest zero read identically, and only one of them is a claim.
+an honest zero read identically, and only one of them is a claim. Revise it the
+way everything else here is revised — **append a new count line**, never edit the
+earlier one. The checker reads the last one, so the file keeps both the claim you
+made first and the one that turned out to be true.
 
 ## Silence is what gets caught
 
