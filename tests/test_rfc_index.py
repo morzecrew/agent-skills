@@ -599,6 +599,31 @@ class DecisionTableTest(ContentFixture, unittest.TestCase):
         self.assertEqual(self.check(), 0)
 
 
+    def test_grade_in_a_later_column_is_read(self):
+        # Six of the graded tables in the collection this gate was written for
+        # put Grade third, behind the decision itself. Reading the second cell
+        # positionally failed every one of them while their rows were graded
+        # correctly, so the column is found by its heading, not its index.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade | Why |\n"
+                         "|---|---|---|---|\n| 1 | The thing. | `LOCKED` | Because. |\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_an_ungraded_row_in_a_later_grade_column_still_fails(self):
+        # Letting the column move must not cost the check its teeth.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade | Why |\n"
+                         "|---|---|---|---|\n| 1 | The thing. | probably fine | Because. |\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("not one of LOCKED", self.problems())
+
+    def test_a_table_with_no_grade_heading_is_still_not_a_decision_table(self):
+        # Finding the column by name must not start accepting tables that
+        # never named one -- that is the ungraded collection this gate exists
+        # to report.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Why |\n"
+                         "|---|---|---|\n| 1 | The thing. | Because. |\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("no table with", self.problems())
+
 class LinkTargetTest(ContentFixture, unittest.TestCase):
     def test_a_resolving_link_passes_quietly(self):
         (self.root / "src").mkdir()
@@ -656,6 +681,48 @@ class LinkTargetTest(ContentFixture, unittest.TestCase):
         self.assertEqual(self.check(), 0)
         self.assertNotIn("link target", self.problems())
 
+
+    def test_a_link_inside_a_code_fence_is_not_checked(self):
+        # A fenced block samples what some *other* file will contain, so its
+        # relative links resolve from that file's directory, not this one's.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```markdown\n[commands](commands.md#init)\n```\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_generic_signature_in_a_fence_is_not_a_link(self):
+        # `Register[T any](v View[T])` matches [text](target) exactly, and the
+        # target it yields is the bare word `v`.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```go\nfunc Register[T any](v View[T])\n```\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_dangling_link_after_a_fence_closes_is_still_checked(self):
+        # Stripping fences must not swallow the rest of the document with them.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```go\nx := 1\n```\n\nSee [the code](src/never_built.py).\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("RFC is Complete", self.problems())
+
+    def test_a_tilde_fence_also_hides_its_links(self):
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n~~~markdown\n[commands](commands.md#init)\n~~~\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_an_unclosed_fence_hides_only_what_follows_it(self):
+        # An unterminated fence runs to end of file. The link before it is
+        # still the author's own prose and is still checked.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\nSee [the code](src/never_built.py).\n\n```go\nx := 1\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("RFC is Complete", self.problems())
 
 if __name__ == "__main__":
     unittest.main()
