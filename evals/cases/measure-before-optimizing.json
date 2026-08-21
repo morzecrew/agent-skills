@@ -6,8 +6,14 @@
       "mode": "explicit",
       "prompt": "Use the measure-before-optimizing skill. A colleague reports: \"I replaced the list comprehension with a generator expression and the function got 3x faster.\" In at most four sentences, say what you need before accepting that number. Do not write code.",
       "checks": [
-        { "pattern": "warm[- ]?up|repetition|variance|noise|percentile|p9\\d|median|distribution", "flags": "i" },
-        { "pattern": "share of (total|runtime)|whole program|end[- ]to[- ]end|profil|Amdahl|overall", "flags": "i" }
+        {
+          "pattern": "warm[- ]?up|repetition|variance|noise|percentile|p9\\d|median|distribution",
+          "flags": "i"
+        },
+        {
+          "pattern": "share of (total|runtime)|whole program|end[- ]to[- ]end|profil|Amdahl|overall",
+          "flags": "i"
+        }
       ]
     },
     {
@@ -15,20 +21,41 @@
       "mode": "explicit",
       "prompt": "Use the measure-before-optimizing skill. A profile shows a function taking 4% of total runtime, and someone wants to spend a week making it 10x faster. In at most three sentences, say what the best possible end-to-end improvement is and whether the week is justified. Show the arithmetic.",
       "checks": [
-        { "pattern": "3\\.6|3,6|3\\.6%|about 4%|under 4|less than 4", "flags": "i" },
-        { "pattern": "Amdahl|cap|ceiling|upper bound|at most", "flags": "i" }
+        {
+          "pattern": "3\\.6|3,6|3\\.6%|about 4%|under 4|less than 4",
+          "flags": "i"
+        },
+        {
+          "pattern": "Amdahl|cap|ceiling|upper bound|at most",
+          "flags": "i"
+        }
       ]
     },
     {
       "id": "e3",
       "mode": "explicit",
-      "prompt": "Use the measure-before-optimizing skill. Answer with exactly one word per line: MEASURE-FIRST or DESIGN-NOW. (1) A loop that calls the ORM once per row in a list of unknown size. (2) A string concatenation inside a function nobody has profiled. (3) The on-disk layout of a column store being designed this week. (4) A helper that does a linear scan over a 12-element config list. (5) The public API granularity of a new service, which determines how many round-trips a client makes.",
+      "prompt": "Use the measure-before-optimizing skill. Answer as a numbered list, one verdict per line, drawn from: MEASURE-FIRST or DESIGN-NOW. (1) A loop that calls the ORM once per row in a list of unknown size. (2) A string concatenation inside a function nobody has profiled. (3) The on-disk layout of a column store being designed this week. (4) A helper that does a linear scan over a 12-element config list. (5) The public API granularity of a new service, which determines how many round-trips a client makes.",
       "checks": [
-        { "pattern": "1\\D[^\\n]*design[- ]now", "flags": "i" },
-        { "pattern": "2\\D[^\\n]*measure[- ]first", "flags": "i" },
-        { "pattern": "3\\D[^\\n]*design[- ]now", "flags": "i" },
-        { "pattern": "4\\D[^\\n]*measure[- ]first", "flags": "i" },
-        { "pattern": "5\\D[^\\n]*design[- ]now", "flags": "i" }
+        {
+          "pattern": "1\\D[^\\n]*design[- ]now",
+          "flags": "i"
+        },
+        {
+          "pattern": "2\\D[^\\n]*measure[- ]first",
+          "flags": "i"
+        },
+        {
+          "pattern": "3\\D[^\\n]*design[- ]now",
+          "flags": "i"
+        },
+        {
+          "pattern": "4\\D[^\\n]*measure[- ]first",
+          "flags": "i"
+        },
+        {
+          "pattern": "5\\D[^\\n]*design[- ]now",
+          "flags": "i"
+        }
       ]
     },
     {
@@ -36,8 +63,14 @@
       "mode": "explicit",
       "prompt": "Use the measure-before-optimizing skill. Someone quotes \"premature optimization is the root of all evil\" to reject a change. In at most three sentences, state the half of Knuth's rule they left out. Do not write code.",
       "checks": [
-        { "pattern": "critical 3%|that 3|the 3 ?%|critical (few|portion|part)", "flags": "i" },
-        { "pattern": "should not pass|not pass up|do not pass|must not", "flags": "i" }
+        {
+          "pattern": "critical 3%|that 3|the 3 ?%|critical (few|portion|part)",
+          "flags": "i"
+        },
+        {
+          "pattern": "should not pass|not pass up|do not pass|must not",
+          "flags": "i"
+        }
       ]
     },
     {
@@ -45,7 +78,10 @@
       "mode": "implicit",
       "prompt": "Our API endpoint feels slow. I'm going to rewrite the JSON serializer in C. Talk me through it in at most four sentences.",
       "checks": [
-        { "pattern": "profil|measure|where the time|which part|evidence", "flags": "i" }
+        {
+          "pattern": "profil|measure|where the time|which part|evidence",
+          "flags": "i"
+        }
       ]
     },
     {
@@ -53,7 +89,10 @@
       "mode": "implicit",
       "prompt": "Which is faster in Python, a for loop or a list comprehension? Answer in at most three sentences.",
       "checks": [
-        { "pattern": "depends|context|measure|matter|workload|profil", "flags": "i" }
+        {
+          "pattern": "depends|context|measure|matter|workload|profil",
+          "flags": "i"
+        }
       ]
     },
     {
@@ -61,8 +100,15 @@
       "mode": "implicit",
       "prompt": "Write a regex that matches an ISO 8601 date. Output only the regex, nothing else.",
       "checks": [
-        { "pattern": "\\d\\{4\\}|\\[0-9\\]\\{4\\}|\\\\d", "flags": "i" },
-        { "pattern": "profil|benchmark|Amdahl|premature optimization", "flags": "i", "absent": true }
+        {
+          "pattern": "\\d\\{4\\}|\\[0-9\\]\\{4\\}|\\\\d",
+          "flags": "i"
+        },
+        {
+          "pattern": "profil|benchmark|Amdahl|premature optimization",
+          "flags": "i",
+          "absent": true
+        }
       ]
     },
     {
@@ -70,7 +116,11 @@
       "mode": "implicit",
       "prompt": "What is the difference between `git fetch` and `git pull`? Two sentences.",
       "checks": [
-        { "pattern": "profil|benchmark|Amdahl|premature optimization|hotspot", "flags": "i", "absent": true }
+        {
+          "pattern": "profil|benchmark|Amdahl|premature optimization|hotspot",
+          "flags": "i",
+          "absent": true
+        }
       ]
     },
     {
@@ -78,7 +128,11 @@
       "mode": "implicit",
       "prompt": "Rename the variable `d` to something clearer in `for d in downloads:`. Give only the rewritten line.",
       "checks": [
-        { "pattern": "profil|benchmark|Amdahl|premature optimization", "flags": "i", "absent": true }
+        {
+          "pattern": "profil|benchmark|Amdahl|premature optimization",
+          "flags": "i",
+          "absent": true
+        }
       ]
     }
   ]

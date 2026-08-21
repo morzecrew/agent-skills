@@ -547,7 +547,7 @@ class DecisionTableTest(ContentFixture, unittest.TestCase):
     def test_an_empty_decisions_table_fails(self):
         self.write_alpha("\n## 11. Decisions\n\n| # | Grade | Decision |\n|---|---|---|\n")
         self.assertEqual(self.check(), 2)
-        self.assertIn("no rows", self.problems())
+        self.assertIn("no table with", self.problems())
 
     def test_an_ungraded_row_fails(self):
         self.write_alpha(DECISIONS.replace("`LOCKED`", "probably fine"))
@@ -570,6 +570,24 @@ class DecisionTableTest(ContentFixture, unittest.TestCase):
 
     def test_the_section_number_does_not_matter(self):
         self.write_alpha(DECISIONS.replace("## 11. Decisions", "## Decisions"))
+        self.assertEqual(self.check(), 0)
+
+    def test_an_alternatives_table_alone_is_not_a_decision_table(self):
+        # Reading every three-column table under the heading turned an
+        # alternatives table into decision rows, failing a sound RFC.
+        self.write_alpha("\n## 11. Decisions\n\n| Option | Why rejected | Cost |\n"
+                         "|---|---|---|\n| A queue | ordering is lost | high |\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("no table with", self.problems())
+
+    def test_a_trailing_table_under_the_same_heading_is_not_read_as_decisions(self):
+        self.write_alpha(DECISIONS + "\nRisks:\n\n| Risk | Likelihood | Impact |\n"
+                         "|---|---|---|\n| Drift | low | high |\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_a_fourth_column_does_not_break_the_table(self):
+        self.write_alpha("\n## 11. Decisions\n\n| # | Grade | Decision | Consequence |\n"
+                         "|---|---|---|---|\n| 1 | `LOCKED` | X. | Y. |\n")
         self.assertEqual(self.check(), 0)
 
     def test_a_following_section_does_not_contribute_rows(self):
@@ -600,6 +618,22 @@ class LinkTargetTest(ContentFixture, unittest.TestCase):
             BETA + "\nSee [the code](src/never_built.py).\n", encoding="utf-8")
         self.assertEqual(self.check(), 2)
         self.assertIn("RFC is Complete", self.problems())
+
+    def test_a_target_that_escapes_the_root_is_a_problem(self):
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n[out](../../../../../../etc/hostname)\n", encoding="utf-8")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("does not resolve inside the repository", self.problems())
+
+    def test_a_non_http_uri_scheme_is_not_checked(self):
+        self.write_alpha(DECISIONS + "\n[a](ftp://h/x) [b](tel:+15550100)\n")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_protocol_relative_url_is_not_checked(self):
+        self.write_alpha(DECISIONS + "\n[a](//cdn.example.com/x.png)\n")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
 
     def test_external_urls_are_not_checked(self):
         self.write_alpha(DECISIONS + "\n[spec](https://example.invalid/x) [mail](mailto:a@b.c)\n")

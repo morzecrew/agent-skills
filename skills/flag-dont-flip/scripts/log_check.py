@@ -45,9 +45,13 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 BLOCK = re.compile(r"^```divergence[ \t]*$\n(.*?)^```[ \t]*$", re.M | re.S)
+OPENING_FENCE = re.compile(r"^```divergence[ \t]*$", re.M)
 FIELD = re.compile(r"^([a-z_]+):[ \t]*(.*)$")
 DRIFT_COUNT = re.compile(r"^\*\*Drift count:\s*(\d+)", re.M)
-RFC3339 = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
+# UTC only. A local stamp with an offset is still RFC 3339, but two entries
+# written in different time zones then sort wrongly against each other, and the
+# log's whole use is ordering what happened against what was decided.
+RFC3339 = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(?:Z|\+00:00)$")
 # path:line or path:start-end, with the path stopping at the first colon that a
 # line number follows — a Windows-style drive letter is not a supported path.
 CITATION = re.compile(r"^(?P<path>[^\s:][^:]*):(?P<start>\d+)(?:-(?P<end>\d+))?$")
@@ -114,6 +118,19 @@ def parse_blocks(text: str) -> list[tuple[int, dict[str, str]]]:
     return blocks
 
 
+def unclosed_fences(text: str, blocks: list[tuple[int, dict[str, str]]]) -> list[Problem]:
+    """Opening ```divergence fences with no closing fence.
+
+    Without this an unterminated entry is not a block at all: it contributes no
+    fields to check and no drift, so a log carrying one passes with `Drift
+    count: 0`. A malformed entry has to fail, not disappear.
+    """
+    opened = [text.count("\n", 0, m.start()) + 1 for m in OPENING_FENCE.finditer(text)]
+    closed = {line for line, _ in blocks}
+    return [Problem("S0", f"block at line {line}", "```divergence fence is never closed")
+            for line in opened if line not in closed]
+
+
 def load_task(path: Path) -> dict:
     """A task file as JSON, or as the documented flat-YAML subset."""
     text = path.read_text(encoding="utf-8", errors="replace")
@@ -154,10 +171,12 @@ def parse_yaml_subset(text: str) -> dict:
     on — turns an unreadable task file into a silence check that passes.
     """
     root: dict[str, object] = {}
-    # (indent of this list's `- ` items, the list). A shallower item pops the
-    # deeper lists, which is how `paths:` inside one decision stops swallowing
-    # the next decision's items.
-    lists: list[tuple[int, list]] = []
+    # (indent of the key that opened this list, indent of its `- ` items, list).
+    # The owner indent is what stops an EMPTY nested list from capturing the
+    # next sibling: `paths:` with no items under it owns only items indented
+    # past it, so a `- id:` back at the outer level pops it instead of joining
+    # it. Item indent is -1 until the first item fixes it.
+    lists: list[list] = []
     current_item: dict | None = None
 
     for number, raw in enumerate(text.splitlines(), start=1):
@@ -172,13 +191,13 @@ def parse_yaml_subset(text: str) -> dict:
         body = line.strip()
 
         if body.startswith("- "):
-            while lists and lists[-1][0] > indent:
+            while lists and (lists[-1][0] >= indent or lists[-1][1] > indent):
                 lists.pop()
-            if not lists or lists[-1][0] < indent:
-                if not lists:
-                    raise ValueError(f"line {number}: list item with no key above it")
-                lists[-1] = (indent, lists[-1][1])
-            target = lists[-1][1]
+            if not lists:
+                raise ValueError(f"line {number}: list item with no key above it")
+            if lists[-1][1] == -1:
+                lists[-1][1] = indent
+            target = lists[-1][2]
             item = body[2:].strip()
             found = FIELD.match(item)
             if found and found.group(2).strip():
@@ -202,7 +221,7 @@ def parse_yaml_subset(text: str) -> dict:
             else:
                 opened: list = []
                 root[key] = opened
-                lists.append((-1, opened))
+                lists.append([indent, -1, opened])
             continue
 
         # An indented mapping entry belongs to the list item currently open.
@@ -215,7 +234,7 @@ def parse_yaml_subset(text: str) -> dict:
         else:
             nested: list = []
             current_item[key] = nested
-            lists.append((-1, nested))
+            lists.append([indent, -1, nested])
     return root
 
 
@@ -271,7 +290,15 @@ def check_legality(line: int, fields: dict[str, str]) -> list[Problem]:
 
 
 def check_drift(text: str, blocks: list[tuple[int, dict[str, str]]]) -> list[Problem]:
-    declared = DRIFT_COUNT.search(text)
+    """The LAST declared count is the current one.
+
+    The log is append-only, so revising the count means appending a new line
+    saying so — never editing the first. Reading the first would force every
+    log that later finds drift to choose between failing this check and
+    breaking the append-only rule.
+    """
+    found = list(DRIFT_COUNT.finditer(text))
+    declared = found[-1] if found else None
     actual = sum(1 for _, fields in blocks if fields.get("class") == "drift")
     if not declared:
         return [Problem("D1", "log", f"no '**Drift count: N**' line; {actual} entries are classed drift")]
@@ -364,7 +391,15 @@ def check_silence(task: dict, blocks: list[tuple[int, dict[str, str]]],
         ident = str(entry.get("id", "")).strip()
         if not ident:
             raise ValueError(f"task file: decision {entry!r} has no id")
-        if str(entry.get("grade", "")).strip() != "LOCKED":
+        grade = str(entry.get("grade", "")).strip()
+        if grade not in GRADES:
+            # Not a skip: a typo'd grade silently removes a decision from the
+            # check, and the run still reports OK.
+            problems.append(Problem("Q2", f"decision {ident}",
+                                    f"grade {grade!r} is not one of {sorted(GRADES)}, "
+                                    "so this decision was never checked"))
+            continue
+        if grade != "LOCKED":
             continue
         paths = entry.get("paths") or []
         if isinstance(paths, str):
@@ -399,6 +434,7 @@ def audit(log: Path, root: Path, task: dict | None,
         # one are the same document.
         skipped.append(Skipped("entries", "the log carries no divergence blocks"))
 
+    problems += unclosed_fences(text, blocks)
     for line, fields in blocks:
         problems += check_schema(line, fields)
         problems += check_legality(line, fields)

@@ -42,7 +42,11 @@ PATTERNS: dict[str, list[tuple[str, str]]] = {
         ("clock", r"\bdate\.today\s*\("),
         ("sleep", r"\b(?:time|asyncio)\.sleep\s*\("),
         ("random", r"\brandom\.(?:random|randint|choice|shuffle|uniform|sample|randrange)\s*\("),
-        ("random", r"\bsecrets\.(?:token_hex|token_bytes|token_urlsafe|choice)\s*\("),
+        # `secrets` and `os.urandom` are deliberately absent: they exist only
+        # for cryptographic use, which the skill requires to read OS entropy
+        # directly on a non-seeded path. Flagging them would make the gate go
+        # red for doing the secure thing, and the cheapest way to green would
+        # be to route key material through a seeded seam.
         ("uuid", r"\buuid\.uuid[14]\s*\("),
         ("env", r"\bos\.(?:getenv|environ)\b"),
     ],

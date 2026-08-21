@@ -12,13 +12,13 @@ Errors (fail the run):
   E6  body has no H1 title
   E7  frontmatter has no roles, or names a role outside the vocabulary
   E8  a "## Related skills" entry names a skill that does not exist
-  E9  a relative link in any of a skill's .md files points at a missing file
+  E9  a relative link in a skill's .md files resolves to nothing inside the repo
   E10 a file in references/ is never mentioned in its SKILL.md
   E11 README.md "Available Skills" is out of sync with skills/ (either direction)
   E12 a bundled script does not compile (python) or parse (shell, javascript)
   E13 a skill ships scripts/ that its SKILL.md never mentions
   E14 gate is missing, or names no script, or is none without a gate_reason
-  E15 body still carries a "Use this skill when" trigger section
+  E15 body still carries a trigger section, at any heading level
 
 Warnings (reported, do not fail):
   W1  body is over the token budget
@@ -54,9 +54,12 @@ ROLES = {"implement", "review", "revert", "author"}
 REF_MENTION = re.compile(r"references/([A-Za-z0-9._-]+\.md)")
 FENCED = re.compile(r"^```.*?^```", re.M | re.S)
 INLINE_CODE = re.compile(r"`[^`\n]*`")
-# A markdown link that points at something in the repository. Anchors, absolute
-# URLs, mail links and shell variables are not ours to resolve.
-RELATIVE_LINK = re.compile(r"\[[^\]]*\]\((?!https?://|mailto:|#|\$)([^)\s]+)\)")
+# A markdown link that points at something in the repository. Anchors and shell
+# variables are not ours to resolve, and neither is any URI scheme or a
+# protocol-relative `//host/x` — matching only http and mailto meant `ftp:` and
+# `tel:` were checked as if they were file paths.
+URI_OR_PROTOCOL_RELATIVE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*:|//)")
+RELATIVE_LINK = re.compile(r"\[[^\]]*\]\((?!#|\$)([^)\s]+)\)")
 BACKTICK = re.compile(r"`([a-z0-9-]+)`")
 
 errors: list[str] = []
@@ -90,8 +93,14 @@ def parse_frontmatter(text: str, where: str) -> dict[str, str] | None:
     return None
 
 
-def section_names(body: str) -> set[str]:
-    return {m.group(1).strip() for m in re.finditer(r"^##\s+(.+)$", body, re.M)}
+def section_names(body: str, levels: str = "2") -> set[str]:
+    """Headings at the given level, or `"2-6"` for every level below the title.
+
+    E15 needs the wide reading: `### Use this skill when` restates the trigger
+    just as expensively as `##` does, and matching only `##` let it through.
+    """
+    pattern = r"^##\s+(.+)$" if levels == "2" else r"^#{2,6}\s+(.+)$"
+    return {m.group(1).strip() for m in re.finditer(pattern, body, re.M)}
 
 
 def related_entries(body: str) -> list[str]:
@@ -119,14 +128,21 @@ def broken_links(page: Path, repo: Path) -> list[str]:
     except OSError:
         return []
     prose = INLINE_CODE.sub("", FENCED.sub("", text))
+    base = repo.resolve()
     missing = []
     for match in RELATIVE_LINK.finditer(prose):
         target = match.group(1).split("#", 1)[0]
-        if not target:
+        if not target or URI_OR_PROTOCOL_RELATIVE.match(target):
             continue
-        if (page.parent / target).exists() or (repo / target).exists():
-            continue
-        missing.append(target)
+        for start in (page.parent, repo):
+            try:
+                resolved = (start / target).resolve()
+            except OSError:
+                continue
+            if resolved.is_relative_to(base) and resolved.exists():
+                break
+        else:
+            missing.append(target)
     return missing
 
 
@@ -202,7 +218,7 @@ def check_skill(skill_dir: Path, all_names: set[str], all_scripts: set[str]) -> 
     body = re.sub(r"\A---.*?^---\s*$", "", text, count=1, flags=re.M | re.S)
     if not re.search(r"^# .+$", body, re.M):
         err("E6", f"{where}: no H1 title")
-    for heading in sorted(section_names(body)):
+    for heading in sorted(section_names(body, levels="2-6")):
         if TRIGGER_SECTION.match(heading):
             err("E15", f"{where}: body still carries '## {heading}' — triggers belong in the description")
     budget = len(body) // CHARS_PER_TOKEN

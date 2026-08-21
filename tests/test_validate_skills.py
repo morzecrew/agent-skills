@@ -130,6 +130,17 @@ class TriggerSectionTest(CheckTest):
     def test_matching_is_case_insensitive(self) -> None:
         self.assertIn("E15", self.check(skill_text(body="\n## USE THIS SKILL WHEN\n\nText.\n")))
 
+    def test_a_level_three_trigger_heading_is_e15(self) -> None:
+        # Restating the trigger costs the same at any depth, and matching only
+        # `##` let a nested one through.
+        self.assertIn("E15", self.check(skill_text(body="\n## Real\n\n### Use this skill when\n\n- x\n")))
+
+    def test_a_level_six_trigger_heading_is_e15(self) -> None:
+        self.assertIn("E15", self.check(skill_text(body="\n## Real\n\n###### Do not use when\n\n- x\n")))
+
+    def test_the_h1_title_is_not_scanned_as_a_section(self) -> None:
+        self.assertEqual(self.check(skill_text(body="\n## Fine\n\nText.\n")), [])
+
 
 class BodyBudgetTest(CheckTest):
     def test_a_short_body_warns_nothing(self) -> None:
@@ -202,6 +213,20 @@ class BrokenLinkTest(unittest.TestCase):
 
     def test_a_shell_variable_target_is_not_checked(self) -> None:
         self.assertEqual(self.links("[comment]($URL)"), [])
+
+    def test_a_target_that_escapes_the_repo_is_reported(self) -> None:
+        # It exists on most machines and is not a link into this repository.
+        self.assertEqual(self.links("[x](../../../../../../etc/hostname)"),
+                         ["../../../../../../etc/hostname"])
+
+    def test_an_absolute_filesystem_path_is_reported(self) -> None:
+        self.assertEqual(self.links("[x](/etc/hostname)"), ["/etc/hostname"])
+
+    def test_a_non_http_uri_scheme_is_not_checked(self) -> None:
+        self.assertEqual(self.links("[a](ftp://h/x) [b](tel:+15550100) [c](irc://x/y)"), [])
+
+    def test_a_protocol_relative_url_is_not_checked(self) -> None:
+        self.assertEqual(self.links("[a](//cdn.example.com/x.png)"), [])
 
     def test_link_shaped_text_in_inline_code_is_not_a_link(self) -> None:
         self.assertEqual(self.links("a dispatch table: `handlers[kind](payload)`"), [])

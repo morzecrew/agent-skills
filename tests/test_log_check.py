@@ -100,9 +100,28 @@ class SchemaTest(Fixture):
         broken = entry().replace("2026-08-20T11:04:12Z", "2026-08-20T11:04:12")
         self.assertIn("S7", self.codes(log(broken)))
 
-    def test_an_explicit_offset_passes(self) -> None:
-        good = entry().replace("2026-08-20T11:04:12Z", "2026-08-20T11:04:12+02:00")
+    def test_a_non_utc_offset_is_s7(self) -> None:
+        # The field table says UTC. Two entries stamped in different zones sort
+        # wrongly against each other, and ordering is what the log is for.
+        broken = entry().replace("2026-08-20T11:04:12Z", "2026-08-20T11:04:12+09:00")
+        self.assertIn("S7", self.codes(log(broken)))
+
+    def test_an_explicit_zero_offset_passes(self) -> None:
+        good = entry().replace("2026-08-20T11:04:12Z", "2026-08-20T11:04:12+00:00")
         self.assertEqual(self.codes(log(good)), [])
+
+    def test_fractional_seconds_pass(self) -> None:
+        good = entry().replace("2026-08-20T11:04:12Z", "2026-08-20T11:04:12.318Z")
+        self.assertEqual(self.codes(log(good)), [])
+
+    def test_an_unclosed_fence_is_s0(self) -> None:
+        # Without this the entry is not a block at all: no fields to check, no
+        # drift to count, and the log passes with "Drift count: 0".
+        text = "# T\n\n**Drift count: 0.**\n\n```divergence\ndecision: D-3\ngrade: LOCKED\n"
+        self.assertIn("S0", self.codes(text))
+
+    def test_a_closed_fence_is_not_reported_as_unclosed(self) -> None:
+        self.assertNotIn("S0", self.codes(log(entry())))
 
     def test_attempt_zero_is_s8(self) -> None:
         broken = entry().replace("attempt: 1", "attempt: 0")
@@ -182,6 +201,21 @@ class DriftCountTest(Fixture):
 
     def test_an_overstated_count_is_also_d2(self) -> None:
         self.assertIn("D2", self.codes(log(entry(), drift=3)))
+
+    def test_the_last_declared_count_is_the_current_one(self) -> None:
+        # The log is append-only, so revising the count means appending a new
+        # line. Reading the first would force a later drift finding to choose
+        # between failing this check and breaking append-only.
+        text = ("# T\n\n**Drift count: 0.**\n\n"
+                + entry(klass="drift", grade="ASSUMED", action="departed")
+                + "\n**Drift count: 1.** Appended after the entry above.\n")
+        self.assertEqual(self.codes(text), [])
+
+    def test_a_stale_last_count_still_fails(self) -> None:
+        text = ("# T\n\n**Drift count: 0.**\n\n"
+                + entry(klass="drift", grade="ASSUMED", action="departed")
+                + "\n**Drift count: 0.** Still claiming none.\n")
+        self.assertIn("D2", self.codes(text))
 
     def test_a_matching_non_zero_count_passes(self) -> None:
         text = log(entry(klass="drift", grade="ASSUMED", action="departed"), drift=1)
@@ -290,6 +324,16 @@ class SilenceTest(Fixture):
     def test_a_plain_glob_still_works(self) -> None:
         self.assertTrue(script.matches("src/a.py", "src/*.py"))
 
+    def test_an_unknown_task_grade_is_q2_not_a_silent_skip(self) -> None:
+        # A typo'd grade removed the decision from the check entirely, and the
+        # run still reported OK.
+        task = {"decisions": [{"id": "D-3", "grade": "LOCKD", "paths": ["src/**"]}]}
+        self.assertIn("Q2", self.codes(log(), task=task, touched=["src/a.py"]))
+
+    def test_a_valid_non_locked_grade_is_still_out_of_scope(self) -> None:
+        task = {"decisions": [{"id": "D-4", "grade": "ASSUMED", "paths": ["src/**"]}]}
+        self.assertEqual(self.codes(log(), task=task, touched=["src/a.py"]), [])
+
     def test_a_decision_without_an_id_is_an_error_not_a_skip(self) -> None:
         task = {"decisions": [{"grade": "LOCKED", "paths": ["src/**"]}]}
         with self.assertRaises(ValueError):
@@ -337,6 +381,18 @@ class TaskFileTest(unittest.TestCase):
         )
         self.assertEqual(len(parsed["decisions"]), 2)
         self.assertEqual(parsed["decisions"][0]["paths"], ["a/**"])
+
+    def test_an_empty_nested_list_does_not_swallow_the_next_decision(self) -> None:
+        # `paths:` with nothing under it used to adopt the following `- id:`
+        # line as a path, which deleted that decision from the silence check.
+        parsed = self.parse("decisions:\n  - id: D-1\n    paths:\n  - id: D-2\n")
+        self.assertEqual([d["id"] for d in parsed["decisions"]], ["D-1", "D-2"])
+        self.assertEqual(parsed["decisions"][0]["paths"], [])
+
+    def test_two_empty_nested_lists_in_a_row_stay_separate(self) -> None:
+        parsed = self.parse(
+            "decisions:\n  - id: D-1\n    paths:\n  - id: D-2\n    paths:\n  - id: D-3\n")
+        self.assertEqual([d["id"] for d in parsed["decisions"]], ["D-1", "D-2", "D-3"])
 
     def test_comments_and_blank_lines_are_ignored(self) -> None:
         parsed = self.parse("# a task\n\nid: T-1 # trailing\n")

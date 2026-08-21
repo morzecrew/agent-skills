@@ -76,9 +76,11 @@ GRADES = ("LOCKED", "ASSUMED", "OPEN")
 # minimal RFC still keeps.
 DECISIONS_HEADING = re.compile(r"^#{2,3}\s*(?:\d+\.\s*)?Decisions\b.*$", re.M | re.I)
 TABLE_ROW = re.compile(rf"^\|({CELL})\|({CELL})\|({CELL})\|", re.M)
-# A markdown link that points inside the repository. Anchors, absolute URLs and
-# mail links are somebody else's problem.
-LOCAL_LINK = re.compile(r"\[[^\]]*\]\((?!https?://|mailto:|#)([^)\s]+)")
+# A markdown link that points inside the repository. Any URI scheme at all, and
+# a protocol-relative `//host/x`, belong to somebody else — matching only http
+# and mailto meant `ftp:` and `tel:` were checked as if they were file paths.
+URI_OR_PROTOCOL_RELATIVE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*:|//)")
+LOCAL_LINK = re.compile(r"\[[^\]]*\]\((?!#)([^)\s]+)")
 
 
 def fail(message: str) -> None:
@@ -195,14 +197,32 @@ def decision_rows(text: str) -> list[tuple[str, str]] | None:
     following = re.search(r"^#{2,3}\s", section, re.M)
     if following:
         section = section[: following.start()]
+    # Only the table whose header names a grade column. A Decisions section may
+    # also carry an alternatives table or a trailing risks table, and reading
+    # every three-column table under the heading turned those into decision rows
+    # — failing a sound RFC, and passing one whose real table was missing.
     rows = []
-    for match in TABLE_ROW.finditer(section):
+    inside = False
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            if inside and stripped:
+                break  # prose after the table ends it
+            continue
+        match = TABLE_ROW.match(stripped)
+        if not match:
+            continue
         first, second = match.group(1).strip(), match.group(2).strip()
-        if set(first) <= set("- :") and first:
+        if not inside:
+            if first.strip("* `").lower() in {"#", "no", "num"} and \
+                    second.strip("* `").lower() == "grade":
+                inside = True
+            continue
+        if first and set(first) <= set("- :"):
             continue  # the |---|---| separator
-        if first.lower() in {"#", "no", "num"} or second.lower() == "grade":
-            continue  # the header row
         rows.append((first, second))
+    if not inside:
+        return []
     return rows
 
 
@@ -211,7 +231,7 @@ def check_decisions(path: Path, text: str) -> list[str]:
     if rows is None:
         return [f"{path.name}: no Decisions section — it is the one section a minimal RFC keeps"]
     if not rows:
-        return [f"{path.name}: Decisions table has no rows"]
+        return [f"{path.name}: Decisions section has no table with '#' and 'Grade' columns"]
     problems = []
     for number, grade in rows:
         bare = grade.strip("`* ")
@@ -226,16 +246,27 @@ def check_decisions(path: Path, text: str) -> list[str]:
 
 
 def check_links(path: Path, text: str, rfc_dir: Path, root: Path) -> list[str]:
-    """Relative links whose targets do not exist, in document order."""
+    """Relative links whose targets do not resolve inside the repository.
+
+    A candidate has to both exist and stay under `root`: `../../../../etc/hosts`
+    exists on most machines and is not a link into this repository, so accepting
+    it would let a Complete RFC pass while citing nothing anyone can read.
+    """
+    base = root.resolve()
     missing = []
     for match in LOCAL_LINK.finditer(text):
         target = match.group(1).split("#", 1)[0]
-        if not target:
+        if not target or URI_OR_PROTOCOL_RELATIVE.match(target):
             continue
-        candidates = [rfc_dir / target, root / target]
-        if any(candidate.exists() for candidate in candidates):
-            continue
-        missing.append(f"{path.name}: link target {target!r} does not exist")
+        for start in (rfc_dir, root):
+            try:
+                resolved = (start / target).resolve()
+            except OSError:
+                continue
+            if resolved.is_relative_to(base) and resolved.exists():
+                break
+        else:
+            missing.append(f"{path.name}: link target {target!r} does not resolve inside the repository")
     return missing
 
 
