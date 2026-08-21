@@ -599,6 +599,87 @@ class DecisionTableTest(ContentFixture, unittest.TestCase):
         self.assertEqual(self.check(), 0)
 
 
+    def test_grade_in_a_later_column_is_read(self):
+        # Six of the graded tables in the collection this gate was written for
+        # put Grade third, behind the decision itself. Reading the second cell
+        # positionally failed every one of them while their rows were graded
+        # correctly, so the column is found by its heading, not its index.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade | Why |\n"
+                         "|---|---|---|---|\n| 1 | The thing. | `LOCKED` | Because. |\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_an_ungraded_row_in_a_later_grade_column_still_fails(self):
+        # Letting the column move must not cost the check its teeth.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade | Why |\n"
+                         "|---|---|---|---|\n| 1 | The thing. | probably fine | Because. |\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("not one of LOCKED", self.problems())
+
+    def test_a_table_with_no_grade_heading_is_still_not_a_decision_table(self):
+        # Finding the column by name must not start accepting tables that
+        # never named one -- that is the ungraded collection this gate exists
+        # to report.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Why |\n"
+                         "|---|---|---|\n| 1 | The thing. | Because. |\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("no table with", self.problems())
+
+    def test_a_grade_column_without_a_number_column_is_not_a_decision_table(self):
+        # The number is how a decision row is cited, from another RFC or from
+        # an execution log. A table that grades something else — rejected
+        # alternatives, risks — is not the table this section must carry, and
+        # finding the columns by name rather than by position is what makes
+        # that distinction worth stating.
+        self.write_alpha("\n## 11. Decisions\n\n| Option | Grade | Why rejected |\n"
+                         "|---|---|---|\n| A queue | `LOCKED` | ordering is lost |\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("no table with", self.problems())
+
+    def test_an_escaped_pipe_does_not_shift_the_columns(self):
+        # The cell reader exists because a plain split ended the cell at the
+        # escape and shifted every column after it. Here that shift would read
+        # the tail of the decision text as the grade.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade | Why |\n"
+                         "|---|---|---|---|\n"
+                         "| 1 | Either \\| or both. | `LOCKED` | Because. |\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_a_row_without_its_trailing_pipe_still_parses(self):
+        # A row missing its closing pipe used to swallow the row beneath it.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade |\n"
+                         "|---|---|---|\n"
+                         "| 1 | The thing. | `LOCKED`\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_a_row_too_short_for_its_header_is_skipped_not_misread(self):
+        # Indexing a named column into a truncated row either raises or takes
+        # whatever cell happened to be last as the grade. The sound rows around
+        # it are still read.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade |\n"
+                         "|---|---|---|\n"
+                         "| 1 | The thing. | `LOCKED` |\n"
+                         "| 2 | truncated |\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_split_row_ignores_a_line_that_is_not_a_row(self):
+        self.assertEqual(script.split_row("just prose"), [])
+
+    def test_a_backslash_before_a_letter_is_not_an_escape(self):
+        # Markdown escapes punctuation only, so `\LOCKED` renders as the
+        # literal text and is not a grade. Consuming every backslash made the
+        # checker accept exactly what the reader sees rejected.
+        self.write_alpha(DECISIONS.replace("`LOCKED`", r"\LOCKED"))
+        self.assertEqual(self.check(), 2)
+        self.assertIn("not one of LOCKED", self.problems())
+
+    def test_a_table_immediately_after_the_decision_table_is_not_merged(self):
+        # A markdown table cannot contain a blank line, so the blank ends it.
+        # Without that the next table's own header row is read as a decision
+        # row, and its second cell as that row's grade.
+        self.write_alpha(DECISIONS + "\n| Risk | Likelihood | Impact |\n"
+                         "|---|---|---|\n| Drift | low | high |\n")
+        self.assertEqual(self.check(), 0)
+
 class LinkTargetTest(ContentFixture, unittest.TestCase):
     def test_a_resolving_link_passes_quietly(self):
         (self.root / "src").mkdir()
@@ -656,6 +737,67 @@ class LinkTargetTest(ContentFixture, unittest.TestCase):
         self.assertEqual(self.check(), 0)
         self.assertNotIn("link target", self.problems())
 
+
+    def test_a_link_inside_a_code_fence_is_not_checked(self):
+        # A fenced block samples what some *other* file will contain, so its
+        # relative links resolve from that file's directory, not this one's.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```markdown\n[commands](commands.md#init)\n```\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_generic_signature_in_a_fence_is_not_a_link(self):
+        # `Register[T any](v View[T])` matches [text](target) exactly, and the
+        # target it yields is the bare word `v`.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```go\nfunc Register[T any](v View[T])\n```\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_dangling_link_after_a_fence_closes_is_still_checked(self):
+        # Stripping fences must not swallow the rest of the document with them.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```go\nx := 1\n```\n\nSee [the code](src/never_built.py).\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("RFC is Complete", self.problems())
+
+    def test_a_tilde_fence_also_hides_its_links(self):
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n~~~markdown\n[commands](commands.md#init)\n~~~\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_an_unclosed_fence_hides_only_what_follows_it(self):
+        # An unterminated fence runs to end of file. The link before it is
+        # still the author's own prose and is still checked.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\nSee [the code](src/never_built.py).\n\n```go\nx := 1\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("RFC is Complete", self.problems())
+
+    def test_an_over_indented_marker_does_not_close_a_fence(self):
+        # CommonMark allows a closing fence at most three spaces of indent. A
+        # marker indented four is fenced content, so the block runs on and the
+        # link below it stays hidden.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```markdown\n    ```\n[commands](commands.md#init)\n```\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_marker_indented_three_still_closes_the_fence(self):
+        # The other side of the same boundary: three spaces is a legal closer,
+        # so what follows is prose again and its dangling link is reported.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```go\n   ```\n\nSee [the code](src/never_built.py).\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("RFC is Complete", self.problems())
 
 if __name__ == "__main__":
     unittest.main()
