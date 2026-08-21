@@ -98,7 +98,7 @@ YAML_NOT_TEXT = re.compile(
         true | false | yes | no | on | off | y | n |    # bool, 1.2 and 1.1
         null | ~ |                                      # null
         [-+]? (?: [0-9][0-9_]* (?:\.[0-9_]*)? | \.[0-9][0-9_]* ) (?:[eE][-+]?[0-9]+)? |
-        [-+]? 0[xX][0-9a-fA-F_]+ | [-+]? 0[oO][0-7_]+ |
+        [-+]? 0[xX][0-9a-fA-F_]+ | [-+]? 0[oO][0-7_]+ | [-+]? 0b[01_]+ |
         [-+]? \.(?: inf | nan )
     )$""",
     re.VERBOSE | re.IGNORECASE,
@@ -110,6 +110,13 @@ YAML_NOT_TEXT = re.compile(
 # string and the installer loads as a list or a mapping.
 COLLECTION_FIELDS = frozenset({"roles"})
 
+# ...and the exemption has to be narrow, because `check_roles` reaches its list
+# through `strip("[]")`. That reads a quoted `'[implement]'` (a string to YAML),
+# a bare `implement` (a string to YAML) and an unclosed `[implement` (a parse
+# error to YAML) as the same one-item list. The shape is settled here instead,
+# before anything splits on commas.
+FLOW_SEQUENCE = re.compile(r"^\[[^\[\]{}]*\]$")
+
 
 def scalar_value(raw: str, where: str, key: str) -> str:
     """The text a YAML parser would read out of one frontmatter value.
@@ -119,9 +126,13 @@ def scalar_value(raw: str, where: str, key: str) -> str:
     untouched for its own check to read. Anything left is plain, and is
     refused if YAML would read it as something other than that text.
     """
+    if key in COLLECTION_FIELDS:
+        if not FLOW_SEQUENCE.match(raw):
+            err("E16", f"{where}: {key} must be a flow sequence like [implement, review] — "
+                       "a quoted or bare value is a string to YAML, not a list")
+        return raw
     if raw[:1] in ("[", "{"):
-        if key not in COLLECTION_FIELDS:
-            err("E16", f"{where}: {key} is a YAML collection where text is required")
+        err("E16", f"{where}: {key} is a YAML collection where text is required")
         return raw
     for quote in ("'", '"'):
         if not raw.startswith(quote):
@@ -130,6 +141,10 @@ def scalar_value(raw: str, where: str, key: str) -> str:
             err("E16", f"{where}: {key} opens with {quote} and never closes")
             return raw
         inner = raw[1:-1]
+        if quote == "'" and any(len(run) % 2 for run in re.findall(r"'+", inner)):
+            err("E16", f"{where}: {key} is single-quoted with an apostrophe that is not "
+                       "doubled — YAML ends the scalar there and rejects the rest")
+            return inner.replace("''", "'")
         if quote == '"' and "\\" in inner:
             err("E16", f"{where}: {key} is double-quoted with a backslash escape — "
                        "single-quote it rather than have this parser approximate one")

@@ -373,6 +373,36 @@ class TypedScalarTest(CheckTest):
                 self.read(token)
                 self.assertEqual(self.codes(), ["E16"])
 
+    def test_yaml_11_binary_integers_are_refused(self) -> None:
+        """PyYAML resolves `0b101` to the integer 5; the radix branches already
+        covered hex and octal but not binary."""
+        for token in ("0b101", "-0b101", "+0b101", "0b1_01"):
+            with self.subTest(token=token):
+                script.errors.clear()
+                self.read(token)
+                self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_non_binary_digit_after_0b_is_text(self) -> None:
+        """`0b9` matches no resolver, so it is a string everywhere. The binary
+        branch takes binary digits only; widening it would refuse real text."""
+        for token in ("0b9", "0b2", "0babel"):
+            with self.subTest(token=token):
+                script.errors.clear()
+                self.read(token)
+                self.assertEqual(self.codes(), [])
+
+    def test_case_variants_are_refused_even_where_a_parser_would_not(self) -> None:
+        """Deliberate over-reach, pinned so it is not read as a bug. PyYAML's
+        1.1 resolver is lower-case only, so `0B101` is a string to it. The rule
+        is that a bare token any supported parser types as non-text must be
+        quoted, case included: over-reaching costs one pair of quotes, and
+        under-reaching is the defect this check exists to close."""
+        for token in ("0B101", "0X1F", "TRUE"):
+            with self.subTest(token=token):
+                script.errors.clear()
+                self.read(token)
+                self.assertEqual(self.codes(), ["E16"])
+
     def test_none_is_text_and_stays_legal(self) -> None:
         """`gate: none` is the collection's own convention — YAML reads it as
         the string it looks like, and refusing it would fail half the skills."""
@@ -390,6 +420,92 @@ class TypedScalarTest(CheckTest):
         self.assertEqual(self.read("'true'"), "true")
         self.assertEqual(self.codes(), [])
 
+
+class RolesSequenceTest(CheckTest):
+    """`check_roles` reaches its list through `strip("[]")`, which reads three
+    non-lists as a one-item list. The shape is settled before the split."""
+
+    def read(self, raw: str) -> str:
+        return script.scalar_value(raw, "where", "roles")
+
+    def test_a_flow_sequence_is_the_accepted_form(self) -> None:
+        for value in ("[implement]", "[implement, review]", "[]"):
+            with self.subTest(value=value):
+                script.errors.clear()
+                self.read(value)
+                self.assertEqual(self.codes(), [])
+
+    def test_a_quoted_sequence_is_a_string_and_is_refused(self) -> None:
+        self.read("'[implement]'")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_an_unclosed_sequence_is_refused(self) -> None:
+        """YAML raises a ParserError here; `strip("[]")` returned ['implement']."""
+        self.read("[implement")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_bare_word_is_a_string_and_is_refused(self) -> None:
+        self.read("implement")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_nested_collection_is_refused(self) -> None:
+        self.read("[implement, [review]]")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_trailing_text_after_the_sequence_is_refused(self) -> None:
+        """The pattern is anchored at both ends: without the tail anchor a
+        prefix match would accept a line YAML rejects."""
+        self.read("[implement] and then some")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_sequence_of_mappings_is_not_a_sequence_of_roles(self) -> None:
+        """YAML reads this as a list containing a mapping, which `check_roles`
+        would split on commas as though it were two role names."""
+        self.read("[{implement: yes}]")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_every_shipped_skill_declares_roles_as_a_sequence(self) -> None:
+        repo = Path(script.__file__).resolve().parent.parent
+        for page in sorted((repo / "skills").glob("*/SKILL.md")):
+            with self.subTest(skill=page.parent.name):
+                script.errors.clear()
+                script.parse_frontmatter(page.read_text(encoding="utf-8"), page.parent.name)
+                self.assertEqual(self.codes(), [])
+        script.errors.clear()
+
+
+class ApostropheRunTest(CheckTest):
+    """Inside a single-quoted scalar an apostrophe must be doubled. An odd-length
+    run ends the scalar early, and YAML rejects whatever follows."""
+
+    def read(self, raw: str) -> str:
+        return script.scalar_value(raw, "where", "description")
+
+    def test_a_lone_apostrophe_is_refused(self) -> None:
+        self.read("'author's notes'")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_three_run_is_refused(self) -> None:
+        self.read("'a'''b'")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_bare_triple_quote_is_refused(self) -> None:
+        """Length and both ends satisfy the unterminated check; the inner run
+        of one apostrophe is what makes it invalid."""
+        self.read("'''")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_an_even_run_is_the_valid_escape(self) -> None:
+        self.assertEqual(self.read("''''"), "'")
+        self.assertEqual(self.codes(), [])
+
+    def test_a_doubled_apostrophe_mid_value_stays_valid(self) -> None:
+        self.assertEqual(self.read("'the author''s intent'"), "the author's intent")
+        self.assertEqual(self.codes(), [])
+
+    def test_a_double_quoted_apostrophe_needs_no_doubling(self) -> None:
+        self.assertEqual(self.read('"the author\'s intent"'), "the author's intent")
+        self.assertEqual(self.codes(), [])
 
 class IndentedBlockTest(CheckTest):
     """`key:` with nothing after it and indented lines under it is a nested
