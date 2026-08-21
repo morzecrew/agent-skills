@@ -624,6 +624,46 @@ class DecisionTableTest(ContentFixture, unittest.TestCase):
         self.assertEqual(self.check(), 2)
         self.assertIn("no table with", self.problems())
 
+    def test_a_grade_column_without_a_number_column_is_not_a_decision_table(self):
+        # The number is how a decision row is cited, from another RFC or from
+        # an execution log. A table that grades something else — rejected
+        # alternatives, risks — is not the table this section must carry, and
+        # finding the columns by name rather than by position is what makes
+        # that distinction worth stating.
+        self.write_alpha("\n## 11. Decisions\n\n| Option | Grade | Why rejected |\n"
+                         "|---|---|---|\n| A queue | `LOCKED` | ordering is lost |\n")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("no table with", self.problems())
+
+    def test_an_escaped_pipe_does_not_shift_the_columns(self):
+        # The cell reader exists because a plain split ended the cell at the
+        # escape and shifted every column after it. Here that shift would read
+        # the tail of the decision text as the grade.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade | Why |\n"
+                         "|---|---|---|---|\n"
+                         "| 1 | Either \\| or both. | `LOCKED` | Because. |\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_a_row_without_its_trailing_pipe_still_parses(self):
+        # A row missing its closing pipe used to swallow the row beneath it.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade |\n"
+                         "|---|---|---|\n"
+                         "| 1 | The thing. | `LOCKED`\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_a_row_too_short_for_its_header_is_skipped_not_misread(self):
+        # Indexing a named column into a truncated row either raises or takes
+        # whatever cell happened to be last as the grade. The sound rows around
+        # it are still read.
+        self.write_alpha("\n## 11. Decisions\n\n| # | Decision | Grade |\n"
+                         "|---|---|---|\n"
+                         "| 1 | The thing. | `LOCKED` |\n"
+                         "| 2 | truncated |\n")
+        self.assertEqual(self.check(), 0)
+
+    def test_split_row_ignores_a_line_that_is_not_a_row(self):
+        self.assertEqual(script.split_row("just prose"), [])
+
 class LinkTargetTest(ContentFixture, unittest.TestCase):
     def test_a_resolving_link_passes_quietly(self):
         (self.root / "src").mkdir()
