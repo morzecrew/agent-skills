@@ -12,7 +12,7 @@ Errors (fail the run):
   E6  body has no H1 title
   E7  frontmatter has no roles, or names a role outside the vocabulary
   E8  a "## Related skills" entry names a skill that does not exist
-  E9  a relative link to references/ points at a missing file
+  E9  a relative link in any of a skill's .md files points at a missing file
   E10 a file in references/ is never mentioned in its SKILL.md
   E11 README.md "Available Skills" is out of sync with skills/ (either direction)
   E12 a bundled script does not compile (python) or parse (shell, javascript)
@@ -52,6 +52,11 @@ MAX_BODY_TOKENS = 1500
 CHARS_PER_TOKEN = 4
 ROLES = {"implement", "review", "revert", "author"}
 REF_MENTION = re.compile(r"references/([A-Za-z0-9._-]+\.md)")
+FENCED = re.compile(r"^```.*?^```", re.M | re.S)
+INLINE_CODE = re.compile(r"`[^`\n]*`")
+# A markdown link that points at something in the repository. Anchors, absolute
+# URLs, mail links and shell variables are not ours to resolve.
+RELATIVE_LINK = re.compile(r"\[[^\]]*\]\((?!https?://|mailto:|#|\$)([^)\s]+)\)")
 BACKTICK = re.compile(r"`([a-z0-9-]+)`")
 
 errors: list[str] = []
@@ -100,6 +105,29 @@ def related_entries(body: str) -> list[str]:
             if tick:
                 names.append(tick.group(1))
     return names
+
+
+def broken_links(page: Path, repo: Path) -> list[str]:
+    """Relative link targets in one markdown file that resolve to nothing.
+
+    Fenced blocks and inline code are stripped first: both carry link-shaped
+    text that is not a link — a template's `[0001](0001-kebab-title.md)` row, or
+    a dispatch table written `handlers[kind](payload)`.
+    """
+    try:
+        text = page.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    prose = INLINE_CODE.sub("", FENCED.sub("", text))
+    missing = []
+    for match in RELATIVE_LINK.finditer(prose):
+        target = match.group(1).split("#", 1)[0]
+        if not target:
+            continue
+        if (page.parent / target).exists() or (repo / target).exists():
+            continue
+        missing.append(target)
+    return missing
 
 
 def check_roles(fm: dict[str, str], where: str) -> None:
@@ -190,6 +218,14 @@ def check_skill(skill_dir: Path, all_names: set[str], all_scripts: set[str]) -> 
     for fname in set(REF_MENTION.findall(text)):
         if not (skill_dir / "references" / fname).is_file():
             err("E9", f"{where}: mentions references/{fname}, which does not exist")
+
+    # Every .md in the skill, not only SKILL.md: a section moved into
+    # references/ carries its links with it, and a `references/x.md` link that
+    # was correct in SKILL.md resolves to references/references/x.md there.
+    for page in sorted(skill_dir.rglob("*.md")):
+        for target in broken_links(page, REPO):
+            rel = page.relative_to(REPO)
+            err("E9", f"{rel}: link target {target!r} does not exist")
 
     refs_dir = skill_dir / "references"
     if refs_dir.is_dir():

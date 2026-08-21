@@ -6,7 +6,7 @@ carries the scope and the verification rule; the checklist form is in
 
 ## The review passes
 
-For a running review, [references/review-checklist.md](references/review-checklist.md) carries these passes as check-off questions; the sections below carry the reasoning.
+For a running review, [review-checklist.md](review-checklist.md) carries these passes as check-off questions; the sections below carry the reasoning.
 
 ### 1. Poison: work that can never succeed
 

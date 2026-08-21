@@ -159,5 +159,68 @@ class CollectionTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
+class BrokenLinkTest(unittest.TestCase):
+    """E9 covers every .md in a skill, not only SKILL.md."""
+
+    def links(self, text: str, *, existing: list[str] = ()) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "skills" / "demo" / "references").mkdir(parents=True)
+            for name in existing:
+                target = repo / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("x\n", encoding="utf-8")
+            page = repo / "skills" / "demo" / "references" / "page.md"
+            page.write_text(text, encoding="utf-8")
+            return script.broken_links(page, repo)
+
+    def test_a_resolving_sibling_link_is_clean(self) -> None:
+        self.assertEqual(
+            self.links("See [other](other.md).",
+                       existing=["skills/demo/references/other.md"]), [])
+
+    def test_a_missing_target_is_reported(self) -> None:
+        self.assertEqual(self.links("See [other](other.md)."), ["other.md"])
+
+    def test_a_skill_relative_path_inside_references_is_reported(self) -> None:
+        # The bug this exists for: a section moved out of SKILL.md keeps its
+        # `references/x.md` link, which from inside references/ resolves to
+        # references/references/x.md.
+        self.assertEqual(
+            self.links("See [x](references/other.md).",
+                       existing=["skills/demo/references/other.md"]),
+            ["references/other.md"])
+
+    def test_a_repo_root_relative_path_resolves(self) -> None:
+        self.assertEqual(self.links("[readme](README.md)", existing=["README.md"]), [])
+
+    def test_external_urls_are_not_checked(self) -> None:
+        self.assertEqual(self.links("[a](https://example.invalid/x) [b](mailto:a@b.c)"), [])
+
+    def test_a_bare_anchor_is_not_checked(self) -> None:
+        self.assertEqual(self.links("[above](#section)"), [])
+
+    def test_a_shell_variable_target_is_not_checked(self) -> None:
+        self.assertEqual(self.links("[comment]($URL)"), [])
+
+    def test_link_shaped_text_in_inline_code_is_not_a_link(self) -> None:
+        self.assertEqual(self.links("a dispatch table: `handlers[kind](payload)`"), [])
+
+    def test_link_shaped_text_in_a_fenced_block_is_not_a_link(self) -> None:
+        self.assertEqual(
+            self.links("```markdown\n| [0001](0001-kebab-title.md) | Title |\n```\n"), [])
+
+    def test_an_anchor_on_a_real_file_resolves_to_the_file(self) -> None:
+        self.assertEqual(
+            self.links("[x](other.md#part)",
+                       existing=["skills/demo/references/other.md"]), [])
+
+    def test_every_shipped_skill_page_resolves(self) -> None:
+        repo = Path(script.__file__).resolve().parent.parent
+        for page in sorted((repo / "skills").rglob("*.md")):
+            with self.subTest(page=str(page.relative_to(repo))):
+                self.assertEqual(script.broken_links(page, repo), [])
+
+
 if __name__ == "__main__":
     unittest.main()

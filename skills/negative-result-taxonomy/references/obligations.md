@@ -97,4 +97,4 @@ It refuses an unpaid-for `FAMILY_DEAD`, a `FAMILY_DEAD` whose rebuild ticket is 
 
 Provenance is a warning rather than a refusal on purpose: a record whose starting point is unidentifiable is worth flagging every run, but it does not make the verdict above it wrong, and blocking on it would teach people to stop reading the blocks.
 
-The full field-by-field schema is in [references/ledger-schema.md](references/ledger-schema.md).
+The full field-by-field schema is in [ledger-schema.md](ledger-schema.md).

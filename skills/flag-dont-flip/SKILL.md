@@ -109,7 +109,9 @@ whose evidence cannot be found is discarded, and a discarded entry counts as
 none.
 
 And never amend the spec from inside a task. Editing its prose, table or grades
-launders the flip; your entry *is* the amendment proposal.
+launders the flip; your entry *is* the amendment proposal. Where you followed the
+design but the alternative is worth naming, record that too — the reference shows
+the shape.
 
 ## Class answers one question: could this have been known before code existed?
 
@@ -165,6 +167,6 @@ guessing a grade.
 
 - `rfc-writer` — authors the decision table and grades, and owns reconciliation. Absent it, treat every decision as `LOCKED`, as above.
 - `self-audit` — adversarial pass at task completion; its findings are departures the executor did not notice, and belong in the same log. Absent it, the drift count is self-reported and worth less.
-- `distill-the-rule` — turns a run of entries into rules that change the next task's behaviour. Absent it, the log is a record nobody re-reads.
+- `distill-the-rule` — turns a run of entries into rules that change the next task's behaviour. Per-task logs have no place to close a unit, so this is the step that stops the collection being a record nobody re-reads; absent it, re-read the logs periodically anyway.
 - `ratchet-what-you-build` — the reason `log_check.py` is a CI gate rather than a habit.
 - `reading-isnt-proof` — a contract-class departure invalidates the shared battery until it is re-run.

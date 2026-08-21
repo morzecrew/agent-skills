@@ -21,7 +21,7 @@ python3 scripts/pr_loop.py reply   $PR --comment-id ID --body "…"           # 
 python3 scripts/pr_loop.py resolve --thread-id THREAD_ID                    # bot threads only
 ```
 
-(Paths relative to this skill's directory; needs an authenticated `gh`.) The raw incantations behind it live in [references/github-mechanics.md](references/github-mechanics.md) — use them only where the script can't run. The judgment steps — verdicts, dedup into findings, fixes, coverage, description edits — are yours, not the tool's.
+(Paths relative to this skill's directory; needs an authenticated `gh`.) The raw incantations behind it live in [github-mechanics.md](github-mechanics.md) — use them only where the script can't run. The judgment steps — verdicts, dedup into findings, fixes, coverage, description edits — are yours, not the tool's.
 
 ## 1. Wait — bounded, not hopeful
 

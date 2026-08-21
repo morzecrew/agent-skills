@@ -72,3 +72,19 @@ guarantees, public surface — are logged even when they look like implementatio
 detail. If another implementation of the same port would now behave differently,
 the shared conformance battery is re-run rather than assumed still valid
 (`reading-isnt-proof`).
+
+## Recording a departure you did not make
+
+Where the design was followed **and the alternative is worth naming**, say so in
+prose beside the entries — the checker reads only the fenced blocks and ignores
+the rest:
+
+> **Deliberately not applied:** RFC 0014 §5.3 sketches a write-through cache in
+> front of the session store. Not built: the store is already behind the
+> repository seam, so the sketch would add a second cache with no measured
+> pressure. The existing code stands.
+
+An illustrative sketch you chose not to implement is a decision. Without the
+note, the reader who finds the code disagreeing with the sketch cannot tell
+whether it was seen and declined or simply missed, which is the same ambiguity
+an unlogged departure creates.
