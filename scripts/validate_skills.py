@@ -19,6 +19,7 @@ Errors (fail the run):
   E13 a skill ships scripts/ that its SKILL.md never mentions
   E14 gate is missing, or names no script, or is none without a gate_reason
   E15 body still carries a trigger section, at any heading level
+  E16 a frontmatter value is unquoted where YAML would not read it as text
 
 Warnings (reported, do not fail):
   W1  body is over the token budget
@@ -74,21 +75,119 @@ def warn(code: str, msg: str) -> None:
     warnings.append(f"{code}: {msg}")
 
 
+# An unquoted frontmatter value is a YAML *plain scalar*, and a plain scalar
+# ends at the first structural character rather than at the end of the line.
+# This parser used to read the rest of the line verbatim, which made it more
+# permissive than every real YAML parser: two descriptions carrying a literal
+# `Attributes: ` and `:raises: ` passed here and could not be loaded at all by
+# the installer. A validator looser than the consumer reports green about a
+# file nobody downstream can read.
+PLAIN_HAZARDS = (
+    (re.compile(r":(?=\s|$)"), "a colon before whitespace or end-of-line opens a nested mapping"),
+    (re.compile(r"(?:^|\s)#"), "a '#' after whitespace starts a comment and truncates the value"),
+    (re.compile(r"^[#&*!|>%@`]"), "the first character is a YAML indicator"),
+    (re.compile(r"^[-?](?=\s|$)"), "a leading '-' or '?' starts a block sequence or a complex key"),
+)
+
+# A bare token YAML resolves to a bool, a null or a number is not text, and the
+# two parsers do not even agree on which tokens those are: `no` is a string
+# under YAML 1.2 (the installer) and False under YAML 1.1 (PyYAML). Refusing
+# the union means a value is text under both or refused under both.
+YAML_NOT_TEXT = re.compile(
+    r"""^(?:
+        true | false | yes | no | on | off | y | n |    # bool, 1.2 and 1.1
+        null | ~ |                                      # null
+        [-+]? (?: [0-9][0-9_]* (?:\.[0-9_]*)? | \.[0-9][0-9_]* ) (?:[eE][-+]?[0-9]+)? |
+        [-+]? 0[xX][0-9a-fA-F_]+ | [-+]? 0[oO][0-7_]+ | [-+]? 0b[01_]+ |
+        [-+]? \.(?: inf | nan )
+    )$""",
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+# `roles` is the only field whose value is a collection. Every other field is
+# text, so a flow collection there is a value this validator measures as a
+# string and the installer loads as a list or a mapping.
+COLLECTION_FIELDS = frozenset({"roles"})
+
+# ...and the exemption has to be narrow, because `check_roles` reaches its list
+# through `strip("[]")`. That reads a quoted `'[implement]'` (a string to YAML),
+# a bare `implement` (a string to YAML) and an unclosed `[implement` (a parse
+# error to YAML) as the same one-item list. The shape is settled here instead,
+# before anything splits on commas.
+FLOW_SEQUENCE = re.compile(r"^\[[^\[\]{}]*\]$")
+
+
+def scalar_value(raw: str, where: str, key: str) -> str:
+    """The text a YAML parser would read out of one frontmatter value.
+
+    Quoted values are unquoted so the length and content checks measure the
+    description rather than its punctuation. `roles: [a, b]` is handed on
+    untouched for its own check to read. Anything left is plain, and is
+    refused if YAML would read it as something other than that text.
+    """
+    if key in COLLECTION_FIELDS:
+        if not FLOW_SEQUENCE.match(raw):
+            err("E16", f"{where}: {key} must be a flow sequence like [implement, review] — "
+                       "a quoted or bare value is a string to YAML, not a list")
+        return raw
+    if raw[:1] in ("[", "{"):
+        err("E16", f"{where}: {key} is a YAML collection where text is required")
+        return raw
+    for quote in ("'", '"'):
+        if not raw.startswith(quote):
+            continue
+        if len(raw) < 2 or not raw.endswith(quote):
+            err("E16", f"{where}: {key} opens with {quote} and never closes")
+            return raw
+        inner = raw[1:-1]
+        if quote == "'" and any(len(run) % 2 for run in re.findall(r"'+", inner)):
+            err("E16", f"{where}: {key} is single-quoted with an apostrophe that is not "
+                       "doubled — YAML ends the scalar there and rejects the rest")
+            return inner.replace("''", "'")
+        if quote == '"' and "\\" in inner:
+            err("E16", f"{where}: {key} is double-quoted with a backslash escape — "
+                       "single-quote it rather than have this parser approximate one")
+            return inner
+        return inner.replace("''", "'") if quote == "'" else inner
+    for pattern, why in PLAIN_HAZARDS:
+        if pattern.search(raw):
+            err("E16", f"{where}: {key} is unquoted and {why} — quote the value")
+            break
+    else:
+        if YAML_NOT_TEXT.match(raw):
+            err("E16", f"{where}: {key} is the bare token {raw!r}, which YAML types as a "
+                       "bool, a null or a number rather than text — quote it")
+    return raw
+
+
 def parse_frontmatter(text: str, where: str) -> dict[str, str] | None:
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         err("E2", f"{where}: no frontmatter opener")
         return None
-    fields: dict[str, str] = {}
-    for i, line in enumerate(lines[1:], start=1):
+    raw: dict[str, str] = {}
+    blocks: set[str] = set()
+    for line in lines[1:]:
         if line.strip() == "---":
-            return fields
+            for key in sorted(blocks):
+                err("E16", f"{where}: {key} has nothing after the colon and an indented "
+                           "block under it — YAML reads a list or a mapping, not text")
+            # Scalars are read after the whole block, so a value continued onto
+            # a second line is judged whole: judging the first line alone would
+            # call a legal wrapped quote unterminated.
+            return {k: scalar_value(v, where, k) for k, v in raw.items()}
         m = re.match(r"^([A-Za-z_-]+):\s*(.*)$", line)
         if m:
-            fields[m.group(1)] = m.group(2).strip()
-        elif line.startswith((" ", "\t")) and fields:
-            # continuation line -> the previous value was not single-line
-            fields[list(fields)[-1]] += "\n" + line.strip()
+            raw[m.group(1)] = m.group(2).strip()
+        elif line.startswith((" ", "\t")) and raw:
+            last = list(raw)[-1]
+            # An indented line continues a value only if there was a value. Under
+            # a bare `key:` it opens a nested collection, and joining it with a
+            # newline fabricates a scalar no parser will produce.
+            if not raw[last]:
+                blocks.add(last)
+            raw[last] += "\n" + line.strip()
     err("E2", f"{where}: frontmatter never closed")
     return None
 
