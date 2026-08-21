@@ -8,20 +8,28 @@ Errors (fail the run):
   E2  frontmatter malformed (missing/unterminated, or missing name/description)
   E3  frontmatter name does not match the folder name
   E4  name is not kebab-case
-  E5  description is empty, multi-line, or over 1024 characters
+  E5  description is empty, multi-line, or over 300 characters
   E6  body has no H1 title
-  E7  body has no "## Use this skill when" section
+  E7  frontmatter has no roles, or names a role outside the vocabulary
   E8  a "## Related skills" entry names a skill that does not exist
-  E9  a relative link to references/ points at a missing file
+  E9  a relative link in a skill's .md files resolves to nothing inside the repo
   E10 a file in references/ is never mentioned in its SKILL.md
   E11 README.md "Available Skills" is out of sync with skills/ (either direction)
   E12 a bundled script does not compile (python) or parse (shell, javascript)
   E13 a skill ships scripts/ that its SKILL.md never mentions
+  E14 gate is missing, or names no script, or is none without a gate_reason
+  E15 body still carries a trigger section, at any heading level
 
 Warnings (reported, do not fail):
-  W1  body has no "## Do not use this skill when" section
+  W1  body is over the token budget
   W2  SKILL.md exceeds 500 lines
   W3  a bundled JavaScript file could not be checked (node not installed)
+
+The description budget is the reason E5 is 300 and not the format's own 1024.
+Every description sits in the agent's context in every session whether its
+skill fires or not, so the collection pays for all of them all the time; a body
+is paid only on trigger. Triggers are all a description is for — E15 exists
+because the same triggers restated as a body section get paid twice.
 """
 
 from __future__ import annotations
@@ -36,7 +44,22 @@ SKILLS_DIR = REPO / "skills"
 README = REPO / "README.md"
 
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+TRIGGER_SECTION = re.compile(r"^(do not )?use (this skill )?when\b", re.I)
+MAX_DESCRIPTION = 300
+MAX_BODY_TOKENS = 1500
+# Rough, and deliberately so: the budget is an order-of-magnitude guard, and a
+# real tokenizer would make the check depend on a package this repo does not have.
+CHARS_PER_TOKEN = 4
+ROLES = {"implement", "review", "revert", "author"}
 REF_MENTION = re.compile(r"references/([A-Za-z0-9._-]+\.md)")
+FENCED = re.compile(r"^```.*?^```", re.M | re.S)
+INLINE_CODE = re.compile(r"`[^`\n]*`")
+# A markdown link that points at something in the repository. Anchors and shell
+# variables are not ours to resolve, and neither is any URI scheme or a
+# protocol-relative `//host/x` — matching only http and mailto meant `ftp:` and
+# `tel:` were checked as if they were file paths.
+URI_OR_PROTOCOL_RELATIVE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*:|//)")
+RELATIVE_LINK = re.compile(r"\[[^\]]*\]\((?!#|\$)([^)\s]+)\)")
 BACKTICK = re.compile(r"`([a-z0-9-]+)`")
 
 errors: list[str] = []
@@ -70,8 +93,14 @@ def parse_frontmatter(text: str, where: str) -> dict[str, str] | None:
     return None
 
 
-def section_names(body: str) -> set[str]:
-    return {m.group(1).strip() for m in re.finditer(r"^##\s+(.+)$", body, re.M)}
+def section_names(body: str, levels: str = "2") -> set[str]:
+    """Headings at the given level, or `"2-6"` for every level below the title.
+
+    E15 needs the wide reading: `### Use this skill when` restates the trigger
+    just as expensively as `##` does, and matching only `##` let it through.
+    """
+    pattern = r"^##\s+(.+)$" if levels == "2" else r"^#{2,6}\s+(.+)$"
+    return {m.group(1).strip() for m in re.finditer(pattern, body, re.M)}
 
 
 def related_entries(body: str) -> list[str]:
@@ -87,7 +116,79 @@ def related_entries(body: str) -> list[str]:
     return names
 
 
-def check_skill(skill_dir: Path, all_names: set[str]) -> None:
+def broken_links(page: Path, repo: Path) -> list[str]:
+    """Relative link targets in one markdown file that resolve to nothing.
+
+    Fenced blocks and inline code are stripped first: both carry link-shaped
+    text that is not a link — a template's `[0001](0001-kebab-title.md)` row, or
+    a dispatch table written `handlers[kind](payload)`.
+    """
+    try:
+        text = page.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    prose = INLINE_CODE.sub("", FENCED.sub("", text))
+    base = repo.resolve()
+    missing = []
+    for match in RELATIVE_LINK.finditer(prose):
+        target = match.group(1).split("#", 1)[0]
+        if not target or URI_OR_PROTOCOL_RELATIVE.match(target):
+            continue
+        for start in (page.parent, repo):
+            try:
+                resolved = (start / target).resolve()
+            except OSError:
+                continue
+            if resolved.is_relative_to(base) and resolved.exists():
+                break
+        else:
+            missing.append(target)
+    return missing
+
+
+def check_roles(fm: dict[str, str], where: str) -> None:
+    raw = fm.get("roles", "").strip()
+    if not raw:
+        err("E7", f"{where}: frontmatter has no roles")
+        return
+    named = [r.strip() for r in raw.strip("[]").split(",") if r.strip()]
+    if not named:
+        err("E7", f"{where}: roles is empty")
+    for role in named:
+        if role not in ROLES:
+            err("E7", f"{where}: role {role!r} is not one of {sorted(ROLES)}")
+
+
+def check_gate(fm: dict[str, str], where: str, all_scripts: set[str]) -> None:
+    gate = fm.get("gate", "").strip()
+    if not gate:
+        err("E14", f"{where}: frontmatter has no gate (name the enforcing check, or 'none')")
+        return
+    if gate == "none":
+        # A skill with no gate is a hope, and the justification is what makes
+        # that an admission rather than an oversight.
+        if not fm.get("gate_reason", "").strip():
+            err("E14", f"{where}: gate is none, which needs a gate_reason saying why")
+        return
+    if fm.get("gate_reason", "").strip():
+        err("E14", f"{where}: gate {gate!r} is named, so gate_reason does not apply")
+    if gate not in all_scripts:
+        err("E14", f"{where}: gate {gate!r} names no script in the collection")
+
+
+def bundled_gates() -> set[str]:
+    """Gate names a skill may claim: the kebab-cased stem of any bundled script."""
+    names = set()
+    for script in SKILLS_DIR.glob("*/scripts/*"):
+        if script.is_file() and not script.name.startswith("."):
+            names.add(script.stem.replace("_", "-"))
+    for script in (REPO / "scripts").glob("*"):
+        if script.is_file() and not script.name.startswith("."):
+            names.add(script.stem.replace("_", "-"))
+    return names
+
+
+def check_skill(skill_dir: Path, all_names: set[str], all_scripts: set[str]) -> None:
     name = skill_dir.name
     skill_md = skill_dir / "SKILL.md"
     if not skill_md.is_file():
@@ -109,17 +210,20 @@ def check_skill(skill_dir: Path, all_names: set[str]) -> None:
             err("E5", f"{where}: empty description")
         elif "\n" in desc:
             err("E5", f"{where}: description must be a single line")
-        elif len(desc) > 1024:
-            err("E5", f"{where}: description is {len(desc)} chars (max 1024)")
+        elif len(desc) > MAX_DESCRIPTION:
+            err("E5", f"{where}: description is {len(desc)} chars (max {MAX_DESCRIPTION})")
+        check_roles(fm, where)
+        check_gate(fm, where, all_scripts)
 
     body = re.sub(r"\A---.*?^---\s*$", "", text, count=1, flags=re.M | re.S)
     if not re.search(r"^# .+$", body, re.M):
         err("E6", f"{where}: no H1 title")
-    sections = section_names(body)
-    if "Use this skill when" not in sections:
-        err("E7", f"{where}: missing '## Use this skill when'")
-    if "Do not use this skill when" not in sections:
-        warn("W1", f"{where}: no '## Do not use this skill when'")
+    for heading in sorted(section_names(body, levels="2-6")):
+        if TRIGGER_SECTION.match(heading):
+            err("E15", f"{where}: body still carries '## {heading}' — triggers belong in the description")
+    budget = len(body) // CHARS_PER_TOKEN
+    if budget > MAX_BODY_TOKENS:
+        warn("W1", f"{where}: body is ~{budget} tokens (budget {MAX_BODY_TOKENS}) — move detail to references/")
     if len(text.splitlines()) > 500:
         warn("W2", f"{where}: over 500 lines")
 
@@ -130,6 +234,14 @@ def check_skill(skill_dir: Path, all_names: set[str]) -> None:
     for fname in set(REF_MENTION.findall(text)):
         if not (skill_dir / "references" / fname).is_file():
             err("E9", f"{where}: mentions references/{fname}, which does not exist")
+
+    # Every .md in the skill, not only SKILL.md: a section moved into
+    # references/ carries its links with it, and a `references/x.md` link that
+    # was correct in SKILL.md resolves to references/references/x.md there.
+    for page in sorted(skill_dir.rglob("*.md")):
+        for target in broken_links(page, REPO):
+            rel = page.relative_to(REPO)
+            err("E9", f"{rel}: link target {target!r} does not exist")
 
     refs_dir = skill_dir / "references"
     if refs_dir.is_dir():
@@ -189,8 +301,9 @@ def check_readme(all_names: set[str]) -> None:
 def main() -> int:
     skill_dirs = sorted(d for d in SKILLS_DIR.iterdir() if d.is_dir())
     all_names = {d.name for d in skill_dirs}
+    all_scripts = bundled_gates()
     for skill_dir in skill_dirs:
-        check_skill(skill_dir, all_names)
+        check_skill(skill_dir, all_names, all_scripts)
     check_readme(all_names)
 
     for w in warnings:

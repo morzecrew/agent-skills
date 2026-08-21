@@ -22,9 +22,7 @@ Skills cross-reference each other in their "Related skills" sections. Every skil
 
 | Skill | What it does |
 | --- | --- |
-| [never-nesting](skills/never-nesting/) | Flattens arrow-shaped code — guard clauses, early return, extraction, dispatch tables — and knows when if/else should stay. |
-| [naming-things](skills/naming-things/) | Scope-proportional length, domain vocabulary, honest booleans, units — plus a ten-entry anti-pattern catalog with fixes. |
-| [self-documenting-code](skills/self-documenting-code/) | Refactors away comments at the code's own abstraction level; keeps precision, contracts, and rationale. |
+| [readable-code](skills/readable-code/) | Names, nesting, and comments as one pass — a routing table over three references, and the rules where they constrain each other. |
 | [composition-over-inheritance](skills/composition-over-inheritance/) | Composition and interfaces by default, with the fragile-base-class trap and the Liskov behavioral is-a test. |
 | [less-code-same-behavior](skills/less-code-same-behavior/) | Divergence-and-DRY audit in behavior-preserving steps, where NO ACTION is a first-class verdict. |
 | [error-taxonomy](skills/error-taxonomy/) | A closed set of error kinds, each with its transport mapping, message exposure, and retryability decided once. |
@@ -46,7 +44,7 @@ Skills cross-reference each other in their "Related skills" sections. Every skil
 | Skill | What it does |
 | --- | --- |
 | [self-audit](skills/self-audit/) | Adversarial pass over your own finished work, walking the ten places author blind spots concentrate. |
-| [flag-dont-flip](skills/flag-dont-flip/) | Executes an RFC without silently changing it — plan gate first, halt on LOCKED decisions, every departure logged in `rfcs/EXECUTION-LOG.md`. |
+| [flag-dont-flip](skills/flag-dont-flip/) | Executes a spec without silently changing it — plan gate first, halt on LOCKED decisions, every departure logged and checked. |
 | [pr-review-loop](skills/pr-review-loop/) | Works AI and human PR feedback to convergence — deduped findings, evidence-backed verdicts, one push per round. |
 | [ratchet-what-you-build](skills/ratchet-what-you-build/) | Ranks every guard on an enforcement ladder; anything still sitting at "convention" is an open finding. |
 | [drift-to-gate](skills/drift-to-gate/) | Turns a rule that keeps being broken into a program that refuses — then runs that control's whole lifecycle. |

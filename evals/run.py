@@ -69,11 +69,20 @@ def stage(skill: str | None) -> tempfile.TemporaryDirectory:
 
 
 def check_output(output: str, checks: list[dict]) -> list[tuple[str, bool]]:
+    """Each check as (label, passed).
+
+    `"absent": true` inverts the match: the case passes when the pattern is NOT
+    found. That is what makes a mis-trigger case possible — a suite whose every
+    assertion is "this word appeared" cannot fail for a skill that fires when it
+    should not, and a check that cannot fail proves nothing.
+    """
     results = []
     for chk in checks:
         flags = re.I if "i" in chk.get("flags", "") else 0
-        ok = re.search(chk["pattern"], output, flags | re.M) is not None
-        results.append((chk["pattern"], ok))
+        found = re.search(chk["pattern"], output, flags | re.M) is not None
+        absent = bool(chk.get("absent"))
+        label = ("NOT " if absent else "") + chk["pattern"]
+        results.append((label, found != absent))
     return results
 
 

@@ -1,6 +1,9 @@
 ---
 name: error-taxonomy
-description: Design and enforce an error contract — a small closed set of error kinds, each with a decided transport mapping, message exposure, and retryability — and classify every raise site against it. Use when designing error handling for an API or module, deciding what exception to raise or what status an error maps to, reviewing raise sites or catch blocks, classifying errors as retryable, cleaning up inconsistent error handling, or when the user mentions error codes, error kinds, exception hierarchy, "which status should this return", or error-handling hygiene.
+description: Use when designing error handling for an API or module, deciding what to raise or what status an error maps to, reviewing raise sites and catch blocks, or sweeping a codebase where everything is a 500. Not for user-facing error copy.
+roles: [implement]
+gate: none
+gate_reason: scripts/error_census.py finds and counts raise sites; which kind each one belongs to is the judgement
 ---
 
 # Error Taxonomy
@@ -8,19 +11,6 @@ description: Design and enforce an error contract — a small closed set of erro
 Errors are contract surface. The **kind** of an error — not its message — is what callers branch on, what transports map to status codes, what retry loops consult, and what tests assert. A codebase without a decided taxonomy makes these calls ad hoc at every raise site, and the result is the same client mistake returning 500 from one endpoint and 400 from another, retry loops spinning on misconfiguration, and callers string-matching messages because nothing else is stable.
 
 The fix is a small closed set of kinds, each carrying three attributes **decided once, at design time**: transport mapping, message exposure, and retryability. Classification happens at the raise site; every consequence (status, visibility, retry) follows mechanically from the kind.
-
-## Use this skill when
-
-- Designing error handling for a new API, module, or service
-- Deciding what to raise, what status code an error maps to, or whether it's retryable
-- Reviewing a diff's raise sites and catch blocks
-- Sweeping an existing codebase for misclassified errors ("everything is a 500")
-- Callers or tests are string-matching error messages
-
-## Do not use this skill when
-
-- Writing user-facing error *copy* — that's UX writing; this skill governs the contract underneath it
-- A throwaway script where the only consumer is the person running it
 
 ## The taxonomy
 
@@ -56,25 +46,19 @@ For any raise site, ask: **would a correct server still hit this purely because 
 
 For worked classifications of the contested cases (field-not-on-model vs malformed value, conflict vs precondition, not-found vs authz, whose-constraint-failed), read [references/classification-walkthrough.md](references/classification-walkthrough.md).
 
-## Codes and messages
+## Codes, messages, and existing code
 
-- **Codes are stable identifiers; messages are free text.** Give recurring error *situations* a canonical code (`query_feature_unsupported`, `field_not_on_read_model`) and reuse it everywhere the situation occurs — including across every implementation of a shared contract, so the same mistake yields the same code on every backend. Don't mint near-synonym codes; a census of existing codes comes before a new one.
-- **Never let callers or tests match on messages.** Tests assert the kind and code (the `reading-isnt-proof` battery table has the same rule); messages may improve freely.
-- **Scrub before exposing.** Reclassifying a hidden kind to an exposed one makes its message client-visible: strip leaked internals first (SQL fragments, type/wiring tokens, file paths, dependency keys). Echoing back *caller-supplied* values is safe and helpful.
+Once a kind is decided, what the error carries is decided with it: a stable
+machine-readable code, a message whose exposure was chosen rather than inherited,
+and a retryability the caller can trust. **Callers must never string-match a
+message** — that makes prose a public API, and the next copy-edit is a breaking
+change.
 
-## Sweeping an existing codebase
-
-1. **Census the raise sites** of the over-broad kind (usually `internal`/generic 500). Grep by construction site *and by message family* — a package-grouped census misses small shared helpers; message text finds them. `scripts/error_census.py` does both:
-
-   ```bash
-   python3 scripts/error_census.py --kind 'exc\.(\w+)' --exclude 'tests/*'
-   ```
-
-   It counts sites by kind, package, and code, then clusters messages into families (normalizing away interpolations, quoted values, and numbers) and marks any family raised as **more than one kind** — the same mistake answering differently depending on which call site the caller happened to hit.
-2. **Classify each against the test.** Expect a minority to move: a real sweep of 637 internal sites moved ~99 and deliberately kept ~540 — defensive internals are correct and stay.
-3. **Move families in lockstep across implementations** of the same contract, so parity holds (mock ≡ every backend raising the same kind for the same mistake).
-4. **Run the full suite.** Kind-agnostic tests survive; tests pinning the old kind are the contract change surfacing — decide each deliberately.
-5. Record moved codes in the changelog if the API is public: an error-kind change is a behavior change.
+Applying this to a codebase that predates it is a survey before it is a refactor:
+`scripts/error_census.py` counts the raise sites and their kinds, and the
+classification is yours. Both in
+[references/rollout.md](references/rollout.md); a worked classification is in
+[references/classification-walkthrough.md](references/classification-walkthrough.md).
 
 ## Anti-patterns
 

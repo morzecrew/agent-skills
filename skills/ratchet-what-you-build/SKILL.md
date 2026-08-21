@@ -1,6 +1,8 @@
 ---
 name: ratchet-what-you-build
-description: Close the gap between "built the mechanism" and "the mechanism is mandatory" — every guard, check, battery, or safe default needs a closing move (default flipped on, CI gate, fail-closed wiring) or it silently decays. Use when finishing any protective mechanism, when a shipped check turns out to be opt-in or absent from CI, when a safe mechanism exists but the unsafe default still ships, when reviewing why a protection didn't fire, closing out an audit or postmortem, or when the user mentions ratchets, gates, enforcement, "make it the default", or drift prevention.
+description: Use when finishing any guard, check, battery, or safe default; when a shipped check turns out to be opt-in or missing from CI; when a safe mechanism exists but the unsafe default still ships; or when asking why a protection did not fire. Not before the mechanism exists.
+roles: [implement, review]
+gate: gate-selftest
 ---
 
 # Ratchet What You Build
@@ -8,19 +10,6 @@ description: Close the gap between "built the mechanism" and "the mechanism is m
 The most common way good engineering work dies is not deletion — it's optionality. The team builds the conformance battery, the falsifiability accounting, the safe configuration, the poison-message ceiling… and doesn't make any of them the *default* or the *gate*. Each mechanism is real, works, and protects nothing, because the next change ships without it and CI stays green. A framework-wide audit once found this exact shape at ~10 independent sites — mechanisms built, enforcement absent — and the summary holds generally: **"true now" is not "stays true." Only a ratchet converts one into the other.**
 
 The good news from that audit also holds generally: the closing move is almost always a small mechanical addition to already-correct code — a default flipped, a manifest check, a `require_x()` call. The expensive part was building the mechanism; you already paid it.
-
-## Use this skill when
-
-- You just finished building any protective mechanism: a check, guard, battery, validation, safe mode, accounting
-- A review or postmortem asks "we had a check for this — why didn't it fire?"
-- A safe mechanism exists but the unsafe default still ships (`safety=None` by default)
-- Auditing a codebase for enforcement gaps ("what's opt-in that should be mandatory?")
-- A consolidation or coverage effort just landed and must not decay (batteries, floors, manifests)
-
-## Do not use this skill when
-
-- The mechanism itself doesn't exist yet — build it first; a gate over nothing enforces nothing
-- The behavior is genuinely a per-deployment choice with no safe universal default — that's configuration, not a missing ratchet (but the *unsafe* choice should still be the explicit one)
 
 ## The closing question
 
@@ -34,25 +23,19 @@ After building X, ask: **what makes X the only path?** Rank the answer on this l
 
 Anything at rung 5 that protects something important is an open finding. The skill's whole job is moving mechanisms up this ladder.
 
-## The half-shipped taxonomy
+## Every mechanism sits on a rung
 
-Recognize the shapes — each is a mechanism whose enforcement was deferred and forgotten:
+Convention → documented → opt-in → default-on → enforced in CI → fail-closed.
+**Anything still at "convention" is an open finding**, and the taxonomy of ways a
+mechanism stops short — built but not default, default but not checked, checked
+but not blocking, blocking but silently skippable — is in
+[references/the-ladder.md](references/the-ladder.md) along with what the next
+rung costs to build.
 
-- **Opt-in safety:** the accounting/verification/strict mode exists behind a flag nobody sets. Flip the default; make opting *out* the declared act.
-- **Check without a gate:** the battery/linter/floor runs locally or on demand but not in CI. Wire it in; a check that can be forgotten will be.
-- **Unsafe default beside a safe mechanism:** `ttl=None`, `verify=False`, permissive fallback — the safe value exists and isn't the default. Flip it; grandfather existing callers explicitly if needed.
-- **Enrollment gap:** the battery/manifest covers today's implementations, but a *new* implementation can ship without enrolling and nothing fails. This is the subtlest — absence doesn't fail. Derive the required set from the codebase and gate on it (below).
-- **Verdict over-claim:** the mechanism reports stronger guarantees than it checks ("covered" that was never verified). Downgrade the claim or upgrade the check — an over-claiming gate is worse than none, because it spends trust.
-
-## Designing the gate itself
-
-A ratchet is code; it has its own failure modes. Three rules, each learned the hard way:
-
-- **Prove the gate can fail — in both directions, end-to-end.** Before trusting it: remove an enrollment, watch it fail naming the gap; add a typo'd declaration, watch it fail naming the typo. A gate never seen red is rung-5 convention wearing a gate's clothes (the same verified-red rule as `reproduce-then-fix`).
-- **An empty derivation satisfies every subset check while proving nothing.** "Derived ⊆ declared" only ratchets when the derivation actually found something — if the census of implementations returns empty (wrong key, moved registry), the check passes vacuously and the hole silently reopens. Assert non-emptiness; make a derivation source that resolves to nothing a *hard error*, not an empty set.
-- **Waivers must be verified against reality.** Exemptions ("single-engine", "not applicable here") are claims; re-check them in the gate so a stale waiver fails when reality changes. An unverified waiver is a permanent hole with paperwork.
-
-Keep the gate fast and offline (seconds, no network) — a slow ratchet gets removed from CI, which is the decay it existed to prevent.
+The two that catch people: a mechanism whose safe mode is opt-in ships its unsafe
+mode to everyone who did not read the docs, and a check that runs in CI without
+failing the build is a check that has been read as passing since the day it was
+added.
 
 ## The periodic sweep
 

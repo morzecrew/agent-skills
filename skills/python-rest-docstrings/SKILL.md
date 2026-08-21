@@ -1,6 +1,9 @@
 ---
 name: python-rest-docstrings
-description: Write reST Python docstrings — Sphinx info field lists (:param/:returns/:raises) and cross-reference roles (:class:/:meth:/:func:) that render natively in Sphinx and IDE tooltips. Use whenever writing, editing, or reviewing Python docstrings or API documentation, documenting functions, classes, modules, or constants, or when the user mentions docstrings, reST, reStructuredText, Sphinx roles, or asks to "document this code".
+description: Use when writing, editing, or reviewing Python docstrings in a project that uses reST field lists — :param:/:returns:/:raises: and Sphinx cross-reference roles. Not for Google-style sections, not for NumPy style, and not for prose documentation.
+roles: [implement, author]
+gate: none
+gate_reason: a linter can demand a docstring exists; whether it states the contract is a read
 ---
 
 # Python Docstrings — reST Style
@@ -10,19 +13,6 @@ side effects, and failure conditions. reST style expresses those in Sphinx's nat
 language — info field lists (`:param:`, `:returns:`, `:raises:`) and cross-reference
 roles — so write for two readers at once: a human scanning a tooltip and Sphinx
 rendering API docs with real links.
-
-## Use this skill when
-
-- Writing or editing Python docstrings in a project that uses reST field lists (`:param x:`)
-- Documenting new Python functions, classes, methods, modules, or constants
-- Reviewing or fixing docstrings for Sphinx rendering and cross-linking
-- Standardizing drifting or mixed docstring conventions toward one consistent style
-
-## Do not use this skill when
-
-- The project writes Google-style sections (`Args:`) — use python-google-docstrings instead
-- The project uses NumPy style (section names underlined with dashes)
-- Writing READMEs, guides, or comments — docstrings state API contracts, not narratives
 
 ## Canonical shape
 
@@ -97,96 +87,15 @@ environment variables — so they render as code, not prose.
 - On protocols and other interfaces, add `:raises:` only when raising is a
   required part of the contract, not a detail of one implementation.
 
-## Generators
+## Beyond plain functions
 
-Sphinx's Python domain has no `:yields:` field — an unrecognized field renders as
-a plain generic label with no special handling. Describe the iterator in
-`:returns:` instead; cover one yielded item and any ordering guarantee.
-
-```python
-async def stream_rows(self, query: str) -> AsyncIterator[Mapping[str, Any]]:
-    """Stream query results one row at a time.
-
-    :returns: An async iterator over matching rows, in result order.
-    """
-```
-
-## Classes, attributes, properties
-
-- Class summary is a noun phrase; the body covers lifecycle, invariants, and
-  concurrency — what a caller cannot recover from the signature.
-- Document attributes with trailing docstrings under their assignments — autodoc
-  reads them, and they stay next to the field in source and IDEs. `:ivar:` fields
-  in the class docstring are the alternative; pick one form and stay consistent.
-- Document a property on its getter, worded like an attribute:
-  `"""The Bigtable path."""`, never `"""Return the Bigtable path."""`.
-- Keep private-field docstrings short, and only when the field is subtle.
-
-```python
-class PostgresClient:
-    """Async Postgres client with pooling and context-bound transactions.
-
-    Must be initialized with a DSN via :meth:`initialize` before use. Nested
-    :meth:`transaction` blocks reuse one connection via savepoints.
-    """
-
-    min_size: int = 2
-    """Minimum number of pooled connections."""
-
-    _ctx_depth: ContextVar[int] = ...
-    """Transaction nesting depth used to manage savepoints."""
-```
-
-## Type aliases, constants, TypedDict
-
-- Constants and aliases take a trailing one-line docstring right after the
-  assignment, explaining meaning and effect — the type is already on the line above.
-- TypedDict: the class docstring says what the dict configures; document keys with
-  trailing docstrings. For `total=False` keys, always state what absence means.
-
-```python
-RowFactory = Literal["tuple", "dict"]
-"""Row format for fetch methods: ``"tuple"`` for sequences, ``"dict"`` for dicts."""
-
-class TransactionOptions(TypedDict, total=False):
-    """Options for :meth:`PostgresClient.transaction`."""
-
-    read_only: bool
-    """Run the transaction read-only. Defaults to ``False`` when absent."""
-
-    isolation: IsolationLevel
-    """Isolation level; server default when absent."""
-```
-
-## Stubs: @overload and Protocol
-
-- Give every `@overload` stub its own docstring — IDEs show the docstring of the
-  selected overload, so an undocumented stub shows the caller nothing.
-- Document what differs per signature: return shape, mutation vs new instance,
-  sentinel handling. If nothing meaningfully differs, duplicate the shared summary
-  verbatim. Keep a general docstring on the implementation.
-- Protocol methods document the contract — when they are called, idempotency,
-  ordering, side effects — never one implementation's details.
-- End each stub body with `...` after the docstring. A docstring alone is a valid
-  body; the `...` marks the stub as intentional, not unfinished.
-
-```python
-@overload
-def register(self, op: str, *, inplace: Literal[True]) -> None:
-    """Register an operation in place; return nothing."""
-    ...
-
-@overload
-def register(self, op: str, *, inplace: Literal[False] = False) -> Self:
-    """Register an operation on a new registry, leaving this one unchanged."""
-    ...
-
-def register(self, op: str, *, inplace: bool = False) -> Self | None:
-    """Register an operation factory.
-
-    :raises CoreError: If ``op`` is already registered.
-    """
-```
+Classes and their attributes, properties, generators, type aliases, constants,
+`TypedDict`, and `@overload` / `Protocol` stubs each have a shape of their own —
+[references/constructs.md](references/constructs.md). The rule that governs all
+of them: **document the contract at the level the caller meets it.** A property
+is documented as the value it yields, not as the method it happens to be; an
+`@overload` stub documents the one signature it declares, and the implementation
+carries the shared body.
 
 ## Length and formatting
 
@@ -212,5 +121,5 @@ def register(self, op: str, *, inplace: bool = False) -> Self | None:
 ## Related skills
 
 - python-google-docstrings — the same rules expressed as Google-style sections via Sphinx Napoleon
-- self-documenting-code — better names and structure shrink what docstrings must explain
+- `readable-code` — better names and structure shrink what a docstring must explain. Absent it, the boundary still holds: a docstring states the contract, not the implementation.
 - altitude-docs — deciding what belongs in docstrings vs higher-level documentation

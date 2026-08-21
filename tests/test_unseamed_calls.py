@@ -198,5 +198,40 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
 
 
+class CryptographicPathTest(unittest.TestCase):
+    """The gate must not flag the path the skill mandates.
+
+    `determinism-by-design` requires cryptographic key material, tokens and
+    nonces to read OS entropy directly, on a non-seeded path. A gate that goes
+    red for doing that teaches people to route key material through a seeded
+    seam to make the build green, which is the vulnerability the rule exists to
+    prevent.
+    """
+
+    def sources(self, source: str) -> set[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "k.py").write_text(source, encoding="utf-8")
+            proc = run_script("determinism-by-design", "unseamed_calls.py", "--root", str(root))
+            return {line.split("[")[1].split("]")[0].strip()
+                    for line in proc.stdout.splitlines() if "[" in line and "]" in line
+                    and line.startswith("  ")}
+
+    def test_os_urandom_is_not_flagged(self) -> None:
+        self.assertNotIn("random", self.sources("import os\nk = os.urandom(32)\n"))
+
+    def test_secrets_token_bytes_is_not_flagged(self) -> None:
+        self.assertNotIn("random", self.sources("import secrets\nk = secrets.token_bytes(32)\n"))
+
+    def test_secrets_choice_is_not_flagged(self) -> None:
+        self.assertNotIn("random", self.sources("import secrets\nk = secrets.choice(pool)\n"))
+
+    def test_ordinary_randomness_is_still_flagged(self) -> None:
+        self.assertIn("random", self.sources("import random\nk = random.random()\n"))
+
+    def test_the_clock_is_still_flagged(self) -> None:
+        self.assertIn("clock", self.sources("import time\nk = time.time()\n"))
+
+
 if __name__ == "__main__":
     unittest.main()
