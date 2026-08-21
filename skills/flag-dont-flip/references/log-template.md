@@ -63,13 +63,13 @@ proposal: ASSUMED — a password change invalidates every session for that user
 ```
 
 ```divergence
-decision: D-4
+decision: D-6
 grade: LOCKED
 kind: resolved
 at: 2026-08-20T15:02:11Z
 attempt: 2
 claim: touched the governed area; the decision was honored
-evidence: src/db/migrations.py:1-18
+evidence: src/db/migrations/0007_sessions.py:1-18
 action: decided
 ```
 
@@ -104,7 +104,8 @@ is not the same as passing.
   "decisions": [
     {"id": "D-3", "grade": "LOCKED", "paths": ["infra/**", "src/session/**"]},
     {"id": "D-4", "grade": "ASSUMED", "paths": ["src/db/**"]},
-    {"id": "D-5", "grade": "OPEN"}
+    {"id": "D-5", "grade": "OPEN"},
+    {"id": "D-6", "grade": "LOCKED", "paths": ["src/db/migrations/**"]}
   ]
 }
 ```
@@ -132,4 +133,10 @@ decisions:
     grade: ASSUMED
     paths:
       - src/db/**
+  - id: D-5
+    grade: OPEN
+  - id: D-6
+    grade: LOCKED
+    paths:
+      - src/db/migrations/**
 ```

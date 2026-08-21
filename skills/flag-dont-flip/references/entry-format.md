@@ -37,7 +37,7 @@ proposal: LOCKED — sessions live in Postgres until a Redis service is provisio
 | `decision` | The identifier from the spec's decision table, or `unlisted`. Never invent one. |
 | `grade` | Copied **from the task as it stands now**. Do not look it up in the current spec — the grade may have moved since, and the log records what was in force when you acted. |
 | `class` | `discovery` · `spec-gap` · `drift` · `irreducible`. See below. One of `class` / `kind` must be present; a divergence normally carries `class`. |
-| `kind` | `contradicted` · `departed` · `resolved` · `blocked` — what happened to the decision, where `class` says what it reveals about the design process. The axes are orthogonal; carry both when both are known. `resolved` and `blocked` change what `action` is legal — see the close-out section below. |
+| `kind` | `contradicted` · `departed` · `resolved` · `blocked` — what happened to the decision, where `class` says what it reveals about the design process. The axes are orthogonal; carry both when both are known — except on a close-out, where `class` is refused. `resolved` and `blocked` change what `action` is legal — see the close-out section below. |
 | `at`, `attempt` | UTC RFC 3339, and which attempt at this task this is. |
 | `claim` | One sentence: what reality says that the decision does not. Not what you did about it. |
 | `evidence` | `path:line`, `path:start-end`, or a backticked command with its output. Someone else must be able to locate it. |
@@ -95,6 +95,11 @@ evidence: src/session/store.py:12-40
 action: decided
 ```
 ````
+
+`class` on a close-out is refused, not merely discouraged. `class` classifies
+a departure and a close-out is not one, and left legal the pair is a route
+around the grade table: `resolved` skips it, so `class: drift` would record a
+contradiction and take the attesting exemption in the same entry.
 
 Legality with `kind` present: `resolved` licenses `decided` or `departed` (the
 grade table does not apply — a close-out attests, it does not contradict);

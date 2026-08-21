@@ -9,6 +9,7 @@ are the two states this tool exists to keep apart.
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -572,6 +573,30 @@ class KindTest(Fixture):
     def test_an_unknown_kind_is_s11(self) -> None:
         self.assertIn("S11", self.codes(log(entry(extra="kind: pondered\n"))))
 
+    def test_a_close_out_carrying_a_class_is_s12(self) -> None:
+        """The pair is a route around the grade table: `resolved` skips it, so
+        `class: drift` would record a contradiction and take the attesting
+        exemption in one entry. Without `kind` the same fields are L1."""
+        text = log(entry(extra="kind: resolved\n", grade="LOCKED",
+                         action="decided").replace("class: spec-gap", "class: drift"))
+        self.assertIn("S12", self.codes(text))
+
+    def test_a_close_out_carrying_any_class_is_s12(self) -> None:
+        for klass in ("drift", "discovery", "spec-gap", "irreducible"):
+            with self.subTest(klass=klass):
+                text = log(entry(extra="kind: resolved\n", grade="LOCKED",
+                                 action="decided").replace("class: spec-gap", f"class: {klass}"))
+                self.assertIn("S12", self.codes(text))
+
+    def test_mixed_axes_stay_legal_for_other_kinds(self) -> None:
+        """S12 is about close-outs only — `contradicted` and `departed` carry
+        both axes, which is what the orthogonality is for."""
+        for kind, grade, action in (("contradicted", "LOCKED", "halted"),
+                                    ("departed", "ASSUMED", "departed")):
+            with self.subTest(kind=kind):
+                text = log(entry(extra=f"kind: {kind}\n", grade=grade, action=action))
+                self.assertEqual(self.codes(text), [])
+
     def test_a_resolved_close_out_on_a_lock_passes(self) -> None:
         # The compliance attestation the silence check can be satisfied with:
         # LOCKED area touched, decision honored, action `decided`.
@@ -607,6 +632,86 @@ class KindTest(Fixture):
     def test_both_axes_together_pass(self) -> None:
         text = log(entry(extra="kind: contradicted\n"))
         self.assertEqual(self.codes(text), [])
+
+
+class DocumentedExampleTest(unittest.TestCase):
+    """The worked example in references/log-template.md must pass this checker.
+
+    Nothing else catches it drifting: the checker does not cross-check an
+    entry's `grade` against the task file, and the structural validator does not
+    execute examples. A skeleton a reader copies has to be one that validates.
+    """
+
+    TEMPLATE = (Path(__file__).resolve().parent.parent / "skills" / "flag-dont-flip"
+                / "references" / "log-template.md")
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        page = self.TEMPLATE.read_text(encoding="utf-8")
+        self.log = re.search(r"````markdown\n(.*?)````", page, re.S).group(1)
+        self.task_json = re.search(r"```json\n(.*?)```", page, re.S).group(1)
+        self.task_yaml = re.search(r"```yaml\n(.*?)```", page, re.S).group(1)
+
+        git_repo(self.root)
+        for cited, lines in (("infra/compose.yaml", 40),
+                             ("src/db/migrations/0007_sessions.py", 20)):
+            target = self.root / cited
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("x\n" * lines, encoding="utf-8")
+        (self.root / "rfcs").mkdir()
+        (self.root / "rfcs" / "0014-session-storage.md").write_text("no match here\n",
+                                                                   encoding="utf-8")
+        (self.root / "log.md").write_text(self.log, encoding="utf-8")
+        (self.root / "task.json").write_text(self.task_json, encoding="utf-8")
+        (self.root / "task.yaml").write_text(self.task_yaml, encoding="utf-8")
+        commit_all(self.root, "🔧 chore: base")
+        # Touch both areas the example's entries claim to have touched, so the
+        # silence check has something to be silent about.
+        for cited in ("infra/compose.yaml", "src/db/migrations/0007_sessions.py"):
+            path = self.root / cited
+            path.write_text(path.read_text(encoding="utf-8") + "y\n", encoding="utf-8")
+        commit_all(self.root, "✨ feat: work")
+
+    def check(self, task: str):
+        return run_script("flag-dont-flip", "log_check.py", "--log", "log.md",
+                          "--root", ".", "--task", task, "--base", "main",
+                          cwd=self.root)
+
+    def test_the_example_validates_against_the_json_task_file(self) -> None:
+        proc = self.check("task.json")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_the_example_validates_against_the_yaml_task_file(self) -> None:
+        """The two task-file forms are documented as equivalent."""
+        proc = self.check("task.yaml")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_the_two_task_file_forms_declare_the_same_decisions(self) -> None:
+        """The page presents JSON and YAML as interchangeable, so a decision
+        added to one and not the other makes half the documentation wrong."""
+        self.assertEqual(script.load_task(self.root / "task.json"),
+                         script.load_task(self.root / "task.yaml"))
+
+    def test_every_graded_decision_the_example_cites_is_declared(self) -> None:
+        """The defect this pins: the close-out cited a decision the task file
+        graded differently, so the page contradicted its own rule that `grade`
+        is copied from the task."""
+        declared = {d["id"]: d["grade"] for d in json.loads(self.task_json)["decisions"]}
+        cited = re.findall(r"^decision: (\S+)\ngrade: (\S+)$", self.log, re.M)
+        self.assertTrue(cited, "the example carries no entries to check")
+        for decision, grade in cited:
+            with self.subTest(decision=decision):
+                if decision == "unlisted":
+                    # The one citation with no row by definition — that is what
+                    # UNLISTED means, so the task file must not declare it.
+                    self.assertEqual(grade, "UNLISTED")
+                    self.assertNotIn(decision, declared)
+                    continue
+                self.assertIn(decision, declared,
+                              "the example cites a decision its task file never declares")
+                self.assertEqual(grade, declared[decision])
 
 
 if __name__ == "__main__":

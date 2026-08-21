@@ -274,6 +274,15 @@ def check_schema(line: int, fields: dict[str, str]) -> list[Problem]:
         # One axis is required: `kind` records what happened to the decision,
         # `class` records what it says about the design process.
         problems.append(Problem("S10", where, "neither 'kind' nor 'class' present"))
+    if kind == "resolved" and klass:
+        # `class` classifies a departure; a close-out is by definition not one.
+        # Left legal, the pair is a route around the grade table: `resolved`
+        # skips it, so `class: drift` would record a contradiction and take the
+        # attesting exemption in the same entry. Mixed axes stay legal for
+        # every other kind.
+        problems.append(Problem("S12", where,
+                                f"kind resolved carries no class, and this one carries {klass!r} — "
+                                "a close-out attests compliance, it does not classify a departure"))
     action = fields.get("action", "")
     if action and action not in ACTIONS:
         problems.append(Problem("S6", where, f"action {action!r} is not one of {sorted(ACTIONS)}"))
