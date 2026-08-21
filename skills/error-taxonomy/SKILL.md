@@ -46,25 +46,19 @@ For any raise site, ask: **would a correct server still hit this purely because 
 
 For worked classifications of the contested cases (field-not-on-model vs malformed value, conflict vs precondition, not-found vs authz, whose-constraint-failed), read [references/classification-walkthrough.md](references/classification-walkthrough.md).
 
-## Codes and messages
+## Codes, messages, and existing code
 
-- **Codes are stable identifiers; messages are free text.** Give recurring error *situations* a canonical code (`query_feature_unsupported`, `field_not_on_read_model`) and reuse it everywhere the situation occurs — including across every implementation of a shared contract, so the same mistake yields the same code on every backend. Don't mint near-synonym codes; a census of existing codes comes before a new one.
-- **Never let callers or tests match on messages.** Tests assert the kind and code (the `reading-isnt-proof` battery table has the same rule); messages may improve freely.
-- **Scrub before exposing.** Reclassifying a hidden kind to an exposed one makes its message client-visible: strip leaked internals first (SQL fragments, type/wiring tokens, file paths, dependency keys). Echoing back *caller-supplied* values is safe and helpful.
+Once a kind is decided, what the error carries is decided with it: a stable
+machine-readable code, a message whose exposure was chosen rather than inherited,
+and a retryability the caller can trust. **Callers must never string-match a
+message** — that makes prose a public API, and the next copy-edit is a breaking
+change.
 
-## Sweeping an existing codebase
-
-1. **Census the raise sites** of the over-broad kind (usually `internal`/generic 500). Grep by construction site *and by message family* — a package-grouped census misses small shared helpers; message text finds them. `scripts/error_census.py` does both:
-
-   ```bash
-   python3 scripts/error_census.py --kind 'exc\.(\w+)' --exclude 'tests/*'
-   ```
-
-   It counts sites by kind, package, and code, then clusters messages into families (normalizing away interpolations, quoted values, and numbers) and marks any family raised as **more than one kind** — the same mistake answering differently depending on which call site the caller happened to hit.
-2. **Classify each against the test.** Expect a minority to move: a real sweep of 637 internal sites moved ~99 and deliberately kept ~540 — defensive internals are correct and stay.
-3. **Move families in lockstep across implementations** of the same contract, so parity holds (mock ≡ every backend raising the same kind for the same mistake).
-4. **Run the full suite.** Kind-agnostic tests survive; tests pinning the old kind are the contract change surfacing — decide each deliberately.
-5. Record moved codes in the changelog if the API is public: an error-kind change is a behavior change.
+Applying this to a codebase that predates it is a survey before it is a refactor:
+`scripts/error_census.py` counts the raise sites and their kinds, and the
+classification is yours. Both in
+[references/rollout.md](references/rollout.md); a worked classification is in
+[references/classification-walkthrough.md](references/classification-walkthrough.md).
 
 ## Anti-patterns
 

@@ -40,28 +40,29 @@ Every row in the Decisions table carries a grade. The grade tells whoever execut
 
 **`OPEN` is not the same as leaving a row out.** An `OPEN` row records that the author considered the question and chose to delegate it. An absent row records nothing: the question still gets answered, by whoever reaches it first, and no later reader can tell it was ever a decision. Writing the row down is cheap and front-loads the questions execution would otherwise answer alone.
 
+## The index one-liner routes; it does not summarise
+
+Its one job is to tell a reader **which** RFC to open, and that takes far less
+text than saying what the RFC decided. One sentence, aiming at 200 characters
+with 300 as the ceiling — `rfc_index.py check` warns past either. State the
+problem and the shape of the answer; the mechanism, the alternatives and the
+numbers belong in the file it points at.
+
+**The index records what an RFC *is*, never what happened to it.** No shipped
+dates, no phase progress, no amendment history — an entry that grows each time
+work lands has become a changelog, and the whole table is re-read on every
+lookup. Write it once; revisit it only when the RFC's *subject* changes. Full
+rules in [references/workflows.md](references/workflows.md).
+
 ## Reconciling what execution learned
 
-Execution finds things the design could not. When it does, the executor **proposes** rows — in its task log, with the evidence that produced them — and the author appends them. Three rails:
+Execution finds things the design could not. The executor **proposes** rows, in
+its task log with the evidence that produced them; the author appends them. Three
+rails, in full in [references/workflows.md](references/workflows.md):
 
-- **The decision table is append-only.** A superseded row stays, marked superseded, naming the row that replaced it. The history of a decision is the part that stops it being re-litigated.
-- **Never amend the RFC's prose to match what was built.** It reads as tidying, and it destroys the only evidence that a decision changed at all — which is precisely what a later reader needs in order to trust the document. Record the change; don't erase the disagreement.
-- **An accepted row cites the log entry it came from** — `Added by execution 2026-08-14 — see logs/T-0142.md (D-3, attempt 2)` at the end of the row. Task-log entries carry no identifiers of their own, so the handle is the file plus the decision the entry cites plus its attempt; that triple is unique and nothing about it has to be renumbered. The row states the decision; the entry holds what was actually found, what was built instead, and what it cost. Without the link the row reads as something the author thought of, which loses the one fact that makes it credible: it was forced by contact with the code.
-
-An RFC whose prose has been quietly retrofitted is worse than one that is visibly out of date: the second tells you to check, the first does not.
-
-## The index one-liner: routing, not summary
-
-**The one-liner exists to tell a reader which RFC to open, not what it decided.** It has one job — discriminate this design from the others in the table — and that takes far less text than summarising it. "Get a backup off the machine that took it" is forty characters and separates its RFC from twenty others; the design, the decisions and the trade-offs belong in the file it points at.
-
-The rules:
-
-- **One sentence. Aim for 200 characters, and treat 300 as the ceiling.** A table of thirty rows is then a couple of thousand characters, which is what makes the index cheap enough to consult on every lookup.
-- **State the problem and the shape of the answer.** Not the mechanism, not the alternatives, not the numbers.
-- **The index records what an RFC *is*, never what happened to it.** No "shipped 2026-08-04", no phase-by-phase progress, no defects found, no amendment history. Status lives in the Status column; everything else lives in the RFC — its `**Status:**` annotation, its Decisions table, its execution notes. An entry that grows each time work lands has become a changelog, and the whole table is then re-read on every allocation.
-- **Write it once.** Revisit it only when the RFC's *subject* changes — not when its state does.
-
-This is the one place in the skill where completeness is the wrong target. An index entry dense enough to substitute for opening the file has stopped being an index: every future lookup pays for content that belongs to one document.
+- **The decision table is append-only.** A superseded row stays, marked superseded, naming the row that replaced it — the history is what stops a decision being re-litigated.
+- **Never amend the RFC's prose to match what was built.** It reads as tidying and destroys the only evidence that a decision changed. An RFC visibly out of date tells you to check; a quietly retrofitted one does not.
+- **An accepted row cites the entry it came from** — `see logs/T-0142.md (D-3, attempt 2)`. Without the link the row reads as something the author thought of, losing the one fact that makes it credible: it was forced by contact with the code.
 
 ## References
 

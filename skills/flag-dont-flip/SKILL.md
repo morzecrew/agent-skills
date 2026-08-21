@@ -10,16 +10,21 @@ gate: log-check
 When reality contradicts a decision, **report the contradiction — do not quietly
 pick the other branch.**
 
-The decision was made by someone with context you do not have, at a time you
-were not there. Finding that it no longer holds is worth knowing. Acting on it
-without recording it destroys that, and leaves a codebase that disagrees with
-its own specification with nothing to say when or why. Every hunk of the diff
-then has to be reviewed as a possible unannounced design change, which is why
-reviewing code against a spec costs more than reviewing the spec did.
+The decision was made by someone with context you do not have. Finding that it no
+longer holds is worth knowing; acting on it without recording it destroys that,
+and leaves a codebase disagreeing with its own specification with nothing to say
+when or why. Every hunk of the diff then has to be read as a possible unannounced
+design change, which is why reviewing code against a spec costs more than
+reviewing the spec did.
 
 If work is underway, no design document exists, and the change is clearly
 load-bearing, say so and hand off to `rfc-writer` rather than inventing
 decisions inside the implementation.
+
+This body runs past the collection's 1,500-token budget, and what is left is
+rules rather than argument: the grades, the plan gate, the entry, the classes.
+Splitting any of them out would put the thing you need mid-task one file away
+from the moment you need it. Everything explanatory has already moved.
 
 ## The grade decides the action
 
@@ -73,18 +78,14 @@ disclaimer.
 
 ## Write the entry before you act
 
-Not after. An entry written afterwards is a rationalisation of a decision
-already taken, and reads like one. Deviations reconstructed at the end are
-reconstructed *from the code*, which means they describe what was built rather
-than what was decided.
+Not after. An entry written afterwards is a rationalisation of a decision already
+taken, and reads like one — deviations reconstructed at the end are reconstructed
+*from the code*, so they describe what was built rather than what was decided.
 
-Append to `logs/<task-id>.md`. **One file per task** — never a shared log, which
-is a write hotspot the moment two workers run at once. Append-only: never edit
-or delete an existing entry, including your own from an earlier attempt. If you
-were wrong, append a new entry saying so.
-
-````markdown
-**Drift count: 1.**
+Append to `logs/<task-id>.md`. **One file per task**, never a shared log, which
+is a write hotspot the moment two workers run at once. **Append-only:** never
+edit or delete an existing entry, including your own from an earlier attempt; if
+you were wrong, append a new entry saying so.
 
 ```divergence
 decision: D-3
@@ -97,23 +98,18 @@ evidence: infra/compose.yaml:1-40
 action: halted
 proposal: LOCKED — sessions live in Postgres until a Redis service is provisioned
 ```
-````
 
-| Field | Rule |
-|---|---|
-| `decision` | The identifier from the spec's decision table, or `unlisted`. Never invent one. |
-| `grade` | Copied **from the task as it stands now**. Do not look it up in the current spec — the grade may have moved since, and the log records what was in force when you acted. |
-| `class` | `discovery` · `spec-gap` · `drift` · `irreducible`. See below. |
-| `at`, `attempt` | UTC RFC 3339, and which attempt at this task this is. |
-| `claim` | One sentence: what reality says that the decision does not. Not what you did about it. |
-| `evidence` | `path:line`, `path:start-end`, or a backticked command with its output. Someone else must be able to locate it. |
-| `action` | `halted` · `departed` · `decided`. Must be legal for the grade. |
-| `proposal` | The row this proposes back to the spec, written as it would appear. Required when `decision: unlisted`. |
+Two fields do the work, and both are in full in
+[references/entry-format.md](references/entry-format.md). **`grade` is copied
+from the task as it stands now**, never re-read from the current spec — the log
+records what was in force when you acted. **`evidence` must be locatable by
+someone else**: a `path:line`, a range, or a backticked command with its output.
+"Redis isn't available here" is a claim, and `claim` is where claims go; an entry
+whose evidence cannot be found is discarded, and a discarded entry counts as
+none.
 
-Prose outside the blocks is allowed and ignored by the checker.
-
-**Rationale is a mechanism, not a preference.** "Cleaner" and "more idiomatic"
-are not reasons; they are the sound of drift being written down as discovery.
+And never amend the spec from inside a task. Editing its prose, table or grades
+launders the flip; your entry *is* the amendment proposal.
 
 ## Class answers one question: could this have been known before code existed?
 
@@ -125,24 +121,11 @@ are not reasons; they are the sound of drift being written down as discovery.
 | `irreducible` | Neither — no amount of design settles it | Stop and spike. Ship the information, not the code. |
 
 `drift` should be zero, and a non-zero count is a finding against the executor
-rather than against the document — it is the class that makes review expensive,
-because it is the one a reader cannot anticipate.
+rather than the document — it is the class a reader cannot anticipate, which is
+what makes review expensive.
 
 **Write `Drift count: N` in every log, including at zero.** A missing count and
-an honest zero read identically, and only one of them is a claim. The checker
-compares it against the entries classed `drift`, so an inaccurate count fails
-where a silent one would not.
-
-## Evidence must be checkable
-
-The checker locates it. An entry whose evidence cannot be found is discarded,
-and a discarded entry counts as none.
-
-Evidence: `infra/compose.yaml:1-40` · `` `pnpm test tests/api/auth.spec.ts` — 3 failed, ECONNREFUSED 127.0.0.1:6379 ``
-
-Not evidence: "Redis isn't available in this environment" · "the current
-architecture makes this impractical". Those are claims, and `claim` is where
-claims go.
+an honest zero read identically, and only one of them is a claim.
 
 ## Silence is what gets caught
 
@@ -152,20 +135,6 @@ decision governs. So when in doubt about whether a contradiction is worth
 reporting, report it. A surplus entry costs a reader ten seconds; a missing one
 is an unexplained divergence found months later.
 
-## Never amend the spec from inside a task
-
-Do not edit the design document's prose, decision table, or grades while
-executing against it. That launders the flip and destroys the record that a
-decision changed at all. Your entry **is** the amendment proposal: someone reads
-the log and updates the spec under fresh review. Acceptance and refusal are
-recorded there, by the author, not back in the append-only log.
-
-Departures that change a **contract** — error kinds, retry semantics, ordering
-guarantees, public surface — are logged even when they look like implementation
-detail. If another implementation of the same port would now behave differently,
-the shared conformance battery is re-run rather than assumed still valid
-(`reading-isnt-proof`).
-
 ## Checking the log
 
 ```bash
@@ -173,16 +142,14 @@ python3 scripts/log_check.py --log logs/T-0142.md --root . \
     --task tasks/T-0142.json --base origin/main
 ```
 
-It validates field presence and vocabulary, grade-to-action legality in both
-directions, that the drift count matches the entries, that every piece of
-evidence resolves to a real location under `--root`, and — given `--task` and
-`--base` — that every `LOCKED` decision whose declared paths the diff touched
+It checks the schema, grade-to-action legality both ways, the drift count against
+the entries, that every citation resolves under `--root`, and — given `--task`
+and `--base` — that every `LOCKED` decision whose declared paths the diff touched
 has an entry. Run it in CI as the `decisions-reported` gate.
 
-A decision with no declared `paths` is **skipped and reported as skipped**,
-never counted as passed: a silence check that guesses is a silence check that
-approves. See [references/log-template.md](references/log-template.md) for the
-task file and log skeletons.
+A decision declaring no `paths` is **reported as skipped, never as passed**: a
+silence check that guesses is a silence check that approves. Task file and log
+skeletons: [references/log-template.md](references/log-template.md).
 
 Where `rfc-writer` is not installed, decision tables may be absent or ungraded.
 Treat every decision as `LOCKED` and halt on any contradiction rather than
