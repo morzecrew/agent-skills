@@ -80,6 +80,7 @@ DECISIONS_HEADING = re.compile(r"^#{2,3}\s*(?:\d+\.\s*)?Decisions\b.*$", re.M | 
 # to three spaces, per CommonMark; closed by at least as many of the same
 # character, or by end of file.
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
 # A markdown link that points inside the repository. Any URI scheme at all, and
 # a protocol-relative `//host/x`, belong to somebody else — matching only http
 # and mailto meant `ftp:` and `tel:` were checked as if they were file paths.
@@ -198,8 +199,11 @@ def split_row(line: str) -> list[str]:
     i = 1
     while i < len(stripped):
         char = stripped[i]
-        if char == "\\" and i + 1 < len(stripped):
-            current.append(stripped[i + 1])
+        # Only a pipe is unescaped. Markdown escapes punctuation, so `\\LOCKED`
+        # renders as literal text and is not a grade; consuming every backslash
+        # made the checker accept what its reader sees rejected.
+        if char == "\\" and i + 1 < len(stripped) and stripped[i + 1] == "|":
+            current.append("|")
             i += 2
             continue
         if char == "|":
@@ -226,20 +230,25 @@ def strip_fences(text: str) -> str:
     this one. Line structure is preserved so nothing downstream shifts.
     """
     out: list[str] = []
-    closing: str | None = None
+    closing: re.Pattern[str] | None = None
     for line in text.splitlines():
         if closing is None:
             opening = FENCE.match(line)
             if opening:
-                closing = opening.group(1)
+                # What closes this block: the same character, no shorter,
+                # alone on its line, and indented at most three — the rule that
+                # opens a fence also closes one. Accepting a marker indented
+                # four ended the block early and handed the code below it to
+                # the link scanner. Built once here, not once per line.
+                marker = opening.group(1)
+                closing = re.compile(
+                    rf" {{0,3}}{re.escape(marker[0])}{{{len(marker)},}}[ \t]*")
                 out.append("")
                 continue
             out.append(line)
             continue
         out.append("")
-        stripped = line.strip()
-        # Same character, at least as long, and nothing else on the line.
-        if stripped and set(stripped) == {closing[0]} and len(stripped) >= len(closing):
+        if closing.fullmatch(line):
             closing = None
     return "\n".join(out)
 
@@ -273,8 +282,12 @@ def decision_rows(text: str) -> list[tuple[str, str]] | None:
     for line in section.splitlines():
         stripped = line.strip()
         if not stripped.startswith("|"):
-            if grade_at is not None and stripped:
-                break  # prose after the table ends it
+            if grade_at is not None:
+                # A markdown table holds no blank line, so anything that is not
+                # a row ends it — prose or blank alike. Breaking only on prose
+                # merged a table separated by one blank into the decision rows,
+                # and read its header as a row whose second cell was a grade.
+                break
             continue
         cells = split_row(stripped)
         if grade_at is None:

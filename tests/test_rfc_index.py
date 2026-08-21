@@ -664,6 +664,22 @@ class DecisionTableTest(ContentFixture, unittest.TestCase):
     def test_split_row_ignores_a_line_that_is_not_a_row(self):
         self.assertEqual(script.split_row("just prose"), [])
 
+    def test_a_backslash_before_a_letter_is_not_an_escape(self):
+        # Markdown escapes punctuation only, so `\LOCKED` renders as the
+        # literal text and is not a grade. Consuming every backslash made the
+        # checker accept exactly what the reader sees rejected.
+        self.write_alpha(DECISIONS.replace("`LOCKED`", r"\LOCKED"))
+        self.assertEqual(self.check(), 2)
+        self.assertIn("not one of LOCKED", self.problems())
+
+    def test_a_table_immediately_after_the_decision_table_is_not_merged(self):
+        # A markdown table cannot contain a blank line, so the blank ends it.
+        # Without that the next table's own header row is read as a decision
+        # row, and its second cell as that row's grade.
+        self.write_alpha(DECISIONS + "\n| Risk | Likelihood | Impact |\n"
+                         "|---|---|---|\n| Drift | low | high |\n")
+        self.assertEqual(self.check(), 0)
+
 class LinkTargetTest(ContentFixture, unittest.TestCase):
     def test_a_resolving_link_passes_quietly(self):
         (self.root / "src").mkdir()
@@ -760,6 +776,25 @@ class LinkTargetTest(ContentFixture, unittest.TestCase):
         # still the author's own prose and is still checked.
         (self.rfcs / "0002-beta.md").write_text(
             BETA + "\nSee [the code](src/never_built.py).\n\n```go\nx := 1\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 2)
+        self.assertIn("RFC is Complete", self.problems())
+
+    def test_an_over_indented_marker_does_not_close_a_fence(self):
+        # CommonMark allows a closing fence at most three spaces of indent. A
+        # marker indented four is fenced content, so the block runs on and the
+        # link below it stays hidden.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```markdown\n    ```\n[commands](commands.md#init)\n```\n",
+            encoding="utf-8")
+        self.assertEqual(self.check(), 0)
+        self.assertNotIn("link target", self.problems())
+
+    def test_a_marker_indented_three_still_closes_the_fence(self):
+        # The other side of the same boundary: three spaces is a legal closer,
+        # so what follows is prose again and its dangling link is reported.
+        (self.rfcs / "0002-beta.md").write_text(
+            BETA + "\n```go\n   ```\n\nSee [the code](src/never_built.py).\n",
             encoding="utf-8")
         self.assertEqual(self.check(), 2)
         self.assertIn("RFC is Complete", self.problems())
