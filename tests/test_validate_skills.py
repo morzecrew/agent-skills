@@ -247,5 +247,146 @@ class BrokenLinkTest(unittest.TestCase):
                 self.assertEqual(script.broken_links(page, repo), [])
 
 
+class ScalarTest(CheckTest):
+    """E16 — the validator must not be looser than the parser the installer uses.
+
+    Two shipped descriptions carried a literal `Attributes: ` and `:raises: `,
+    passed every check here, and could not be loaded by `npx skills add` at
+    all. The bug was not in the descriptions; it was in a frontmatter reader
+    that took the rest of the line where YAML takes a nested mapping.
+    """
+
+    def read(self, raw: str, key: str = "description") -> str:
+        return script.scalar_value(raw, "where", key)
+
+    def test_a_colon_before_a_space_is_refused(self) -> None:
+        self.read("Google style — Args:/Returns:/Attributes: sections under Napoleon")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_the_shipped_rest_description_shape_is_refused(self) -> None:
+        self.read("reST field lists — :param:/:returns:/:raises: and cross-reference roles")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_colon_inside_a_word_is_allowed(self) -> None:
+        self.read("sections named Args:/Returns:/Raises:/Attributes under Sphinx.")
+        self.assertEqual(self.codes(), [])
+
+    def test_a_trailing_colon_is_refused(self) -> None:
+        self.read("Use when writing Args:")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_hash_after_whitespace_is_refused(self) -> None:
+        self.read("Use when tagging a release #2 in the changelog")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_hash_inside_a_word_is_allowed(self) -> None:
+        self.read("Use when writing C# or F# documentation.")
+        self.assertEqual(self.codes(), [])
+
+    def test_a_leading_indicator_is_refused(self) -> None:
+        self.read("*never* skip the plan step")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_leading_dash_is_refused(self) -> None:
+        self.read("- Use when planning")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_leading_question_mark_is_refused(self) -> None:
+        self.read("? Use when unsure")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_question_mark_inside_the_value_is_allowed(self) -> None:
+        self.read("Use when asking: is this a rule? Then write it down.".replace(":", ""))
+        self.assertEqual(self.codes(), [])
+
+    def test_a_dash_inside_the_value_is_allowed(self) -> None:
+        self.read("Use when writing a well-formed commit - or a PR title.")
+        self.assertEqual(self.codes(), [])
+
+    def test_quoting_clears_the_hazard(self) -> None:
+        value = self.read("'Google style — Args:/Returns:/Attributes: sections'")
+        self.assertEqual(self.codes(), [])
+        self.assertEqual(value, "Google style — Args:/Returns:/Attributes: sections")
+
+    def test_a_flow_list_is_handed_on_untouched(self) -> None:
+        self.assertEqual(self.read("[implement, review]", key="roles"), "[implement, review]")
+        self.assertEqual(self.codes(), [])
+
+    def test_a_doubled_single_quote_is_one_quote(self) -> None:
+        self.assertEqual(self.read("'the author''s intent'"), "the author's intent")
+        self.assertEqual(self.codes(), [])
+
+    def test_an_unterminated_quote_is_refused(self) -> None:
+        self.read("'Use when demoing")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_lone_quote_is_refused(self) -> None:
+        self.read("'")
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_backslash_escape_is_refused_rather_than_approximated(self) -> None:
+        self.read('"a \\"quoted\\" word"')
+        self.assertEqual(self.codes(), ["E16"])
+
+    def test_a_plain_value_survives_unchanged(self) -> None:
+        self.assertEqual(self.read("Use when demoing."), "Use when demoing.")
+        self.assertEqual(self.codes(), [])
+
+
+class QuotedFrontmatterTest(CheckTest):
+    def test_a_quoted_description_is_measured_without_its_quotes(self) -> None:
+        """A 300-char description quoted is 302 on the page. Counting the
+        punctuation would fail a description that is exactly at budget."""
+        body = "x" * script.MAX_DESCRIPTION
+        self.assertEqual(self.check(skill_text(description=f"'{body}'")), [])
+
+    def test_a_quoted_description_over_budget_still_fails(self) -> None:
+        body = "x" * (script.MAX_DESCRIPTION + 1)
+        self.assertEqual(self.check(skill_text(description=f"'{body}'")), ["E5"])
+
+    def test_an_unquoted_colon_in_a_real_skill_page_is_caught(self) -> None:
+        self.assertEqual(
+            self.check(skill_text(description="Use when writing Attributes: sections.")),
+            ["E16"])
+
+    def test_a_wrapped_quote_is_judged_whole_not_by_its_first_line(self) -> None:
+        """The closing quote is on line two; reading line one alone would call
+        it unterminated and report the wrong defect beside E5."""
+        text = skill_text(description="'Use when demoing\n  across two lines'")
+        self.assertEqual(self.check(text), ["E5"])
+
+
+class ShippedFrontmatterTest(unittest.TestCase):
+    """The collection itself, not a fixture — the bug shipped on main."""
+
+    def pages(self) -> list[Path]:
+        repo = Path(script.__file__).resolve().parent.parent
+        return sorted((repo / "skills").glob("*/SKILL.md"))
+
+    def test_no_shipped_skill_carries_an_unreadable_scalar(self) -> None:
+        for page in self.pages():
+            with self.subTest(skill=page.parent.name):
+                script.errors.clear()
+                script.parse_frontmatter(page.read_text(encoding="utf-8"), page.parent.name)
+                self.assertEqual([e.split(":", 1)[0] for e in script.errors], [])
+        script.errors.clear()
+
+    def test_every_shipped_skill_loads_under_a_real_yaml_parser(self) -> None:
+        """The end-to-end guard: this is the parser the installer runs. It is
+        skipped rather than vendored, because CI is stdlib-only — the check
+        above is the deterministic half that always runs."""
+        yaml = __import__("importlib").util.find_spec("yaml")
+        if yaml is None:
+            self.skipTest("PyYAML not installed")
+        import yaml  # noqa: F811
+        for page in self.pages():
+            with self.subTest(skill=page.parent.name):
+                text = page.read_text(encoding="utf-8")
+                front = text.split("---", 2)[1]
+                loaded = yaml.safe_load(front)
+                self.assertIsInstance(loaded, dict)
+                self.assertIn("description", loaded)
+
+
 if __name__ == "__main__":
     unittest.main()

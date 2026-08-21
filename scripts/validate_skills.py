@@ -19,6 +19,7 @@ Errors (fail the run):
   E13 a skill ships scripts/ that its SKILL.md never mentions
   E14 gate is missing, or names no script, or is none without a gate_reason
   E15 body still carries a trigger section, at any heading level
+  E16 a frontmatter value is unquoted where YAML would not read it as text
 
 Warnings (reported, do not fail):
   W1  body is over the token budget
@@ -74,21 +75,68 @@ def warn(code: str, msg: str) -> None:
     warnings.append(f"{code}: {msg}")
 
 
+# An unquoted frontmatter value is a YAML *plain scalar*, and a plain scalar
+# ends at the first structural character rather than at the end of the line.
+# This parser used to read the rest of the line verbatim, which made it more
+# permissive than every real YAML parser: two descriptions carrying a literal
+# `Attributes: ` and `:raises: ` passed here and could not be loaded at all by
+# the installer. A validator looser than the consumer reports green about a
+# file nobody downstream can read.
+PLAIN_HAZARDS = (
+    (re.compile(r":(?=\s|$)"), "a colon before whitespace or end-of-line opens a nested mapping"),
+    (re.compile(r"(?:^|\s)#"), "a '#' after whitespace starts a comment and truncates the value"),
+    (re.compile(r"^[#&*!|>%@`]"), "the first character is a YAML indicator"),
+    (re.compile(r"^[-?](?=\s|$)"), "a leading '-' or '?' starts a block sequence or a complex key"),
+)
+
+
+def scalar_value(raw: str, where: str, key: str) -> str:
+    """The text a YAML parser would read out of one frontmatter value.
+
+    Quoted values are unquoted so the length and content checks measure the
+    description rather than its punctuation. Flow collections (`roles: [a, b]`)
+    are handed on untouched for their own checks to read. Anything left is
+    plain, and is refused if YAML would read it as structure.
+    """
+    if raw[:1] in "[{":
+        return raw
+    for quote in ("'", '"'):
+        if not raw.startswith(quote):
+            continue
+        if len(raw) < 2 or not raw.endswith(quote):
+            err("E16", f"{where}: {key} opens with {quote} and never closes")
+            return raw
+        inner = raw[1:-1]
+        if quote == '"' and "\\" in inner:
+            err("E16", f"{where}: {key} is double-quoted with a backslash escape — "
+                       "single-quote it rather than have this parser approximate one")
+            return inner
+        return inner.replace("''", "'") if quote == "'" else inner
+    for pattern, why in PLAIN_HAZARDS:
+        if pattern.search(raw):
+            err("E16", f"{where}: {key} is unquoted and {why} — quote the value")
+            break
+    return raw
+
+
 def parse_frontmatter(text: str, where: str) -> dict[str, str] | None:
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         err("E2", f"{where}: no frontmatter opener")
         return None
-    fields: dict[str, str] = {}
-    for i, line in enumerate(lines[1:], start=1):
+    raw: dict[str, str] = {}
+    for line in lines[1:]:
         if line.strip() == "---":
-            return fields
+            # Scalars are read after the whole block, so a value continued onto
+            # a second line is judged whole: judging the first line alone would
+            # call a legal wrapped quote unterminated.
+            return {k: scalar_value(v, where, k) for k, v in raw.items()}
         m = re.match(r"^([A-Za-z_-]+):\s*(.*)$", line)
         if m:
-            fields[m.group(1)] = m.group(2).strip()
-        elif line.startswith((" ", "\t")) and fields:
+            raw[m.group(1)] = m.group(2).strip()
+        elif line.startswith((" ", "\t")) and raw:
             # continuation line -> the previous value was not single-line
-            fields[list(fields)[-1]] += "\n" + line.strip()
+            raw[list(raw)[-1]] += "\n" + line.strip()
     err("E2", f"{where}: frontmatter never closed")
     return None
 
